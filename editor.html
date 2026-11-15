@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Редактор карты — С Новым Годом, Сосед</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./src/editor/editor.css">
+</head>
+<body>
+<div id="app">
+    <header id="topbar">
+        <div class="bar-group">
+            <span class="brand-badge">🛠 КАРТА · ХРУЩЁВКА</span>
+            <button id="btn-save" class="btn-primary" title="Сохранить прямо в src/world/MapOverrides.js и localStorage (Ctrl+S)">💾 Сохранить в проект</button>
+            <button id="btn-download" title="Скачать файл MapOverrides.js вручную">⬇ MapOverrides.js</button>
+            <button id="btn-import" title="Импортировать JSON или MapOverrides.js">⬆ Импорт</button>
+            <input type="file" id="input-import-file" accept=".json,.js" hidden>
+            <button id="btn-reset-all" class="btn-warn" title="Удалить все правки и вернуть исходную карту">↺ Сбросить всё</button>
+            <button id="btn-test-game" title="Открыть игру для проверки текущей карты">▶ Тест в игре</button>
+        </div>
+
+        <div class="bar-group">
+            <button id="tool-select" data-tool="select" title="Только выбор (Q)">Выбор</button>
+            <button id="tool-translate" class="active" data-tool="translate" title="Перемещение (W)">Позиция</button>
+            <button id="tool-rotate" data-tool="rotate" title="Поворот (E)">Поворот</button>
+            <button id="tool-scale" data-tool="scale" title="Размер / Масштаб (R)">Размер</button>
+            <button id="btn-space" title="Переключить Мировые / Локальные оси (X)">Оси: Мир</button>
+            <button id="btn-group-mode" title="Перемещать весь гарнитур мебели или одну деталь (G)">Вся мебель</button>
+            <div class="bar-sep"></div>
+            <select id="select-snap-move" title="Шаг сетки перемещения">
+                <option value="0">Сетка: Выкл</option>
+                <option value="0.05">0.05 м</option>
+                <option value="0.1">0.10 м</option>
+                <option value="0.25">0.25 м</option>
+                <option value="0.5">0.50 м</option>
+                <option value="1">1.00 м</option>
+            </select>
+            <select id="select-snap-rot" title="Шаг угла поворота">
+                <option value="0">Угол: Выкл</option>
+                <option value="5">5°</option>
+                <option value="15">15°</option>
+                <option value="45">45°</option>
+                <option value="90">90°</option>
+            </select>
+            <button id="btn-undo" title="Отменить (Ctrl+Z)" disabled>↶</button>
+            <button id="btn-redo" title="Повторить (Ctrl+Y)" disabled>↷</button>
+        </div>
+
+        <div class="bar-group">
+            <button id="cam-fly" class="active" data-cam="fly" title="Свободная 3D-камера (1)">Полёт 3D</button>
+            <button id="cam-top" data-cam="top" title="Вид сверху 2D / план квартиры (2)">План 2D</button>
+            <button id="cam-walk" data-cam="walk" title="Прогулка от 1-го лица с коллизией игрока (3)">Прогулка</button>
+            <div class="bar-sep"></div>
+            <button id="toggle-worklight" class="active" title="Яркий рабочий свет редактора">Раб. свет</button>
+            <button id="toggle-vhs" title="Превью в стиле PS1/VHS игры">PS1/VHS</button>
+            <button id="toggle-noceiling" title="Скрыть потолки для просмотра сверху">Без потолка</button>
+            <button id="toggle-colliders" title="Показать зелёные контуры коллайдеров (BoxCollider)">Коллайдеры</button>
+            <button id="toggle-lights" class="active" title="Показать маркеры источников света">Свет</button>
+            <button id="toggle-markers" class="active" title="Показать спавн, прятки и вейпоинты монстра">Маркеры</button>
+            <div class="bar-sep"></div>
+            <button id="toggle-table-set" class="state-toggle" title="Разложить стол-книжку и показать все блюда на нём">🍽 Стол накрыт</button>
+            <button id="toggle-open-doors" class="state-toggle" title="Открыть дверцы холодильника, духовки, шкафа, кладовки и дивана">🚪 Открыть дверцы</button>
+            <button id="toggle-act4" class="state-toggle" title="Показать разрушенную квартиру (Акт IV): перевёрнутый стол, выбитая дверь, ёлка, улики">💥 Акт IV</button>
+        </div>
+    </header>
+
+    <div id="workspace">
+        <aside id="left-panel">
+            <div class="panel-section">
+                <div class="panel-title">Добавить на карту</div>
+                <div class="quick-add-grid">
+                    <button id="add-box">+ Куб / Стена</button>
+                    <button id="add-cylinder">+ Цилиндр</button>
+                    <button id="add-sphere">+ Сфера</button>
+                    <button id="add-plane">+ Плоскость</button>
+                    <button id="add-light">+ Лампа</button>
+                    <button id="add-waypoint">+ Точка пути</button>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-title">Быстрый обзор зон</div>
+                <div class="room-presets">
+                    <button data-preset="hall">Зал</button>
+                    <button data-preset="kitchen">Кухня</button>
+                    <button data-preset="hallway">Коридор</button>
+                    <button data-preset="bath">Ванная</button>
+                    <button data-preset="balcony">Балкон</button>
+                    <button data-preset="stairwell">Подъезд</button>
+                    <button data-preset="courtyard">Двор</button>
+                    <button data-preset="overview">Общий</button>
+                </div>
+            </div>
+
+            <div id="hierarchy-section">
+                <div class="panel-title">
+                    <span>Сцена и объекты</span>
+                    <span id="hierarchy-count" style="font-weight:400;">0</span>
+                </div>
+                <div id="hierarchy-controls">
+                    <input type="text" id="search-objects" placeholder="Поиск объекта по имени...">
+                    <select id="filter-category">
+                        <option value="all">Все элементы карты</option>
+                        <option value="modified">★ Изменённые вручную</option>
+                        <option value="structure">Стены, полы, потолки</option>
+                        <option value="doors">Двери и штора</option>
+                        <option value="furniture">Мебель</option>
+                        <option value="fixtures">Светильники и выключатели</option>
+                        <option value="stairwell">Подъезд</option>
+                        <option value="balcony">Балкон</option>
+                        <option value="courtyard">Двор и Дом №14</option>
+                        <option value="gameplay">Эффекты и геймплей</option>
+                        <option value="activated">🍽 Событийные / Акт I и IV</option>
+                        <option value="custom">Добавленные (+)</option>
+                        <option value="lights">Источники света (Light)</option>
+                        <option value="markers">Маркеры (Спавн, Прятки, Путь)</option>
+                    </select>
+                </div>
+                <div id="object-list"></div>
+            </div>
+        </aside>
+
+        <main id="viewport-wrap">
+            <div id="canvas-container">
+                <canvas id="editorCanvas"></canvas>
+                <div id="marquee-box" class="hidden"></div>
+                <div id="viewport-hint">ПКМ+WASD/QE — полёт • Shift+Клик / рамка — мультивыбор • F — фокус • W/E/R — режимы • Ctrl+D — дубль</div>
+                <div id="editor-toast"></div>
+            </div>
+            <footer id="statusbar">
+                <span id="status-server">Сервер: проверка...</span>
+                <span id="status-selection">Ничего не выбрано</span>
+                <span id="status-counts">Правок: 0</span>
+                <span id="status-camera">Камера: 0.0, 0.0, 0.0</span>
+            </footer>
+        </main>
+
+        <aside id="right-panel">
+            <div id="inspector-header">
+                <span id="inspector-title">Инспектор</span>
+                <span id="inspector-type" class="hidden">Объект</span>
+            </div>
+
+            <div id="inspector-empty">
+                <p style="margin-top:0;">Кликните по любому объекту в 3D-сцене или выберите его в списке слева.</p>
+                <ul style="padding-left:16px; margin:8px 0;">
+                    <li><b>W / E / R</b> — перемещение, поворот, размер</li>
+                    <li><b>ПКМ + WASD / Q / E</b> — полёт по квартире (<b>Shift</b> — быстрее)</li>
+                    <li><b>План 2D</b> — сверху для точной планировки стен и мебели</li>
+                    <li><b>Прогулка</b> — тест проходимости с реальным коллайдером игрока</li>
+                    <li><b>Сохранить в проект</b> — записывает правки в <code>src/world/MapOverrides.js</code> перед сборкой</li>
+                </ul>
+            </div>
+
+            <div id="inspector-content" class="hidden">
+                <div id="multi-selection-banner" class="hidden"></div>
+                <div class="panel-section">
+                    <div class="action-bar">
+                        <button id="btn-focus" title="Подлететь камерой к объекту (F)">🎯 Фокус</button>
+                        <button id="btn-dup" title="Создать копию объекта (Ctrl+D)">⧉ Копия</button>
+                        <button id="btn-reset-obj" title="Сбросить изменения этого элемента">↺ Сброс</button>
+                    </div>
+                    <div class="action-bar" style="grid-template-columns: 1fr 1fr;">
+                        <button id="btn-select-group" class="hidden">◫ Выделить гарнитур</button>
+                        <button id="btn-del-obj" class="btn-danger">🗑 Удалить</button>
+                    </div>
+                </div>
+
+                <div id="sec-object">
+                    <div class="panel-section">
+                        <div class="panel-title">Основные свойства</div>
+                        <div class="prop-row">
+                            <label class="prop-lbl">Имя</label>
+                            <input type="text" id="prop-name" readonly>
+                        </div>
+                        <div class="check-row">
+                            <span>Видимость объекта</span>
+                            <input type="checkbox" id="prop-visible">
+                        </div>
+                        <div class="prop-row" style="margin-top:6px;">
+                            <label class="prop-lbl">Позиция (м)</label>
+                            <div class="vec3-grid">
+                                <div class="vec3-cell"><span class="ax-x">X</span><input type="number" step="0.05" id="pos-x"></div>
+                                <div class="vec3-cell"><span class="ax-y">Y</span><input type="number" step="0.05" id="pos-y"></div>
+                                <div class="vec3-cell"><span class="ax-z">Z</span><input type="number" step="0.05" id="pos-z"></div>
+                            </div>
+                        </div>
+                        <div class="prop-row" id="row-snap-floor">
+                            <label class="prop-lbl">Привязка</label>
+                            <button id="btn-snap-floor" style="flex:1;">⬇ Поставить на пол (Y = 0)</button>
+                        </div>
+                        <div class="prop-row">
+                            <label class="prop-lbl">Поворот (°)</label>
+                            <div class="vec3-grid">
+                                <div class="vec3-cell"><span class="ax-x">X</span><input type="number" step="5" id="rot-x"></div>
+                                <div class="vec3-cell"><span class="ax-y">Y</span><input type="number" step="5" id="rot-y"></div>
+                                <div class="vec3-cell"><span class="ax-z">Z</span><input type="number" step="5" id="rot-z"></div>
+                            </div>
+                        </div>
+                        <div class="prop-row" id="row-boxsize">
+                            <label class="prop-lbl">Габариты (м)</label>
+                            <div class="vec3-grid">
+                                <div class="vec3-cell"><span class="ax-x">W</span><input type="number" min="0.02" step="0.05" id="box-w"></div>
+                                <div class="vec3-cell"><span class="ax-y">H</span><input type="number" min="0.02" step="0.05" id="box-h"></div>
+                                <div class="vec3-cell"><span class="ax-z">D</span><input type="number" min="0.02" step="0.05" id="box-d"></div>
+                            </div>
+                        </div>
+                        <div class="prop-row" id="row-scale">
+                            <label class="prop-lbl">Масштаб</label>
+                            <div class="vec3-grid">
+                                <div class="vec3-cell"><span class="ax-x">X</span><input type="number" min="0.05" step="0.05" id="scale-x"></div>
+                                <div class="vec3-cell"><span class="ax-y">Y</span><input type="number" min="0.05" step="0.05" id="scale-y"></div>
+                                <div class="vec3-cell"><span class="ax-z">Z</span><input type="number" min="0.05" step="0.05" id="scale-z"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel-section" id="sec-physics">
+                        <div class="panel-title">Физика и тени</div>
+                        <label class="check-row" id="wrap-collide">
+                            <span>Твёрдый коллайдер (Collide)</span>
+                            <input type="checkbox" id="prop-collide">
+                        </label>
+                        <label class="check-row" id="wrap-blocker">
+                            <span>Преграда взгляда / Луча (Blocker)</span>
+                            <input type="checkbox" id="prop-blocker">
+                        </label>
+                        <label class="check-row">
+                            <span>Отбрасывает тень (CastShadow)</span>
+                            <input type="checkbox" id="prop-cast-shadow">
+                        </label>
+                        <label class="check-row">
+                            <span>Принимает тень (ReceiveShadow)</span>
+                            <input type="checkbox" id="prop-receive-shadow">
+                        </label>
+                        <div id="sec-custom-collider" class="hidden" style="margin-top:6px;">
+                            <div class="prop-row">
+                                <label class="prop-lbl">Коллайдер W/H/D</label>
+                                <div class="vec3-grid">
+                                    <div class="vec3-cell"><span class="ax-x">W</span><input type="number" min="0.02" step="0.05" id="col-w"></div>
+                                    <div class="vec3-cell"><span class="ax-y">H</span><input type="number" min="0.02" step="0.05" id="col-h"></div>
+                                    <div class="vec3-cell"><span class="ax-z">D</span><input type="number" min="0.02" step="0.05" id="col-d"></div>
+                                </div>
+                            </div>
+                            <div class="prop-row">
+                                <label class="prop-lbl">Смещение колл.</label>
+                                <div class="vec3-grid">
+                                    <div class="vec3-cell"><span class="ax-x">X</span><input type="number" step="0.05" id="col-ox"></div>
+                                    <div class="vec3-cell"><span class="ax-y">Y</span><input type="number" step="0.05" id="col-oy"></div>
+                                    <div class="vec3-cell"><span class="ax-z">Z</span><input type="number" step="0.05" id="col-oz"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel-section" id="sec-material">
+                        <div class="panel-title">Материал и текстура</div>
+                        <div class="prop-row">
+                            <label class="prop-lbl">Пресет</label>
+                            <select id="mat-key" style="flex:1;"></select>
+                        </div>
+                        <div class="prop-row">
+                            <label class="prop-lbl">Цвет / Свеч.</label>
+                            <input type="color" id="mat-color" title="Основной цвет">
+                            <input type="color" id="mat-emissive" title="Цвет свечения (Emissive)">
+                            <button id="btn-mat-reset" style="flex:1;">Сброс мат.</button>
+                        </div>
+                        <div class="prop-row">
+                            <label class="prop-lbl">Шероховатость</label>
+                            <div class="range-wrap">
+                                <input type="range" id="mat-roughness" min="0" max="1" step="0.05">
+                                <span id="val-roughness">0.9</span>
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label class="prop-lbl">Металличность</label>
+                            <div class="range-wrap">
+                                <input type="range" id="mat-metalness" min="0" max="1" step="0.05">
+                                <span id="val-metalness">0.05</span>
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label class="prop-lbl">Прозрачность</label>
+                            <div class="range-wrap">
+                                <input type="range" id="mat-opacity" min="0.05" max="1" step="0.05">
+                                <span id="val-opacity">1.0</span>
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label class="prop-lbl">Повтор текстуры</label>
+                            <div class="vec3-grid" style="grid-template-columns: 1fr 1fr;">
+                                <div class="vec3-cell"><span class="ax-x">U</span><input type="number" min="0.1" step="0.5" id="mat-repeat-x"></div>
+                                <div class="vec3-cell"><span class="ax-y">V</span><input type="number" min="0.1" step="0.5" id="mat-repeat-y"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="sec-light" class="hidden">
+                    <div class="panel-section">
+                        <div class="panel-title">Источник света</div>
+                        <div class="prop-row">
+                            <label class="prop-lbl">Название</label>
+                            <input type="text" id="light-label" readonly>
+                        </div>
+                        <label class="check-row">
+                            <span>Включён (Visible)</span>
+                            <input type="checkbox" id="light-visible">
+                        </label>
+                        <div class="prop-row" style="margin-top:6px;">
+                            <label class="prop-lbl">Позиция (м)</label>
+                            <div class="vec3-grid">
+                                <div class="vec3-cell"><span class="ax-x">X</span><input type="number" step="0.1" id="lpos-x"></div>
+                                <div class="vec3-cell"><span class="ax-y">Y</span><input type="number" step="0.1" id="lpos-y"></div>
+                                <div class="vec3-cell"><span class="ax-z">Z</span><input type="number" step="0.1" id="lpos-z"></div>
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label class="prop-lbl">Цвет света</label>
+                            <input type="color" id="light-color">
+                            <label class="prop-lbl" style="width:auto; margin-left:6px;">Яркость</label>
+                            <input type="number" step="0.1" min="0" id="light-intensity" style="flex:1;">
+                        </div>
+                        <div class="prop-row">
+                            <label class="prop-lbl">Дальность</label>
+                            <input type="number" step="0.5" min="0" id="light-distance" style="flex:1;">
+                            <label class="prop-lbl" style="width:auto; margin-left:4px;">Затух.</label>
+                            <input type="number" step="0.1" min="0" id="light-decay" style="flex:1;">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="sec-marker" class="hidden">
+                    <div class="panel-section">
+                        <div class="panel-title" id="marker-section-title">Геймплейный маркер</div>
+                        <div id="marker-spawn-fields" class="hidden">
+                            <div class="prop-row">
+                                <label class="prop-lbl">Позиция (м)</label>
+                                <div class="vec3-grid">
+                                    <div class="vec3-cell"><span class="ax-x">X</span><input type="number" step="0.05" id="mpos-x"></div>
+                                    <div class="vec3-cell"><span class="ax-y">Y</span><input type="number" step="0.05" id="mpos-y"></div>
+                                    <div class="vec3-cell"><span class="ax-z">Z</span><input type="number" step="0.05" id="mpos-z"></div>
+                                </div>
+                            </div>
+                            <div class="prop-row">
+                                <label class="prop-lbl">Yaw / Pitch (°)</label>
+                                <div class="vec3-grid" style="grid-template-columns: 1fr 1fr;">
+                                    <div class="vec3-cell"><span class="ax-y">Y</span><input type="number" step="5" id="spawn-yaw"></div>
+                                    <div class="vec3-cell"><span class="ax-x">P</span><input type="number" step="5" id="spawn-pitch"></div>
+                                </div>
+                            </div>
+                            <button id="btn-spawn-from-cam" style="width:100%;">📍 Поставить по текущей камере</button>
+                        </div>
+
+                        <div id="marker-hiding-fields" class="hidden">
+                            <div class="prop-row">
+                                <label class="prop-lbl">Точка внутри</label>
+                                <div class="vec3-grid">
+                                    <div class="vec3-cell"><span class="ax-x">X</span><input type="number" step="0.05" id="hide-x"></div>
+                                    <div class="vec3-cell"><span class="ax-y">Y</span><input type="number" step="0.05" id="hide-y"></div>
+                                    <div class="vec3-cell"><span class="ax-z">Z</span><input type="number" step="0.05" id="hide-z"></div>
+                                </div>
+                            </div>
+                            <div class="prop-row">
+                                <label class="prop-lbl">Точка выглядыв.</label>
+                                <div class="vec3-grid">
+                                    <div class="vec3-cell"><span class="ax-x">X</span><input type="number" step="0.05" id="peek-x"></div>
+                                    <div class="vec3-cell"><span class="ax-y">Y</span><input type="number" step="0.05" id="peek-y"></div>
+                                    <div class="vec3-cell"><span class="ax-z">Z</span><input type="number" step="0.05" id="peek-z"></div>
+                                </div>
+                            </div>
+                            <div class="prop-row">
+                                <label class="prop-lbl">Направление (°)</label>
+                                <input type="number" step="5" id="hide-yaw" style="flex:1;">
+                            </div>
+                            <div class="action-bar" style="grid-template-columns: 1fr 1fr;">
+                                <button id="btn-edit-hidepos" class="active">Гизмо: Внутри</button>
+                                <button id="btn-edit-peekpos">Гизмо: Выгляд.</button>
+                            </div>
+                        </div>
+
+                        <div id="marker-waypoint-fields" class="hidden">
+                            <div class="prop-row">
+                                <label class="prop-lbl">Позиция (м)</label>
+                                <div class="vec3-grid">
+                                    <div class="vec3-cell"><span class="ax-x">X</span><input type="number" step="0.1" id="wpos-x"></div>
+                                    <div class="vec3-cell"><span class="ax-y">Y</span><input type="number" step="0.1" id="wpos-y"></div>
+                                    <div class="vec3-cell"><span class="ax-z">Z</span><input type="number" step="0.1" id="wpos-z"></div>
+                                </div>
+                            </div>
+                            <button id="btn-wp-insert-after" style="width:100%; margin-bottom:4px;">+ Вставить точку пути после этой</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "./lib/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+}
+</script>
+<script type="module" src="./src/editor/MapEditor.js"></script>
+</body>
+</html>
+

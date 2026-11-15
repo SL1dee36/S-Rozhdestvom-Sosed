@@ -1,0 +1,48 @@
+{
+  "name": "s-rozhdestvom-sosed",
+  "version": "1.0.0",
+  "description": "С Рождеством, Сосед! — десктопная сборка игры",
+  "main": "electron-main.js",
+  "scripts": {
+    "prepare-game": "node prepare.js",
+    "start": "node prepare.js && electron .",
+    "build": "node prepare.js && electron-builder --win portable",
+    "build:dir": "node prepare.js && electron-builder --win dir",
+    "build:nsis": "node prepare.js && electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.srozhdestvom.sosed",
+    "productName": "S Rozhdestvom Sosed",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron-main.js",
+      "game/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "С Рождеством, Сосед!.exe"
+    },
+    "nsis": {
+      "artifactName": "С Рождеством, Сосед! Setup.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}
