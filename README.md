@@ -1,168 +1,60 @@
-# LuminaEngine
+# С Новым Годом, Сосед
 
-LuminaEngine — легковесный трехмерный игровой движок для веб-платформы, функционирующий поверх Three.js. Движок реализует компонентную архитектуру (Entity-Component), дискретную физическую симуляцию на базе AABB-коллайдеров и централизованную подсистему обработки пользовательского ввода для настольных и мобильных браузеров.
+Короткий 3D-хоррор от первого лица в ретро-стилистике PS1 и VHS.
 
-## Технические характеристики
+## О чем игра
 
-* Версия ядра: 1.4.1.
-* Базовая графическая библиотека: Three.js (r160+).
-* Архитектурный паттерн: Entity-Component-System (контейнерная модель `GameObject` + `Component`).
-* Подсистема рендеринга: WebGLRenderer с поддержкой теней (PCFSoftShadowMap), автоматической адаптацией под плотность пикселей (`devicePixelRatio`) и ресайзом вьюпорта.
-* Физический движок: дискретная интеграция Эйлера, AABB-коллизии по трем пространственным осям (X, Y, Z), поддержка гравитации, трения скольжения и коэффициента упругости (restitution).
-* Подсистема ввода: Pointer Lock API, обработка клавиатуры, мыши, колеса прокрутки, сенсорных жестов и виртуального экранного джойстика.
-* Модульная система: нативные ECMAScript-модули (ESM).
+Действие происходит в новогоднюю ночь с 23:30 до полуночи в квартире на третьем этаже советской хрущевки. Пока по телевизору идет «Голубой огонек», игрок занимается предновогодними делами, наблюдает за домом напротив и пытается выжить, когда происходящее за окном перебирается в его собственную квартиру.
 
-## Структура репозитория
+В игре реализованы:
+- стелс-механика с реакцией на шум через реальный микрофон или в режиме «Без микрофона» с задержкой дыхания;
+- укрытия, интерактивные объекты и несколько вариантов развития событий (4 концовки);
+- чекпоинт на 23:45;
+- стилизация под PS1 и VHS/ЭЛТ-экран с настраиваемой интенсивностью эффектов.
 
-```
-LuminaEngine/
-├── lumina/
-│   ├── index.js                  Точка входа библиотеки (экспорт всех модулей)
-│   ├── lu.version                Файл версии ядра
-│   ├── main.js                   Пример программной сборки сцены
-│   ├── core/
-│   │   ├── Component.js          Базовый класс компонентов
-│   │   ├── Engine.js             Главный класс управления жизненным циклом и циклом рендера
-│   │   ├── GameObject.js         Сущность сцены (контейнер компонентов и пространственных данных)
-│   │   ├── InputManager.js       Централизованный диспетчер ввода (мышь, клавиатура, касания)
-│   │   ├── Renderer.js           Обертка WebGL-контекста Three.js, камеры и сцены
-│   │   └── TouchControls.js      Обработчик мобильного ввода и виртуального джойстика
-│   └── physics/
-│       ├── Colliders.js          Коллайдеры (BoxCollider, HeightfieldCollider)
-│       ├── PhysicsEngine.js      Дискретный симулятор физики и столкновений
-│       └── RigidBody.js          Компонент твердого тела
-├── exmpl/
-│   ├── basic/                    Минималистичный базовый пример работы движка
-│   │   ├── index.html
-│   │   └── main.js
-│   └── minecraft/                Комплексный демонстрационный проект воксельной песочницы
-│       ├── index.html
-│       ├── game/
-│       └── Lumina/
-├── README.md                     Основное описание проекта
-├── doc_ru.md                     Полная техническая спецификация API
-└── .hintrc                       Конфигурация линтера
+## Управление
+
+- `WASD` — движение
+- `Shift` — бег
+- `C` / `Ctrl` — присесть
+- `E` — действие / открыть или закрыть дверцу укрытия
+- `Q` — выйти из укрытия
+- `Пробел` — задержка дыхания (в режиме без микрофона)
+- `Esc` — пауза
+
+## Запуск
+
+Для работы ES-модулей игру нужно запускать через локальный веб-сервер (требуется Node.js):
+
+```bash
+node editor-server.js
 ```
 
-## Быстрый старт
+После запуска игра откроется по адресу `http://127.0.0.1:3000/index.html`, а встроенный 3D-редактор карты — по адресу `http://127.0.0.1:3000/editor.html`. На Windows для быстрого запуска редактора можно использовать `start-editor.bat`.
 
-### 1. Подключение разметки HTML
+## Сборка для Windows (.exe)
 
-Для функционирования движка требуется элемент `<canvas>` и карта импортов (importmap) для Three.js.
+Автономная сборка на базе Electron находится в папке `game_builder/`. Для создания портативного `.exe` достаточно запустить `game_builder/build.bat` или выполнить в папке `game_builder`:
 
-```html
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LuminaEngine App</title>
-    <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; }
-        #gameCanvas { width: 100%; height: 100%; display: block; }
-    </style>
-</head>
-<body>
-    <canvas id="gameCanvas"></canvas>
-
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-        }
-    }
-    </script>
-    <script type="module" src="./main.js"></script>
-</body>
-</html>
+```bash
+npm install
+npm run build
 ```
 
-### 2. Инициализация и создание сцены
+Подробнее о командах сборки написано в [game_builder/README.md](game_builder/README.md).
 
-```javascript
-import * as THREE from 'three';
-import { Engine, GameObject, BoxCollider, RigidBody, Component } from './lumina/index.js';
+## Структура проекта
 
-// 1. Инициализация ядра движка
-const engine = new Engine('gameCanvas');
+- `index.html`, `main.js`, `styles.css` — точка входа и интерфейс игры
+- `src/game/` — логика сюжета, контроллер игрока, ИИ монстра и UI
+- `src/world/` — постройка хрущевки и двора, ЭЛТ-телевизор, текстуры и правки карты
+- `src/editor/` — встроенный 3D-редактор карты
+- `lumina/` — облегченный игровой движок поверх Three.js (физика AABB, ввод, звук, рендер и пост-обработка)
+- `assets/` — текстуры, звук и данные карты
+- `game_builder/` — упаковщик игры в Windows `.exe` через Electron
 
-// 2. Настройка освещения
-const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-engine.renderer.scene.add(ambient);
+## Авторы и лицензия
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.position.set(10, 20, 10);
-dirLight.castShadow = true;
-engine.renderer.scene.add(dirLight);
+- Код проекта распространяется по лицензии [MIT](LICENSE).
+- Сторонние фототекстуры, музыка и звуковые эффекты указаны в [CREDITS.md](CREDITS.md).
 
-// 3. Создание статической поверхности
-const floor = new GameObject('Floor');
-const floorMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(20, 1, 20),
-    new THREE.MeshStandardMaterial({ color: 0x444444 })
-);
-floorMesh.receiveShadow = true;
-floor.transform.add(floorMesh);
-floor.transform.position.set(0, -0.5, 0);
-floor.addComponent(BoxCollider, new THREE.Vector3(20, 1, 20));
-floor.addComponent(RigidBody, { bodyType: 'static' });
-engine.addGameObject(floor);
-
-// 4. Создание динамического физического объекта
-const box = new GameObject('Box');
-const boxMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(1.5, 1.5, 1.5),
-    new THREE.MeshStandardMaterial({ color: 0x2980b9 })
-);
-boxMesh.castShadow = true;
-box.transform.add(boxMesh);
-box.transform.position.set(0, 8, 0);
-box.addComponent(BoxCollider, new THREE.Vector3(1.5, 1.5, 1.5));
-box.addComponent(RigidBody, {
-    bodyType: 'dynamic',
-    friction: 0.2,
-    restitution: 0.3,
-    useGravity: true
-});
-engine.addGameObject(box);
-
-// 5. Позиционирование камеры и запуск цикла
-engine.renderer.camera.position.set(0, 6, 12);
-engine.renderer.camera.lookAt(0, 1, 0);
-engine.start();
-```
-
-### 3. Разработка пользовательского компонента
-
-Каждый компонент наследуется от базового класса `Component` и реализует методы жизненного цикла `start()` и `update(deltaTime)`:
-
-```javascript
-class MoverComponent extends Component {
-    constructor(gameObject, speed = 5.0) {
-        super(gameObject);
-        this.speed = speed;
-    }
-
-    start() {
-        // Вызывается однократно при регистрации объекта в движке
-    }
-
-    update(deltaTime) {
-        // Вызывается на каждом кадре перед рендером
-        const input = this.engine.inputManager;
-        if (input.isKeyDown('KeyW')) {
-            this.transform.position.z -= this.speed * deltaTime;
-        }
-        if (input.isKeyDown('KeyS')) {
-            this.transform.position.z += this.speed * deltaTime;
-        }
-    }
-}
-
-box.addComponent(MoverComponent, 4.0);
-```
-
-## Документация
-
-Подробная техническая спецификация архитектуры, всех классов, методов, типов данных и жизненного цикла доступна в файле [doc_ru.md](doc_ru.md).
