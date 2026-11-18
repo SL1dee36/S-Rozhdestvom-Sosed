@@ -36,6 +36,12 @@ function startStaticServer() {
         const srv = http.createServer((req, res) => {
             try {
                 const reqUrl = new URL(req.url, 'http://127.0.0.1');
+                if (reqUrl.pathname === '/__quit') {
+                    res.writeHead(200);
+                    res.end('OK');
+                    setTimeout(() => app.quit(), 50);
+                    return;
+                }
                 let relPath = decodeURIComponent(reqUrl.pathname);
                 if (relPath === '/' || relPath === '') {
                     relPath = '/index.html';

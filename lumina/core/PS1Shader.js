@@ -69,11 +69,13 @@ export const VHS_POST_SHADER = {
         tDiffuse: { value: null },
         uTime: { value: 0 },
         uResolution: { value: new THREE.Vector2(640, 480) },
-        uGrain: { value: 0.085 },
-        uAberration: { value: 0.0024 },
-        uVSync: { value: 0.55 },
-        uScanlines: { value: 0.10 },
-        uVignette: { value: 0.28 },
+        uGrain: { value: 0.065 },
+        uSharpen: { value: 0.48 },
+        uAberration: { value: 0.0008 },
+        uVSync: { value: 0.0 },
+        uScanlines: { value: 0.0 },
+        uVignette: { value: 0.30 },
+        uWakeVignette: { value: 0.0 },
         uPanic: { value: 0.0 },
         uFade: { value: 1.0 },
         uPeephole: { value: 0.0 },
@@ -91,10 +93,12 @@ export const VHS_POST_SHADER = {
         uniform float uTime;
         uniform vec2 uResolution;
         uniform float uGrain;
+        uniform float uSharpen;
         uniform float uAberration;
         uniform float uVSync;
         uniform float uScanlines;
         uniform float uVignette;
+        uniform float uWakeVignette;
         uniform float uPanic;
         uniform float uFade;
         uniform float uPeephole;
@@ -107,6 +111,14 @@ export const VHS_POST_SHADER = {
             return fract(p.x * p.y);
         }
 
+        vec3 sampleColor(vec2 coord, float aber) {
+            vec2 dir = (coord - 0.5) * 2.0;
+            float r = texture2D(tDiffuse, clamp(coord + dir * aber, 0.001, 0.999)).r;
+            float g = texture2D(tDiffuse, clamp(coord, 0.001, 0.999)).g;
+            float b = texture2D(tDiffuse, clamp(coord - dir * aber, 0.001, 0.999)).b;
+            return vec3(r, g, b);
+        }
+
         void main() {
             vec2 uv = vUv;
 
@@ -116,38 +128,44 @@ export const VHS_POST_SHADER = {
                 uv = 0.5 + centered * (1.0 - 0.45 * uPeephole * r2 * 4.0);
             }
 
-            float barPos = fract(uTime * 0.22);
-            float distToBar = abs(uv.y - barPos);
-            float barMask = smoothstep(0.055, 0.0, distToBar) * uVSync;
-            float tearOffset = sin(uv.y * 120.0 + uTime * 35.0) * 0.008 * barMask;
-            tearOffset += (hash(vec2(floor(uv.y * 240.0), floor(uTime * 24.0))) - 0.5) * 0.016 * barMask;
+            if (uGlitchSpike > 0.01) {
+                float spikeRow = step(0.92 - uGlitchSpike * 0.4, hash(vec2(floor(uv.y * 48.0), floor(uTime * 18.0))));
+                float spikeOffset = (hash(vec2(uv.y, uTime)) - 0.5) * 0.04 * uGlitchSpike * spikeRow;
+                uv.x += spikeOffset;
+            }
 
-            float spikeRow = step(0.92 - uGlitchSpike * 0.4, hash(vec2(floor(uv.y * 48.0), floor(uTime * 18.0))));
-            float spikeOffset = (hash(vec2(uv.y, uTime)) - 0.5) * 0.045 * uGlitchSpike * spikeRow;
+            float aber = uAberration * (1.0 + uPanic * 2.0 + uGlitchSpike * 3.0);
+            vec3 centerCol = sampleColor(uv, aber);
 
-            uv.x += tearOffset + spikeOffset;
+            // PS1 Crisp Sharpening (Unsharp Mask kernel)
+            vec2 texel = 1.0 / max(uResolution, vec2(1.0));
+            vec3 nN = texture2D(tDiffuse, clamp(uv + vec2(0.0, texel.y), 0.001, 0.999)).rgb;
+            vec3 nS = texture2D(tDiffuse, clamp(uv - vec2(0.0, texel.y), 0.001, 0.999)).rgb;
+            vec3 nE = texture2D(tDiffuse, clamp(uv + vec2(texel.x, 0.0), 0.001, 0.999)).rgb;
+            vec3 nW = texture2D(tDiffuse, clamp(uv - vec2(texel.x, 0.0), 0.001, 0.999)).rgb;
+            vec3 blurCol = (nN + nS + nE + nW) * 0.25;
+            vec3 color = centerCol + (centerCol - blurCol) * (uSharpen * 1.65);
 
-            uv.x += sin(uv.y * 40.0 + uTime * 6.0) * 0.0005 * (uVSync + uGlitchSpike);
+            // Fine Film Grain
+            float grain = (hash(floor(uv * uResolution) + fract(uTime * 23.17)) - 0.5) * 2.0;
+            color += grain * (uGrain + uGlitchSpike * 0.12);
 
-            float aber = uAberration * (1.0 + uPanic * 2.2 + barMask * 2.0 + uGlitchSpike * 3.5);
-            vec2 dir = (uv - 0.5) * 2.0;
-            float r = texture2D(tDiffuse, clamp(uv + dir * aber, 0.001, 0.999)).r;
-            float g = texture2D(tDiffuse, clamp(uv, 0.001, 0.999)).g;
-            float b = texture2D(tDiffuse, clamp(uv - dir * aber, 0.001, 0.999)).b;
-            vec3 color = vec3(r, g, b);
-
-            float barNoise = hash(floor(uv * uResolution) + floor(uTime * 30.0));
-            color += vec3(barNoise * 0.22 * barMask);
-
-            float scan = sin(uv.y * uResolution.y * 3.14159);
-            color *= 1.0 - (uScanlines * 0.5 * (1.0 - scan));
-
-            float grain = (hash(floor(uv * uResolution * 0.8) + fract(uTime * 17.31)) - 0.5) * 2.0;
-            color += grain * (uGrain + uGlitchSpike * 0.14);
-
+            // Base Vignette
             float dist = length(vUv - 0.5);
             float vig = smoothstep(0.32, 0.86, dist);
             color *= 1.0 - vig * uVignette;
+
+            // Awakening Eyelid / Vignette Effect
+            if (uWakeVignette > 0.001) {
+                vec2 eyeUv = vUv - 0.5;
+                float eyeOpen = max(0.02, 1.0 - uWakeVignette);
+                eyeUv.y /= (eyeOpen * 0.72);
+                eyeUv.x /= (0.55 + eyeOpen * 0.45);
+                float eyeDist = length(eyeUv);
+                float wakeMask = smoothstep(0.28, 0.85, eyeDist);
+                float darkFactor = clamp(wakeMask + pow(uWakeVignette, 1.6), 0.0, 1.0);
+                color *= (1.0 - darkFactor);
+            }
 
             if (uPanic > 0.01) {
                 float pulse = 0.65 + 0.35 * sin(uTime * 8.0);
@@ -160,8 +178,9 @@ export const VHS_POST_SHADER = {
                 color *= mix(1.0, hole, uPeephole);
             }
 
-            color = pow(clamp(color, 0.0, 1.0), vec3(0.88)) * 1.14;
+            color = pow(clamp(color, 0.0, 1.0), vec3(0.90)) * 1.12;
 
+            // PS1 15-bit (5-5-5) color quantization
             color = floor(color * 31.0 + 0.5) / 31.0;
 
             color *= uFade;
@@ -169,4 +188,3 @@ export const VHS_POST_SHADER = {
         }
     `
 };
-

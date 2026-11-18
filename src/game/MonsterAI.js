@@ -76,10 +76,14 @@ export class MonsterAI extends Component {
 
     _buildMesh() {
         const root = this.gameObject.transform;
-        const darkMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0d, roughness: 0.95 });
-        const bootMat = new THREE.MeshStandardMaterial({ color: 0x161414, roughness: 0.9 });
-        const redHatMat = new THREE.MeshStandardMaterial({ color: 0x6e1010, roughness: 0.9 });
-        const furMat = new THREE.MeshStandardMaterial({ color: 0x8f887d, roughness: 0.95 });
+        const coatMat = new THREE.MeshStandardMaterial({ color: 0x591212, roughness: 0.88 });
+        const pantsMat = new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 0.92 });
+        const bootMat = new THREE.MeshStandardMaterial({ color: 0x141210, roughness: 0.82 });
+        const skinMat = new THREE.MeshStandardMaterial({ color: 0x9e8472, roughness: 0.85 });
+        const redHatMat = new THREE.MeshStandardMaterial({ color: 0x751414, roughness: 0.88 });
+        const furMat = new THREE.MeshStandardMaterial({ color: 0xa69f92, roughness: 0.95 });
+        const beltMat = new THREE.MeshStandardMaterial({ color: 0x121110, roughness: 0.65 });
+        const buckleMat = new THREE.MeshStandardMaterial({ color: 0x9c8236, metalness: 0.55, roughness: 0.4 });
         const bladeMat = new THREE.MeshStandardMaterial({ color: 0x7b8288, metalness: 0.6, roughness: 0.35 });
         const bloodMat = new THREE.MeshBasicMaterial({ color: 0x6b0808 });
 
@@ -88,60 +92,95 @@ export class MonsterAI extends Component {
         const buildLeg = (hipX) => {
             const legPivot = new THREE.Group();
             legPivot.position.set(hipX, 0.92, 0);
-            const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.50, 0.20), darkMat);
-            thigh.position.y = -0.25;
-            const shin = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.38, 0.17), darkMat);
-            shin.position.y = -0.66;
-            const boot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.27), bootMat);
+            const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.48, 0.20), pantsMat);
+            thigh.position.y = -0.24;
+            const shin = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.38, 0.17), pantsMat);
+            shin.position.y = -0.65;
+            const bootCuff = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.10, 0.19), furMat);
+            bootCuff.position.set(0, -0.76, 0.01);
+            const boot = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.15, 0.28), bootMat);
             boot.position.set(0, -0.85, 0.04);
-            legPivot.add(thigh, shin, boot);
+            legPivot.add(thigh, shin, bootCuff, boot);
             return legPivot;
         };
 
-        this.leftLeg = buildLeg(-0.14);
-        this.rightLeg = buildLeg(0.14);
+        this.leftLeg = buildLeg(-0.15);
+        this.rightLeg = buildLeg(0.15);
 
-        this.torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.85, 0.36), darkMat);
+        this.torso = new THREE.Group();
         this.torso.position.set(0, 1.32, 0.06);
-        this.torso.rotation.x = 0.24;
+        this.torso.rotation.x = 0.22;
+        const torsoCoat = new THREE.Mesh(new THREE.BoxGeometry(0.60, 0.86, 0.36), coatMat);
+        const furCenterStrip = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.87, 0.38), furMat);
+        const furBottomHem = new THREE.Mesh(new THREE.BoxGeometry(0.63, 0.10, 0.39), furMat);
+        furBottomHem.position.y = -0.40;
+        const furCollar = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.10, 0.38), furMat);
+        furCollar.position.set(0, 0.42, 0.02);
+        const belt = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.09, 0.38), beltMat);
+        belt.position.y = -0.14;
+        const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.11, 0.03), buckleMat);
+        buckle.position.set(0, -0.14, 0.19);
+        this.torso.add(torsoCoat, furCenterStrip, furBottomHem, furCollar, belt, buckle);
 
         this.leftArm = new THREE.Group();
         this.leftArm.position.set(-0.38, 1.56, 0.12);
-        const leftArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.82, 0.14), darkMat);
-        leftArmMesh.position.y = -0.36;
-        this.leftArm.add(leftArmMesh);
+        const leftArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.68, 0.16), coatMat);
+        leftArmMesh.position.y = -0.32;
+        const leftCuff = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.09, 0.18), furMat);
+        leftCuff.position.y = -0.64;
+        const leftGlove = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.14, 0.14), bootMat);
+        leftGlove.position.y = -0.73;
+        this.leftArm.add(leftArmMesh, leftCuff, leftGlove);
 
         this.rightArm = new THREE.Group();
         this.rightArm.position.set(0.38, 1.56, 0.12);
-        const armMesh = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.80, 0.14), darkMat);
-        armMesh.position.y = -0.35;
+        const armMesh = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.68, 0.16), coatMat);
+        armMesh.position.y = -0.32;
+        const rightCuff = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.09, 0.18), furMat);
+        rightCuff.position.y = -0.64;
+        const rightGlove = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.14, 0.14), bootMat);
+        rightGlove.position.y = -0.73;
+        const knifeHandle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.16, 0.04), beltMat);
+        knifeHandle.position.set(0, -0.74, 0.04);
+        knifeHandle.rotation.x = Math.PI / 2.2;
         const knifeBlade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.48, 0.018), bladeMat);
-        knifeBlade.position.set(0, -0.78, 0.18);
+        knifeBlade.position.set(0, -0.78, 0.22);
         knifeBlade.rotation.x = Math.PI / 2.2;
-        const bloodTip = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.2, 0.02), bloodMat);
-        bloodTip.position.set(0, -0.82, 0.3);
+        const bloodTip = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.22, 0.02), bloodMat);
+        bloodTip.position.set(0, -0.82, 0.34);
         bloodTip.rotation.x = Math.PI / 2.2;
-        this.rightArm.add(armMesh, knifeBlade, bloodTip);
+        this.rightArm.add(armMesh, rightCuff, rightGlove, knifeHandle, knifeBlade, bloodTip);
 
         this.headGroup = new THREE.Group();
-        this.headGroup.position.set(0, 1.82, 0.22);
-        const skull = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.34, 0.32), darkMat);
-        const hatTrim = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.08, 8), furMat);
-        hatTrim.position.y = 0.17;
-        const hatCone = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.42, 7), redHatMat);
-        hatCone.position.set(-0.04, 0.36, -0.05);
+        this.headGroup.position.set(0, 1.82, 0.20);
+        const skull = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.32, 0.30), skinMat);
+        const nose = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.06), skinMat);
+        nose.position.set(0, 0.0, 0.17);
+        const brow = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.035, 0.04), furMat);
+        brow.position.set(0, 0.065, 0.155);
+        const beardUpper = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.16, 0.22), furMat);
+        beardUpper.position.set(0, -0.10, 0.08);
+        const beardLower = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.26, 6), furMat);
+        beardLower.rotation.x = Math.PI;
+        beardLower.position.set(0, -0.24, 0.10);
+        const hatTrim = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.09, 8), furMat);
+        hatTrim.position.y = 0.16;
+        const hatCone = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.42, 7), redHatMat);
+        hatCone.position.set(-0.04, 0.35, -0.05);
         hatCone.rotation.z = 0.28;
         hatCone.rotation.x = -0.2;
+        const hatPom = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), furMat);
+        hatPom.position.set(-0.10, 0.54, -0.09);
 
         const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        this.eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.025, 0.02), eyeMat);
-        this.eyeL.position.set(-0.065, 0.03, 0.165);
-        this.eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.025, 0.02), eyeMat);
-        this.eyeR.position.set(0.065, 0.03, 0.165);
+        this.eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.026, 0.02), eyeMat);
+        this.eyeL.position.set(-0.065, 0.03, 0.155);
+        this.eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.026, 0.02), eyeMat);
+        this.eyeR.position.set(0.065, 0.03, 0.155);
         this.eyeL.visible = false;
         this.eyeR.visible = false;
 
-        this.headGroup.add(skull, hatTrim, hatCone, this.eyeL, this.eyeR);
+        this.headGroup.add(skull, nose, brow, beardUpper, beardLower, hatTrim, hatCone, hatPom, this.eyeL, this.eyeR);
         this.bodyGroup.add(this.leftLeg, this.rightLeg, this.torso, this.leftArm, this.rightArm, this.headGroup);
         root.add(this.bodyGroup);
         root.traverse((c) => {
@@ -861,32 +900,43 @@ export class MonsterAI extends Component {
                     this._balconyTimer += deltaTime;
                     this.transform.rotation.y = Math.PI;
                     this._animateLimbs(deltaTime, 0, 'idle');
-                    if (this._balconyTimer >= 1.8) {
+                    if (this._balconyTimer >= 1.5) {
                         this._balconyState = 'pounding';
                         this._balconyTimer = 1.05;
                         this._balconyHits = 0;
-                        this._balconyMaxHits = 4 + Math.floor(Math.random() * 4);
+                        this._balconyMaxHits = 3;
                     }
                 } else if (this._balconyState === 'pounding') {
                     this._balconyTimer += deltaTime;
                     this.transform.rotation.y = Math.PI;
                     this._animateLimbs(deltaTime, 0, 'wreck_smash');
-                    if (this._balconyTimer >= 1.35) {
+                    if (this._balconyTimer >= 1.25) {
                         this._balconyTimer = 0;
                         this._balconyHits++;
                         const dPos = new THREE.Vector3(0.85, 1.2, -3.45);
-                        this.engine.audioSystem.playSpatialOneShot('door_pound', dPos, {
-                            bufferKey: 'door_bang',
-                            volume: 1.25,
-                            playbackRate: 0.78 + Math.random() * 0.14
-                        });
-                        if (this._balconyHits % 2 === 1 || this._balconyHits === this._balconyMaxHits) {
-                            this.engine.audioSystem.playSpatialOneShot('monster_roar', dPos, { volume: 0.45, maxDistance: 24 });
-                        }
-                        this.engine.renderer.triggerGlitch(0.45);
                         if (this._balconyHits >= this._balconyMaxHits) {
                             this._balconyState = 'done';
-                            this.balconyAssaultDone = true;
+                            this.engine.audioSystem.playSpatialOneShot('glass_break', dPos, {
+                                bufferKey: 'glass_break',
+                                volume: 1.3
+                            });
+                            this.engine.audioSystem.playSpatialOneShot('door_crash', dPos, { volume: 1.25 });
+                            this.engine.renderer.triggerGlitch(1.2);
+                            if (this.world.doors?.balcony) {
+                                if (this.world.doors.balcony.glassMesh) {
+                                    this.world.doors.balcony.glassMesh.visible = false;
+                                }
+                                this.world.doors.balcony.setOpen(true, false, true);
+                            }
+                            this.startChasePlayer('balcony_broken');
+                            return;
+                        } else {
+                            this.engine.audioSystem.playSpatialOneShot('door_pound', dPos, {
+                                bufferKey: 'door_bang',
+                                volume: 1.25,
+                                playbackRate: 0.85 + Math.random() * 0.12
+                            });
+                            this.engine.renderer.triggerGlitch(0.55);
                         }
                     }
                 } else {

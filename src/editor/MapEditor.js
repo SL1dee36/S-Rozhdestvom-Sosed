@@ -31,8 +31,9 @@ const GROUP_LABELS = {
     group_sideboard: 'Сервант',
     group_tv: 'Телевизор и тумба',
     group_fridge: 'Холодильник',
-    group_stove: 'Газовая плита',
-    group_sink: 'Раковина',
+    group_stove: 'Газовая плита и вытяжка',
+    group_kitchen_sink: 'Раковина (Кухня)',
+    group_sink: 'Раковина (Ванная)',
     group_bathtub: 'Ванна',
     group_table_set: 'Стол + блюда'
 };
@@ -69,10 +70,25 @@ const MATERIAL_LABELS = {
     custom: 'Без текстуры (Цвет)'
 };
 
+function degToRad(d) { return (d * Math.PI) / 180; }
+function radToDeg(r) { return (r * 180) / Math.PI; }
+function round3(v) { return Math.round(v * 1000) / 1000; }
+function vecArr(v) { return [round3(v.x), round3(v.y), round3(v.z)]; }
+function eulerArr(e) { return [round3(e.x), round3(e.y), round3(e.z)]; }
+function hexIntToCss(hex) { return '#' + ((hex >>> 0) & 0xffffff).toString(16).padStart(6, '0'); }
+function cssToHexInt(str) { return parseInt((str || '#ffffff').replace('#', ''), 16) || 0; }
+function arrApproxEq(a, b, eps = 0.001) {
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (Math.abs(a[i] - b[i]) > eps) return false;
+    }
+    return true;
+}
+
 const FACTORY_GAMEPLAY = {
-    playerSpawn: { position: [-1.85, 0.05, -2.05], yaw: -2.5, pitch: -0.05 },
+    playerSpawn: { position: [-2.65, 0.05, -1.0], yaw: round3(-Math.PI / 2), pitch: -0.05 },
     hidingSpots: {
-        sofa: { hidePos: [-2.78, 0.25, -1.0], peekPos: [-2.35, 0.28, -1.0], lookYaw: -Math.PI / 2 },
+        sofa: { hidePos: [-2.78, 0.16, -1.0], peekPos: [-2.35, 0.18, -1.0], lookYaw: -Math.PI / 2 },
         wardrobe: { hidePos: [1.52, 0.95, 3.68], peekPos: [1.75, 0.95, 3.68], lookYaw: -Math.PI / 2 },
         pantry: { hidePos: [1.45, 0.92, 2.42], peekPos: [1.68, 0.92, 2.42], lookYaw: -Math.PI / 2 },
         bathroom: { hidePos: [5.65, 0.96, 2.6], peekPos: [5.45, 0.96, 2.6], lookYaw: Math.PI / 2 }
@@ -81,16 +97,22 @@ const FACTORY_GAMEPLAY = {
         frontDoor: { position: [3.05, 0.08, 3.35], rotation: [Math.PI / 2, 0, 0.12] },
         tree: { position: [-2.15, 0.35, 0.45], rotation: [0.25, 0.6, -1.42] }
     },
+    tablePoses: {
+        balcony: { position: [-0.55, 0, -4.25], rotation: [0, 0, 0] },
+        hall: { position: [-1.35, 0, -1.0], rotation: [0, round3(Math.PI / 2), 0] }
+    },
     patrolWaypoints: [
-        [3.1, 0, 3.2],
-        [2.9, 0, 1.0],
-        [0.4, 0, 0.2],
-        [-1.5, 0, -0.8],
-        [0.8, 0, -2.8],
-        [2.8, 0, -1.6],
-        [3.1, 0, 2.4],
-        [4.5, 0, 2.5],
-        [3.1, 0, 3.5]
+        [3.10, 0, 3.20],
+        [2.95, 0, 0.68],
+        [1.10, 0, 0.45],
+        [0.45, 0, -1.55],
+        [-0.35, 0, -2.35],
+        [-0.35, 0, 0.45],
+        [1.10, 0, 0.45],
+        [2.90, 0, -1.45],
+        [3.10, 0, 2.50],
+        [4.60, 0, 2.55],
+        [3.10, 0, 3.55]
     ]
 };
 
@@ -106,21 +128,6 @@ const ROOM_PRESETS = {
     courtyard: { pos: [-1.5, 4.5, -14.0], look: [-1.3, 1.2, -25.0] },
     overview: { pos: [0.5, 13.5, 9.0], look: [1.0, 0.0, 0.0] }
 };
-
-function degToRad(d) { return (d * Math.PI) / 180; }
-function radToDeg(r) { return (r * 180) / Math.PI; }
-function round3(v) { return Math.round(v * 1000) / 1000; }
-function vecArr(v) { return [round3(v.x), round3(v.y), round3(v.z)]; }
-function eulerArr(e) { return [round3(e.x), round3(e.y), round3(e.z)]; }
-function hexIntToCss(hex) { return '#' + ((hex >>> 0) & 0xffffff).toString(16).padStart(6, '0'); }
-function cssToHexInt(str) { return parseInt((str || '#ffffff').replace('#', ''), 16) || 0; }
-function arrApproxEq(a, b, eps = 0.001) {
-    if (!a || !b || a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-        if (Math.abs(a[i] - b[i]) > eps) return false;
-    }
-    return true;
-}
 
 class MapEditor {
     constructor() {
@@ -469,8 +476,8 @@ class MapEditor {
         this._applyPreviewStates();
         this._attachGizmoToSelection();
         this._updateSelectionOutline();
-        this._updateInspectorValuesOnly();
-        this._showToast(next ? 'Превью: стол накрыт (Act I)' : 'Превью стола выключено');
+        this._updateInspector();
+        this._showToast(next ? 'Превью: стол установлен в зале и накрыт (Act I)' : 'Превью: стол на балконе (Старт)');
     }
 
     setOpenDoorsPreview(on) {
@@ -480,6 +487,7 @@ class MapEditor {
         this._applyPreviewStates();
         this._attachGizmoToSelection();
         this._updateSelectionOutline();
+        this._updateInspector();
         this._showToast(next ? 'Дверцы (холодильник/плита/прятки) открыты' : 'Дверцы закрыты');
     }
 
@@ -502,10 +510,10 @@ class MapEditor {
     }
 
     _applyPreviewStates() {
-        this.world.fridge?.setOpen?.(this.openDoorsPreview);
-        this.world.stove?.setOpen?.(this.openDoorsPreview);
+        this.world.fridge?.setOpen?.(this.openDoorsPreview, false, true);
+        this.world.stove?.setOpen?.(this.openDoorsPreview, false, true);
         for (const spot of (this.world.hidingSpots || [])) {
-            spot.setDoorClosed?.(!this.openDoorsPreview);
+            spot.setDoorClosed?.(!this.openDoorsPreview, true);
         }
 
         for (const obj of this.builder.editableObjects) {
@@ -517,13 +525,15 @@ class MapEditor {
             if (this.tableSetPreview) {
                 this.world.table?.unfold?.();
             } else {
-                this.world.table?.fold?.();
+                this.world.table?.placeOnBalcony?.();
             }
             for (const obj of this.builder.editableObjects) {
                 if (obj.userData.deleted) {
                     obj.visible = false;
-                } else if (this.tableSetPreview && obj.userData.activatedGroup === 'decor') {
-                    obj.visible = true;
+                } else if (this.tableSetPreview && (obj.userData.activatedGroup === 'decor' || obj.userData.activatedGroup === 'table')) {
+                    if (obj.name !== 'TablePlacementZone' && obj.name !== 'StoolPlacementZone') {
+                        obj.visible = true;
+                    }
                 } else if (!this.tableSetPreview && obj.userData.activatedGroup === 'table' && obj.userData.logicalVisible === true) {
                     obj.visible = true;
                 }
@@ -590,6 +600,9 @@ class MapEditor {
         obj.userData.materialPatch = null;
         if (obj.userData.initialMaterialKey !== undefined) {
             obj.userData.materialKey = obj.userData.initialMaterialKey;
+        }
+        if (obj.userData.setOpenAngle && obj.userData.initialOpenAngle !== undefined) {
+            obj.userData.setOpenAngle(obj.userData.initialOpenAngle);
         }
         if (obj.userData.setBaseYaw) {
             const openOff = obj.userData.doorOpenOffset || 0;
@@ -702,6 +715,12 @@ class MapEditor {
                 rotation: new THREE.Euler(...FACTORY_GAMEPLAY.destroyedPoses.tree.rotation)
             }
         };
+        if (this.world.table) {
+            this.world.table.balconyPos.set(...FACTORY_GAMEPLAY.tablePoses.balcony.position);
+            this.world.table.balconyRot.set(...FACTORY_GAMEPLAY.tablePoses.balcony.rotation);
+            this.world.table.hallPos.set(...FACTORY_GAMEPLAY.tablePoses.hall.position);
+            this.world.table.hallRot.set(...FACTORY_GAMEPLAY.tablePoses.hall.rotation);
+        }
         this.world.patrolWaypoints = FACTORY_GAMEPLAY.patrolWaypoints.map(p => new THREE.Vector3(p[0], p[1], p[2]));
 
         this.builder.applyMapOverrides(normalized);
@@ -768,6 +787,19 @@ class MapEditor {
             }
             this._syncGameplayToOverrides();
             return;
+        }
+
+        if (name === 'FoldingTable' && !obj.userData.deleted && this.world.table) {
+            if (this.tableSetPreview) {
+                this.world.table.hallPos.copy(obj.position);
+                this.world.table.hallRot.copy(obj.rotation);
+                this._syncGameplayToOverrides();
+                return;
+            } else {
+                this.world.table.balconyPos.copy(obj.position);
+                this.world.table.balconyRot.copy(obj.rotation);
+                this._syncGameplayToOverrides();
+            }
         }
 
         const logicalVis = obj.userData.logicalVisible !== undefined ? obj.userData.logicalVisible : obj.visible;
@@ -954,6 +986,35 @@ class MapEditor {
             }
             if (Object.keys(dpOut).length > 0) gp.destroyedPoses = dpOut;
         }
+
+        if (this.world.table) {
+            const tpOut = {};
+            const bPos = vecArr(this.world.table.balconyPos);
+            const bRot = eulerArr(this.world.table.balconyRot);
+            const bDef = FACTORY_GAMEPLAY.tablePoses.balcony;
+            if (!arrApproxEq(bPos, bDef.position) || !arrApproxEq(bRot, bDef.rotation)) {
+                tpOut.balcony = { position: bPos, rotation: bRot };
+            }
+            const hPos = vecArr(this.world.table.hallPos);
+            const hRot = eulerArr(this.world.table.hallRot);
+            const hDef = FACTORY_GAMEPLAY.tablePoses.hall;
+            if (!arrApproxEq(hPos, hDef.position) || !arrApproxEq(hRot, hDef.rotation)) {
+                tpOut.hall = { position: hPos, rotation: hRot };
+            }
+            if (Object.keys(tpOut).length > 0) gp.tablePoses = tpOut;
+        }
+
+        const doorAnglesOut = {};
+        for (const obj of this.builder.editableObjects) {
+            if (obj.userData?.getOpenAngle && obj.userData?.initialOpenAngle !== undefined) {
+                const curA = round3(obj.userData.getOpenAngle());
+                const initA = round3(obj.userData.initialOpenAngle);
+                if (Math.abs(curA - initA) > 0.001) {
+                    doorAnglesOut[obj.name] = curA;
+                }
+            }
+        }
+        if (Object.keys(doorAnglesOut).length > 0) gp.doorOpenAngles = doorAnglesOut;
 
         this.overrides.gameplay = gp;
         saveOverridesToLocalStorage(this.overrides);
@@ -1389,7 +1450,25 @@ class MapEditor {
     }
 
     _syncSingleObjectLiveEffects(obj) {
-        if (this.act4Preview && (obj.name === 'FrontDoor' || obj.name === 'ChristmasTree')) return;
+        if (this.act4Preview && obj.name === 'FrontDoor' && this.world.destroyedPoses?.frontDoor) {
+            this.world.destroyedPoses.frontDoor.position.copy(obj.position);
+            this.world.destroyedPoses.frontDoor.rotation.copy(obj.rotation);
+            return;
+        }
+        if (this.act4Preview && obj.name === 'ChristmasTree' && this.world.destroyedPoses?.tree) {
+            this.world.destroyedPoses.tree.position.copy(obj.position);
+            this.world.destroyedPoses.tree.rotation.copy(obj.rotation);
+            return;
+        }
+        if (obj.name === 'FoldingTable' && this.world.table) {
+            if (this.tableSetPreview) {
+                this.world.table.hallPos.copy(obj.position);
+                this.world.table.hallRot.copy(obj.rotation);
+            } else {
+                this.world.table.balconyPos.copy(obj.position);
+                this.world.table.balconyRot.copy(obj.rotation);
+            }
+        }
         if (obj.userData.doorCfg) {
             obj.userData.doorCfg.pivotPos.copy(obj.position);
         }
@@ -1799,12 +1878,28 @@ class MapEditor {
                     resetCount++;
                     continue;
                 }
+                if (obj.name === 'FoldingTable' && this.world.table) {
+                    if (this.tableSetPreview) {
+                        const def = FACTORY_GAMEPLAY.tablePoses.hall;
+                        this.world.table.hallPos.set(...def.position);
+                        this.world.table.hallRot.set(...def.rotation);
+                        this._syncGameplayToOverrides();
+                        resetCount++;
+                        continue;
+                    } else {
+                        const def = FACTORY_GAMEPLAY.tablePoses.balcony;
+                        this.world.table.balconyPos.set(...def.position);
+                        this.world.table.balconyRot.set(...def.rotation);
+                        this._syncGameplayToOverrides();
+                    }
+                }
                 if (obj.userData.isAdded) {
                     skippedAdded++;
                     continue;
                 }
                 this._restoreBuiltInObjectToInitial(obj);
                 delete this.overrides.modifiedObjects[obj.name];
+                this._syncGameplayToOverrides();
                 resetCount++;
             }
             if (resetCount === 0 && skippedAdded > 0) {
@@ -2774,6 +2869,7 @@ class MapEditor {
             title.textContent = 'Инспектор';
             badge.classList.add('hidden');
             multiBanner?.classList.add('hidden');
+            document.getElementById('sec-all-positions')?.classList.add('hidden');
             return;
         }
 
@@ -2831,6 +2927,7 @@ class MapEditor {
             badge.textContent = 'Маршрут';
         }
 
+        this._renderAllPositionsPanel();
         this._updateInspectorValuesOnly();
     }
 
@@ -3005,6 +3102,1056 @@ class MapEditor {
                     document.getElementById('wpos-x').value = round3(wp.x);
                     document.getElementById('wpos-y').value = round3(wp.y);
                     document.getElementById('wpos-z').value = round3(wp.z);
+                }
+            }
+        }
+        this._updateAllPositionsValues();
+    }
+
+    _makeObjectPoseEntry(objName, label, badge, opts = {}) {
+        const obj = this.builder._editableByName.get(objName);
+        if (!obj || obj.userData?.deleted) return null;
+        const extraActions = [];
+        if (obj.userData?.setOpenState && obj.userData?.isOpen) {
+            extraActions.push(
+                {
+                    label: '🔒 Закр.',
+                    active: !obj.userData.isOpen(),
+                    onClick: () => {
+                        obj.userData.setOpenState(false);
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspector();
+                    }
+                },
+                {
+                    label: '🔓 Откр.',
+                    active: !!obj.userData.isOpen(),
+                    onClick: () => {
+                        obj.userData.setOpenState(true);
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspector();
+                    }
+                }
+            );
+        }
+        if (Array.isArray(opts.extraActions)) {
+            extraActions.push(...opts.extraActions);
+        }
+        const hasOpenAngle = !!(obj.userData?.getOpenAngle && obj.userData?.setOpenAngle);
+        return {
+            id: `obj_${objName}`,
+            label,
+            badge: badge || objName,
+            isActive: () => this.selected?.kind === 'object' && this.selected.obj === obj && (!opts.checkActive || opts.checkActive()),
+            onSelect: () => {
+                if (opts.beforeSelect) opts.beforeSelect();
+                this.selectEntity({ kind: 'object', obj });
+            },
+            getPos: () => vecArr(obj.position),
+            setPos: (x, y, z) => {
+                this._pushUndo();
+                obj.position.set(x, y, z);
+                this._syncSingleObjectLiveEffects(obj);
+                this._syncObjectToOverrides(obj);
+                this._attachGizmoToSelection();
+                this._rebuildHelperVisuals();
+                this._refreshHierarchy();
+                this._updateInspectorValuesOnly();
+                this._updateStatusCounts();
+            },
+            getRotDeg: () => [
+                Math.round(radToDeg(obj.rotation.x) * 10) / 10,
+                Math.round(radToDeg(obj.rotation.y) * 10) / 10,
+                Math.round(radToDeg(obj.rotation.z) * 10) / 10
+            ],
+            setRotDeg: (rx, ry, rz) => {
+                this._pushUndo();
+                obj.rotation.set(degToRad(rx), degToRad(ry), degToRad(rz));
+                this._syncSingleObjectLiveEffects(obj);
+                this._syncObjectToOverrides(obj);
+                this._attachGizmoToSelection();
+                this._rebuildHelperVisuals();
+                this._refreshHierarchy();
+                this._updateInspectorValuesOnly();
+                this._updateStatusCounts();
+            },
+            angleLabel: hasOpenAngle ? 'Угол откр. (°)' : null,
+            getAngleDeg: hasOpenAngle ? () => Math.round(radToDeg(obj.userData.getOpenAngle()) * 10) / 10 : null,
+            setAngleDeg: hasOpenAngle ? (deg) => {
+                this._pushUndo();
+                obj.userData.setOpenAngle(degToRad(deg));
+                this._syncGameplayToOverrides();
+                this._updateSelectionOutline();
+                this._updateInspectorValuesOnly();
+                this._updateStatusCounts();
+            } : null,
+            extraActions
+        };
+    }
+
+    _buildPoseEntriesForSelection() {
+        if (!this.selected) return { title: 'Все позиции элемента', poses: [], subParts: [], groupMembers: [], rootObj: null };
+
+        const poses = [];
+        let title = 'Все позиции элемента';
+        let rootObj = null;
+
+        const addObjPose = (name, label, badge, opts = {}) => {
+            const entry = this._makeObjectPoseEntry(name, label, badge, opts);
+            if (entry) poses.push(entry);
+        };
+
+        const selObj = this.selected.kind === 'object' ? this.selected.obj : null;
+        if (selObj) {
+            const parentName = selObj.userData?.parentEditableName;
+            rootObj = parentName ? (this.builder._editableByName.get(parentName) || selObj) : selObj;
+        }
+        const keyName = rootObj ? rootObj.name : null;
+
+        // 1. Folding Table family (Balcony -> Hall -> Highlight Zone -> Wrecked Act IV)
+        const tableFamily = new Set([
+            'FoldingTable', 'TablePlacementZone', 'WreckedTable',
+            'TableWingL', 'TableWingR', 'Tablecloth',
+            'WreckedTable_Body', 'WreckedTable_Pedestal', 'WreckedTable_Wing', 'WreckedTable_Cloth', 'WreckedTable_Tinsel'
+        ]);
+        if (keyName && tableFamily.has(keyName) && this.world.table) {
+            title = 'Позиции стола-книжки';
+            const foldingObj = this.builder._editableByName.get('FoldingTable');
+            poses.push({
+                id: 'table_balcony',
+                label: '1. На балконе (Сложен, старт)',
+                badge: 'Балкон',
+                isActive: () => this.selected?.kind === 'object' && this.selected.obj === foldingObj && !this.tableSetPreview && !this.act4Preview,
+                onSelect: () => {
+                    if (this.act4Preview) this.setAct4Preview(false);
+                    if (this.tableSetPreview) this.setTableSetPreview(false);
+                    if (foldingObj) this.selectEntity({ kind: 'object', obj: foldingObj });
+                },
+                getPos: () => vecArr(this.world.table.balconyPos),
+                setPos: (x, y, z) => {
+                    this._pushUndo();
+                    this.world.table.balconyPos.set(x, y, z);
+                    if (foldingObj && !this.tableSetPreview && !this.act4Preview) {
+                        foldingObj.position.set(x, y, z);
+                        this._syncObjectToOverrides(foldingObj);
+                    } else {
+                        this._syncGameplayToOverrides();
+                    }
+                    this._attachGizmoToSelection();
+                    this._updateSelectionOutline();
+                    this._updateInspectorValuesOnly();
+                    this._updateStatusCounts();
+                },
+                getRotDeg: () => [
+                    Math.round(radToDeg(this.world.table.balconyRot.x) * 10) / 10,
+                    Math.round(radToDeg(this.world.table.balconyRot.y) * 10) / 10,
+                    Math.round(radToDeg(this.world.table.balconyRot.z) * 10) / 10
+                ],
+                setRotDeg: (rx, ry, rz) => {
+                    this._pushUndo();
+                    this.world.table.balconyRot.set(degToRad(rx), degToRad(ry), degToRad(rz));
+                    if (foldingObj && !this.tableSetPreview && !this.act4Preview) {
+                        foldingObj.rotation.copy(this.world.table.balconyRot);
+                        this._syncObjectToOverrides(foldingObj);
+                    } else {
+                        this._syncGameplayToOverrides();
+                    }
+                    this._attachGizmoToSelection();
+                    this._updateSelectionOutline();
+                    this._updateInspectorValuesOnly();
+                    this._updateStatusCounts();
+                }
+            });
+
+            poses.push({
+                id: 'table_hall',
+                label: '2. В зале (Разложен перед ТВ)',
+                badge: 'Зал (Акт I)',
+                isActive: () => this.selected?.kind === 'object' && this.selected.obj === foldingObj && this.tableSetPreview && !this.act4Preview,
+                onSelect: () => {
+                    if (this.act4Preview) this.setAct4Preview(false);
+                    if (!this.tableSetPreview) this.setTableSetPreview(true);
+                    if (foldingObj) this.selectEntity({ kind: 'object', obj: foldingObj });
+                },
+                getPos: () => vecArr(this.world.table.hallPos),
+                setPos: (x, y, z) => {
+                    this._pushUndo();
+                    this.world.table.hallPos.set(x, y, z);
+                    if (foldingObj && this.tableSetPreview && !this.act4Preview) {
+                        foldingObj.position.set(x, y, z);
+                    }
+                    this._syncGameplayToOverrides();
+                    this._attachGizmoToSelection();
+                    this._updateSelectionOutline();
+                    this._updateInspectorValuesOnly();
+                    this._updateStatusCounts();
+                },
+                getRotDeg: () => [
+                    Math.round(radToDeg(this.world.table.hallRot.x) * 10) / 10,
+                    Math.round(radToDeg(this.world.table.hallRot.y) * 10) / 10,
+                    Math.round(radToDeg(this.world.table.hallRot.z) * 10) / 10
+                ],
+                setRotDeg: (rx, ry, rz) => {
+                    this._pushUndo();
+                    this.world.table.hallRot.set(degToRad(rx), degToRad(ry), degToRad(rz));
+                    if (foldingObj && this.tableSetPreview && !this.act4Preview) {
+                        foldingObj.rotation.copy(this.world.table.hallRot);
+                    }
+                    this._syncGameplayToOverrides();
+                    this._attachGizmoToSelection();
+                    this._updateSelectionOutline();
+                    this._updateInspectorValuesOnly();
+                    this._updateStatusCounts();
+                },
+                extraActions: [
+                    {
+                        label: '⇄ Зону сюда',
+                        onClick: () => {
+                            const zObj = this.builder._editableByName.get('TablePlacementZone');
+                            if (!zObj) return;
+                            this._pushUndo();
+                            zObj.position.copy(this.world.table.hallPos);
+                            zObj.rotation.copy(this.world.table.hallRot);
+                            this._syncObjectToOverrides(zObj);
+                            this._updateInspectorValuesOnly();
+                            this._updateStatusCounts();
+                            this._showToast('Зона подсветки стола выровнена по столу в зале');
+                        }
+                    }
+                ]
+            });
+
+            addObjPose('TablePlacementZone', '3. Зона подсветки стола на полу', 'Подсветка');
+            addObjPose('WreckedTable', '4. Разгромленный стол (Акт IV)', 'Акт IV', {
+                beforeSelect: () => { if (!this.act4Preview) this.setAct4Preview(true); }
+            });
+            addObjPose('TableWingL', '5. Левая створка стола (Лок.)', 'Деталь');
+            addObjPose('TableWingR', '6. Правая створка стола (Лок.)', 'Деталь');
+            addObjPose('Tablecloth', '7. Скатерть на столе (Лок.)', 'Деталь');
+        }
+
+        // 2. Stool family (Kitchen -> Hall -> Highlight Zone)
+        const stoolFamily = new Set(['KitchenStool', 'PlacedHallStool', 'StoolPlacementZone']);
+        if (keyName && stoolFamily.has(keyName)) {
+            title = 'Позиции табуретки';
+            addObjPose('KitchenStool', '1. На кухне у столика (Старт)', 'Кухня');
+            addObjPose('PlacedHallStool', '2. В зале у стола (Поставлена)', 'Зал', {
+                beforeSelect: () => { if (!this.tableSetPreview) this.setTableSetPreview(true); },
+                extraActions: [
+                    {
+                        label: '⇄ Зону сюда',
+                        onClick: () => {
+                            const sObj = this.builder._editableByName.get('PlacedHallStool');
+                            const zObj = this.builder._editableByName.get('StoolPlacementZone');
+                            if (!sObj || !zObj) return;
+                            this._pushUndo();
+                            zObj.position.copy(sObj.position);
+                            zObj.rotation.copy(sObj.rotation);
+                            this._syncObjectToOverrides(zObj);
+                            this._updateInspectorValuesOnly();
+                            this._updateStatusCounts();
+                            this._showToast('Зона подсветки табуретки выровнена');
+                        }
+                    }
+                ]
+            });
+            addObjPose('StoolPlacementZone', '3. Зона подсветки табуретки', 'Подсветка');
+        }
+
+        // 3. Front Door family (Intact -> Destroyed Act IV -> Claw Decal -> Escape Zone)
+        const frontDoorFamily = new Set(['FrontDoor', 'FrontDoor_ClawDecal', 'EntranceEscapeZone']);
+        if (keyName && frontDoorFamily.has(keyName)) {
+            title = 'Позиции входной двери';
+            const fdObj = this.builder._editableByName.get('FrontDoor');
+            if (fdObj) {
+                const getIntactFD = () => {
+                    if (this.act4Preview && this._savedIntactPoses?.frontDoor) {
+                        return this._savedIntactPoses.frontDoor;
+                    }
+                    return { position: fdObj.position, rotation: fdObj.rotation };
+                };
+                poses.push({
+                    id: 'frontdoor_intact',
+                    label: '1. Целая дверь в проёме (Акт I–III)',
+                    badge: 'Целая',
+                    isActive: () => this.selected?.kind === 'object' && this.selected.obj === fdObj && !this.act4Preview,
+                    onSelect: () => {
+                        if (this.act4Preview) this.setAct4Preview(false);
+                        this.selectEntity({ kind: 'object', obj: fdObj });
+                    },
+                    getPos: () => vecArr(getIntactFD().position),
+                    setPos: (x, y, z) => {
+                        this._pushUndo();
+                        if (this.act4Preview) {
+                            if (this._savedIntactPoses?.frontDoor) this._savedIntactPoses.frontDoor.position.set(x, y, z);
+                            const patch = this.overrides.modifiedObjects.FrontDoor || {};
+                            patch.position = [round3(x), round3(y), round3(z)];
+                            this.overrides.modifiedObjects.FrontDoor = patch;
+                            saveOverridesToLocalStorage(this.overrides);
+                        } else {
+                            fdObj.position.set(x, y, z);
+                            this._syncObjectToOverrides(fdObj);
+                        }
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspectorValuesOnly();
+                        this._updateStatusCounts();
+                    },
+                    getRotDeg: () => {
+                        const r = getIntactFD().rotation;
+                        return [
+                            Math.round(radToDeg(r.x) * 10) / 10,
+                            Math.round(radToDeg(r.y) * 10) / 10,
+                            Math.round(radToDeg(r.z) * 10) / 10
+                        ];
+                    },
+                    setRotDeg: (rx, ry, rz) => {
+                        this._pushUndo();
+                        if (this.act4Preview) {
+                            if (this._savedIntactPoses?.frontDoor) {
+                                this._savedIntactPoses.frontDoor.rotation.set(degToRad(rx), degToRad(ry), degToRad(rz));
+                            }
+                            const patch = this.overrides.modifiedObjects.FrontDoor || {};
+                            patch.rotation = [round3(degToRad(rx)), round3(degToRad(ry)), round3(degToRad(rz))];
+                            this.overrides.modifiedObjects.FrontDoor = patch;
+                            saveOverridesToLocalStorage(this.overrides);
+                        } else {
+                            fdObj.rotation.set(degToRad(rx), degToRad(ry), degToRad(rz));
+                            this._syncObjectToOverrides(fdObj);
+                        }
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspectorValuesOnly();
+                        this._updateStatusCounts();
+                    }
+                });
+
+                poses.push({
+                    id: 'frontdoor_act4',
+                    label: '2. Выбита маньяком на полу (Акт IV)',
+                    badge: 'Акт IV',
+                    isActive: () => this.selected?.kind === 'object' && this.selected.obj === fdObj && this.act4Preview,
+                    onSelect: () => {
+                        if (!this.act4Preview) this.setAct4Preview(true);
+                        this.selectEntity({ kind: 'object', obj: fdObj });
+                    },
+                    getPos: () => vecArr(this.world.destroyedPoses.frontDoor.position),
+                    setPos: (x, y, z) => {
+                        this._pushUndo();
+                        this.world.destroyedPoses.frontDoor.position.set(x, y, z);
+                        if (this.act4Preview) fdObj.position.set(x, y, z);
+                        this._syncGameplayToOverrides();
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspectorValuesOnly();
+                        this._updateStatusCounts();
+                    },
+                    getRotDeg: () => {
+                        const r = this.world.destroyedPoses.frontDoor.rotation;
+                        return [
+                            Math.round(radToDeg(r.x) * 10) / 10,
+                            Math.round(radToDeg(r.y) * 10) / 10,
+                            Math.round(radToDeg(r.z) * 10) / 10
+                        ];
+                    },
+                    setRotDeg: (rx, ry, rz) => {
+                        this._pushUndo();
+                        this.world.destroyedPoses.frontDoor.rotation.set(degToRad(rx), degToRad(ry), degToRad(rz));
+                        if (this.act4Preview) fdObj.rotation.copy(this.world.destroyedPoses.frontDoor.rotation);
+                        this._syncGameplayToOverrides();
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspectorValuesOnly();
+                        this._updateStatusCounts();
+                    }
+                });
+            }
+            addObjPose('FrontDoor_ClawDecal', '3. Следы когтей на двери (Лок.)', 'Деталь');
+            addObjPose('EntranceEscapeZone', '4. Зона триггера побега в подъезд', 'Триггер');
+        }
+
+        // 4. Christmas Tree family (Standing -> Fallen Act IV -> TornGarland -> BrokenBaubles -> FallenSantaHat)
+        const treeFamily = new Set(['ChristmasTree', 'TornGarland', 'BrokenBaubles', 'FallenSantaHat']);
+        if (keyName && treeFamily.has(keyName)) {
+            title = 'Позиции новогодней ёлки';
+            const trObj = this.builder._editableByName.get('ChristmasTree');
+            if (trObj) {
+                const getIntactTree = () => {
+                    if (this.act4Preview && this._savedIntactPoses?.tree) {
+                        return this._savedIntactPoses.tree;
+                    }
+                    return { position: trObj.position, rotation: trObj.rotation };
+                };
+                poses.push({
+                    id: 'tree_intact',
+                    label: '1. Стоит в углу зала (Акт I–III)',
+                    badge: 'Целая',
+                    isActive: () => this.selected?.kind === 'object' && this.selected.obj === trObj && !this.act4Preview,
+                    onSelect: () => {
+                        if (this.act4Preview) this.setAct4Preview(false);
+                        this.selectEntity({ kind: 'object', obj: trObj });
+                    },
+                    getPos: () => vecArr(getIntactTree().position),
+                    setPos: (x, y, z) => {
+                        this._pushUndo();
+                        if (this.act4Preview) {
+                            if (this._savedIntactPoses?.tree) this._savedIntactPoses.tree.position.set(x, y, z);
+                            const patch = this.overrides.modifiedObjects.ChristmasTree || {};
+                            patch.position = [round3(x), round3(y), round3(z)];
+                            this.overrides.modifiedObjects.ChristmasTree = patch;
+                            saveOverridesToLocalStorage(this.overrides);
+                        } else {
+                            trObj.position.set(x, y, z);
+                            this._syncObjectToOverrides(trObj);
+                        }
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspectorValuesOnly();
+                        this._updateStatusCounts();
+                    },
+                    getRotDeg: () => {
+                        const r = getIntactTree().rotation;
+                        return [
+                            Math.round(radToDeg(r.x) * 10) / 10,
+                            Math.round(radToDeg(r.y) * 10) / 10,
+                            Math.round(radToDeg(r.z) * 10) / 10
+                        ];
+                    },
+                    setRotDeg: (rx, ry, rz) => {
+                        this._pushUndo();
+                        if (this.act4Preview) {
+                            if (this._savedIntactPoses?.tree) {
+                                this._savedIntactPoses.tree.rotation.set(degToRad(rx), degToRad(ry), degToRad(rz));
+                            }
+                            const patch = this.overrides.modifiedObjects.ChristmasTree || {};
+                            patch.rotation = [round3(degToRad(rx)), round3(degToRad(ry)), round3(degToRad(rz))];
+                            this.overrides.modifiedObjects.ChristmasTree = patch;
+                            saveOverridesToLocalStorage(this.overrides);
+                        } else {
+                            trObj.rotation.set(degToRad(rx), degToRad(ry), degToRad(rz));
+                            this._syncObjectToOverrides(trObj);
+                        }
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspectorValuesOnly();
+                        this._updateStatusCounts();
+                    }
+                });
+
+                poses.push({
+                    id: 'tree_act4',
+                    label: '2. Повалена на пол (Акт IV)',
+                    badge: 'Акт IV',
+                    isActive: () => this.selected?.kind === 'object' && this.selected.obj === trObj && this.act4Preview,
+                    onSelect: () => {
+                        if (!this.act4Preview) this.setAct4Preview(true);
+                        this.selectEntity({ kind: 'object', obj: trObj });
+                    },
+                    getPos: () => vecArr(this.world.destroyedPoses.tree.position),
+                    setPos: (x, y, z) => {
+                        this._pushUndo();
+                        this.world.destroyedPoses.tree.position.set(x, y, z);
+                        if (this.act4Preview) trObj.position.set(x, y, z);
+                        this._syncGameplayToOverrides();
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspectorValuesOnly();
+                        this._updateStatusCounts();
+                    },
+                    getRotDeg: () => {
+                        const r = this.world.destroyedPoses.tree.rotation;
+                        return [
+                            Math.round(radToDeg(r.x) * 10) / 10,
+                            Math.round(radToDeg(r.y) * 10) / 10,
+                            Math.round(radToDeg(r.z) * 10) / 10
+                        ];
+                    },
+                    setRotDeg: (rx, ry, rz) => {
+                        this._pushUndo();
+                        this.world.destroyedPoses.tree.rotation.set(degToRad(rx), degToRad(ry), degToRad(rz));
+                        if (this.act4Preview) trObj.rotation.copy(this.world.destroyedPoses.tree.rotation);
+                        this._syncGameplayToOverrides();
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspectorValuesOnly();
+                        this._updateStatusCounts();
+                    }
+                });
+            }
+            addObjPose('TornGarland', '3. Сорванная гирлянда (Акт IV)', 'Акт IV', {
+                beforeSelect: () => { if (!this.act4Preview) this.setAct4Preview(true); }
+            });
+            addObjPose('BrokenBaubles', '4. Разбитые игрушки (Акт IV)', 'Акт IV', {
+                beforeSelect: () => { if (!this.act4Preview) this.setAct4Preview(true); }
+            });
+            addObjPose('FallenSantaHat', '5. Упавший колпак Санты (Акт IV)', 'Акт IV', {
+                beforeSelect: () => { if (!this.act4Preview) this.setAct4Preview(true); }
+            });
+        }
+
+        // 5. Pickup & Table Food Items families
+        const pickupFamilies = [
+            {
+                title: 'Позиции хрустальных бокалов',
+                keys: new Set(['SideboardCrystal', 'TableItem_Crystal', 'TableItem_Crystal_0', 'TableItem_Crystal_1', 'TableItem_Crystal_2', 'WreckedTable_Shards']),
+                items: [
+                    ['SideboardCrystal', '1. В серванте (Старт)', 'Сервант', {}],
+                    ['TableItem_Crystal', '2. На столе — группа (Лок.)', 'На столе', { beforeSelect: () => { if (!this.tableSetPreview) this.setTableSetPreview(true); } }],
+                    ['TableItem_Crystal_0', '3. На столе — Бокал #1 (Лок.)', 'Бокал 1', { beforeSelect: () => { if (!this.tableSetPreview) this.setTableSetPreview(true); } }],
+                    ['TableItem_Crystal_1', '4. На столе — Бокал #2 (Лок.)', 'Бокал 2', { beforeSelect: () => { if (!this.tableSetPreview) this.setTableSetPreview(true); } }],
+                    ['TableItem_Crystal_2', '5. На столе — Бокал #3 (Лок.)', 'Бокал 3', { beforeSelect: () => { if (!this.tableSetPreview) this.setTableSetPreview(true); } }],
+                    ['WreckedTable_Shards', '6. Осколки на полу (Акт IV)', 'Акт IV', { beforeSelect: () => { if (!this.act4Preview) this.setAct4Preview(true); } }]
+                ]
+            },
+            {
+                title: 'Позиции банок с соленьями',
+                keys: new Set(['PantryPicklesJar', 'TableItem_Pickles', 'PantryJar_0', 'PantryJar_1', 'PantryJar_2', 'PantryJar_3', 'PantryJar_4']),
+                items: [
+                    ['PantryPicklesJar', '1. В кладовке — активная банка (Старт)', 'Кладовка', {}],
+                    ['TableItem_Pickles', '2. На накрытом столе (Лок.)', 'На столе', { beforeSelect: () => { if (!this.tableSetPreview) this.setTableSetPreview(true); } }],
+                    ['PantryJar_0', '3. Кладовка: верхняя полка #1', 'Полка 2', {}],
+                    ['PantryJar_1', '4. Кладовка: верхняя полка #2', 'Полка 2', {}],
+                    ['PantryJar_2', '5. Кладовка: верхняя полка #3', 'Полка 2', {}],
+                    ['PantryJar_3', '6. Кладовка: нижняя полка #1', 'Полка 1', {}],
+                    ['PantryJar_4', '7. Кладовка: нижняя полка #2', 'Полка 1', {}]
+                ]
+            },
+            {
+                title: 'Позиции салата Оливье',
+                keys: new Set(['FridgeOlivier', 'TableItem_Olivier', 'WreckedTable_Olivier']),
+                items: [
+                    ['FridgeOlivier', '1. В холодильнике (Старт)', 'Холодильник', { beforeSelect: () => { if (!this.openDoorsPreview) this.setOpenDoorsPreview(true); } }],
+                    ['TableItem_Olivier', '2. На накрытом столе (Лок.)', 'На столе', { beforeSelect: () => { if (!this.tableSetPreview) this.setTableSetPreview(true); } }],
+                    ['WreckedTable_Olivier', '3. Разлит на полу (Акт IV)', 'Акт IV', { beforeSelect: () => { if (!this.act4Preview) this.setAct4Preview(true); } }]
+                ]
+            },
+            {
+                title: 'Позиции мясной нарезки',
+                keys: new Set(['FridgeMeat', 'TableItem_Meat', 'WreckedTable_Plate']),
+                items: [
+                    ['FridgeMeat', '1. В холодильнике (Старт)', 'Холодильник', { beforeSelect: () => { if (!this.openDoorsPreview) this.setOpenDoorsPreview(true); } }],
+                    ['TableItem_Meat', '2. На накрытом столе (Лок.)', 'На столе', { beforeSelect: () => { if (!this.tableSetPreview) this.setTableSetPreview(true); } }],
+                    ['WreckedTable_Plate', '3. Разбитая тарелка (Акт IV)', 'Акт IV', { beforeSelect: () => { if (!this.act4Preview) this.setAct4Preview(true); } }]
+                ]
+            },
+            {
+                title: 'Позиции запечённой курицы',
+                keys: new Set(['OvenChicken', 'TableItem_Chicken', 'WreckedTable_Chicken']),
+                items: [
+                    ['OvenChicken', '1. В духовке плиты (Старт)', 'Духовка', { beforeSelect: () => { if (!this.openDoorsPreview) this.setOpenDoorsPreview(true); } }],
+                    ['TableItem_Chicken', '2. На накрытом столе (Лок.)', 'На столе', { beforeSelect: () => { if (!this.tableSetPreview) this.setTableSetPreview(true); } }],
+                    ['WreckedTable_Chicken', '3. На полу после разгрома (Акт IV)', 'Акт IV', { beforeSelect: () => { if (!this.act4Preview) this.setAct4Preview(true); } }]
+                ]
+            },
+            {
+                title: 'Позиции шампанского',
+                keys: new Set(['BalconyChampagne', 'TableItem_Champagne', 'WreckedTable_Champagne']),
+                items: [
+                    ['BalconyChampagne', '1. В снегу на балконе (Старт)', 'Балкон', {}],
+                    ['TableItem_Champagne', '2. На накрытом столе (Лок.)', 'На столе', { beforeSelect: () => { if (!this.tableSetPreview) this.setTableSetPreview(true); } }],
+                    ['WreckedTable_Champagne', '3. На полу после разгрома (Акт IV)', 'Акт IV', { beforeSelect: () => { if (!this.act4Preview) this.setAct4Preview(true); } }]
+                ]
+            },
+            {
+                title: 'Позиции новогодней мишуры и декора',
+                keys: new Set(['DecorBox', 'DecorSpot_Hall', 'Decor_Hall', 'DecorSpot_Kitchen', 'Decor_Kitchen', 'DecorSpot_Hallway', 'Decor_Hallway']),
+                items: [
+                    ['DecorBox', '1. Коробка с мишурой в прихожей (Старт)', 'Коробка', {}],
+                    ['DecorSpot_Hall', '2. Зал: Зона развешивания (Триггер)', 'Зал (Триггер)', {}],
+                    ['Decor_Hall', '3. Зал: Развешанная мишура и снежинки', 'Зал (Декор)', {}],
+                    ['DecorSpot_Kitchen', '4. Кухня: Зона развешивания (Триггер)', 'Кухня (Триггер)', {}],
+                    ['Decor_Kitchen', '5. Кухня: Развешанная мишура', 'Кухня (Декор)', {}],
+                    ['DecorSpot_Hallway', '6. Прихожая: Зона развешивания (Триггер)', 'Прих. (Триггер)', {}],
+                    ['Decor_Hallway', '7. Прихожая: Венок и мишура', 'Прих. (Декор)', {}]
+                ]
+            },
+            {
+                title: 'Позиции рождественской омелы',
+                keys: new Set(['Mistletoe_Hanging', 'Mistletoe_Trampled']),
+                items: [
+                    ['Mistletoe_Hanging', '1. Висит над дверным проёмом (Акт I–III)', 'Висит', {}],
+                    ['Mistletoe_Trampled', '2. Растоптана на полу (Акт IV)', 'Акт IV', { beforeSelect: () => { if (!this.act4Preview) this.setAct4Preview(true); } }]
+                ]
+            },
+            {
+                title: 'Позиции зеркала серванта',
+                keys: new Set(['SideboardMirror', 'FallenMirror']),
+                items: [
+                    ['SideboardMirror', '1. Зеркало на серванте (Акт I–III)', 'Сервант', {}],
+                    ['FallenMirror', '2. Разбитое зеркало на полу (Акт IV)', 'Акт IV', { beforeSelect: () => { if (!this.act4Preview) this.setAct4Preview(true); } }]
+                ]
+            }
+        ];
+
+        for (const fam of pickupFamilies) {
+            if (keyName && fam.keys.has(keyName)) {
+                title = fam.title;
+                for (const [oName, oLabel, oBadge, oOpts] of fam.items) {
+                    addObjPose(oName, oLabel, oBadge, oOpts);
+                }
+                break;
+            }
+        }
+
+        // 6. Hiding Spots family (Trigger + Door/Curtain + Hide Camera Pos + Peek Camera Pos)
+        const hidingMap = {
+            sofa: { spotId: 'sofa', trigger: 'SofaHideTrigger', door: 'SofaCoverPivot', title: 'Позиции укрытия: Диван' },
+            wardrobe: { spotId: 'wardrobe', trigger: 'WardrobeEnter', door: 'WardrobeDoor', title: 'Позиции укрытия: Шкаф' },
+            pantry: { spotId: 'pantry', trigger: 'PantryHideTrig', door: 'PantryDoor', title: 'Позиции укрытия: Кладовка' },
+            bathroom: { spotId: 'bathroom', trigger: 'ShowerCurtain', door: 'ShowerCurtain', title: 'Позиции укрытия: Шторка в ванной' }
+        };
+        let activeHideMeta = null;
+        if (this.selected.kind === 'hiding' && this.selected.spot) {
+            activeHideMeta = hidingMap[this.selected.spot.id] || null;
+        } else if (keyName) {
+            for (const hm of Object.values(hidingMap)) {
+                if (keyName === hm.trigger || keyName === hm.door) {
+                    activeHideMeta = hm;
+                    break;
+                }
+            }
+        }
+        if (activeHideMeta) {
+            const spot = this.world.hidingSpots.find(s => s.id === activeHideMeta.spotId);
+            if (spot) {
+                title = activeHideMeta.title;
+                poses.push({
+                    id: `hide_in_${spot.id}`,
+                    label: '1. Камера: Внутри укрытия (HidePos)',
+                    badge: 'Камера',
+                    isActive: () => this.selected?.kind === 'hiding' && this.selected.spot.id === spot.id && this.hideSubTarget === 'hide',
+                    onSelect: () => {
+                        this.hideSubTarget = 'hide';
+                        this.selectEntity({ kind: 'hiding', spot, subTarget: 'hide' });
+                    },
+                    getPos: () => vecArr(spot.hidePos),
+                    setPos: (x, y, z) => {
+                        this._pushUndo();
+                        spot.hidePos.set(x, y, z);
+                        this._syncGameplayToOverrides();
+                        this._rebuildGameplayMarkers();
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspectorValuesOnly();
+                        this._updateStatusCounts();
+                    }
+                });
+                poses.push({
+                    id: `hide_peek_${spot.id}`,
+                    label: '2. Камера: Выглядывание (PeekPos)',
+                    badge: 'Выгляд.',
+                    isActive: () => this.selected?.kind === 'hiding' && this.selected.spot.id === spot.id && this.hideSubTarget === 'peek',
+                    onSelect: () => {
+                        this.hideSubTarget = 'peek';
+                        this.selectEntity({ kind: 'hiding', spot, subTarget: 'peek' });
+                    },
+                    getPos: () => vecArr(spot.peekPos),
+                    setPos: (x, y, z) => {
+                        this._pushUndo();
+                        spot.peekPos.set(x, y, z);
+                        this._syncGameplayToOverrides();
+                        this._rebuildGameplayMarkers();
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspectorValuesOnly();
+                        this._updateStatusCounts();
+                    },
+                    angleLabel: 'Взгляд Yaw (°)',
+                    getAngleDeg: () => Math.round(radToDeg(spot.lookYaw) * 10) / 10,
+                    setAngleDeg: (deg) => {
+                        this._pushUndo();
+                        spot.lookYaw = degToRad(deg);
+                        this._syncGameplayToOverrides();
+                        this._updateInspectorValuesOnly();
+                        this._updateStatusCounts();
+                    }
+                });
+                if (activeHideMeta.trigger !== activeHideMeta.door) {
+                    addObjPose(activeHideMeta.trigger, '3. Зона входа в укрытие (Триггер)', 'Триггер');
+                    addObjPose(activeHideMeta.door, '4. Дверца / Покрывало укрытия', 'Дверца');
+                } else {
+                    addObjPose(activeHideMeta.door, '3. Шторка и триггер укрытия', 'Шторка');
+                }
+            }
+        }
+
+        // 7. Player Spawn (Sitting on sofa + Standing point preview)
+        if (this.selected.kind === 'spawn') {
+            title = 'Позиции старта игрока (Пробуждение)';
+            const sp = this.world.playerSpawn;
+            poses.push({
+                id: 'spawn_sit',
+                label: '1. Точка пробуждения сидя на диване',
+                badge: 'Старт',
+                isActive: () => true,
+                onSelect: () => this.selectEntity({ kind: 'spawn' }),
+                getPos: () => vecArr(sp.position),
+                setPos: (x, y, z) => {
+                    this._pushUndo();
+                    sp.position.set(x, y, z);
+                    this._syncGameplayToOverrides();
+                    this._rebuildGameplayMarkers();
+                    this._attachGizmoToSelection();
+                    this._updateSelectionOutline();
+                    this._updateInspectorValuesOnly();
+                    this._updateStatusCounts();
+                },
+                angleLabel: 'Взгляд Yaw (°)',
+                getAngleDeg: () => Math.round(radToDeg(sp.yaw) * 10) / 10,
+                setAngleDeg: (deg) => {
+                    this._pushUndo();
+                    sp.yaw = degToRad(deg);
+                    this._syncGameplayToOverrides();
+                    this._rebuildGameplayMarkers();
+                    this._attachGizmoToSelection();
+                    this._updateInspectorValuesOnly();
+                    this._updateStatusCounts();
+                }
+            });
+        }
+
+        // 8. Monster Patrol Waypoints (all waypoints editable in one list)
+        if (this.selected.kind === 'waypoint') {
+            title = 'Все точки маршрута монстра';
+            this.world.patrolWaypoints.forEach((wp, idx) => {
+                poses.push({
+                    id: `wp_${idx}`,
+                    label: `Точка маршрута #${idx + 1}`,
+                    badge: `#${idx + 1}`,
+                    isActive: () => this.selected?.kind === 'waypoint' && this.selected.index === idx,
+                    onSelect: () => this.selectEntity({ kind: 'waypoint', index: idx }),
+                    getPos: () => vecArr(wp),
+                    setPos: (x, y, z) => {
+                        this._pushUndo();
+                        wp.set(x, y, z);
+                        this._syncGameplayToOverrides();
+                        this._rebuildGameplayMarkers();
+                        this._attachGizmoToSelection();
+                        this._updateSelectionOutline();
+                        this._updateInspectorValuesOnly();
+                        this._updateStatusCounts();
+                    }
+                });
+            });
+        }
+
+        // 9. Any other single object (including doors with open angle, sub-parts, and composite objects)
+        if (poses.length === 0 && selObj) {
+            if (rootObj && rootObj !== selObj) {
+                title = `Позиции: ${rootObj.name} и деталь`;
+                addObjPose(rootObj.name, `1. Весь объект (${rootObj.name})`, 'Основа');
+                addObjPose(selObj.name, `2. Выбранная деталь (${selObj.name})`, 'Лок. поза');
+            } else {
+                const hasDoorState = !!(selObj.userData?.getOpenAngle || selObj.userData?.setOpenState);
+                title = hasDoorState ? 'Позиции и открытие двери / створки' : 'Позиции объекта и его деталей';
+                addObjPose(selObj.name, hasDoorState ? 'Позиция петель и угол открытия' : `Основная позиция (${selObj.name})`, hasDoorState ? 'Дверь' : 'Объект');
+            }
+        }
+
+        // Collect all registered child sub-parts for the root object
+        const subParts = [];
+        if (rootObj) {
+            for (const o of this.builder.editableObjects) {
+                if (o.userData?.deleted) continue;
+                if (o.userData?.parentEditableName === rootObj.name || o.userData?.parentActivatedObj === rootObj) {
+                    subParts.push(o);
+                }
+            }
+        }
+
+        // Collect all furniture group members if the object belongs to a groupId
+        const groupMembers = [];
+        const grpId = rootObj?.userData?.groupId || selObj?.userData?.groupId;
+        if (grpId) {
+            for (const o of this.builder.editableObjects) {
+                if (o.userData?.deleted || o.userData?.isSubPart) continue;
+                if (o.userData?.groupId === grpId) {
+                    groupMembers.push(o);
+                }
+            }
+        }
+
+        return { title, poses, subParts, groupMembers, rootObj };
+    }
+
+    _renderAllPositionsPanel() {
+        const sec = document.getElementById('sec-all-positions');
+        const listEl = document.getElementById('all-positions-list');
+        const titleEl = document.getElementById('all-positions-title');
+        const countEl = document.getElementById('all-positions-count');
+        if (!sec || !listEl) return;
+
+        this._poseInputBindings = [];
+        listEl.innerHTML = '';
+
+        if (!this.selected || this.selected.kind === 'multi' || this.selected.kind === 'light') {
+            sec.classList.add('hidden');
+            return;
+        }
+
+        const { title, poses, subParts, groupMembers, rootObj } = this._buildPoseEntriesForSelection();
+        if (poses.length === 0 && subParts.length === 0 && groupMembers.length === 0) {
+            sec.classList.add('hidden');
+            return;
+        }
+
+        sec.classList.remove('hidden');
+        titleEl.textContent = title;
+        countEl.textContent = `${poses.length}`;
+
+        const frag = document.createDocumentFragment();
+
+        for (const pose of poses) {
+            const card = document.createElement('div');
+            const active = !!pose.isActive?.();
+            card.className = 'pose-card' + (active ? ' active' : '');
+
+            const header = document.createElement('div');
+            header.className = 'pose-header';
+
+            const lblWrap = document.createElement('div');
+            lblWrap.className = 'pose-label';
+            const badgeSpan = document.createElement('span');
+            badgeSpan.className = 'pose-badge';
+            badgeSpan.textContent = pose.badge;
+            const textSpan = document.createElement('span');
+            textSpan.textContent = pose.label;
+            textSpan.title = pose.label;
+            lblWrap.append(badgeSpan, textSpan);
+
+            const actions = document.createElement('div');
+            actions.className = 'pose-actions';
+
+            if (Array.isArray(pose.extraActions)) {
+                for (const act of pose.extraActions) {
+                    const aBtn = document.createElement('button');
+                    aBtn.className = 'pose-btn' + (act.active ? ' active' : '');
+                    aBtn.textContent = act.label;
+                    aBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        act.onClick();
+                    });
+                    actions.appendChild(aBtn);
+                }
+            }
+
+            const selBtn = document.createElement('button');
+            selBtn.className = 'pose-btn' + (active ? ' active' : '');
+            selBtn.textContent = active ? '🎯 Активно' : '🎯 Гизмо';
+            selBtn.title = 'Переключиться на эту позицию и привязать 3D-гизмо';
+            selBtn.addEventListener('click', () => pose.onSelect());
+            actions.appendChild(selBtn);
+
+            header.append(lblWrap, actions);
+            card.appendChild(header);
+
+            // Position X/Y/Z row
+            if (pose.getPos && pose.setPos) {
+                const posRow = document.createElement('div');
+                posRow.className = 'pose-row';
+                const pLbl = document.createElement('span');
+                pLbl.className = 'pose-row-lbl';
+                pLbl.textContent = 'Поз. (м)';
+                const grid = document.createElement('div');
+                grid.className = 'vec3-grid';
+
+                const pVals = pose.getPos();
+                const pInputs = ['X', 'Y', 'Z'].map((ax, i) => {
+                    const cell = document.createElement('div');
+                    cell.className = 'vec3-cell';
+                    const sp = document.createElement('span');
+                    sp.className = `ax-${ax.toLowerCase()}`;
+                    sp.textContent = ax;
+                    const inp = document.createElement('input');
+                    inp.type = 'number';
+                    inp.step = '0.05';
+                    inp.value = round3(pVals[i]);
+                    cell.append(sp, inp);
+                    grid.appendChild(cell);
+                    return inp;
+                });
+
+                const commitPos = () => {
+                    pose.setPos(
+                        parseFloat(pInputs[0].value) || 0,
+                        parseFloat(pInputs[1].value) || 0,
+                        parseFloat(pInputs[2].value) || 0
+                    );
+                };
+                pInputs.forEach(inp => inp.addEventListener('change', commitPos));
+                posRow.append(pLbl, grid);
+                card.appendChild(posRow);
+
+                this._poseInputBindings.push({
+                    type: 'pos',
+                    getPos: pose.getPos,
+                    inputs: pInputs
+                });
+            }
+
+            // Rotation X/Y/Z row
+            if (pose.getRotDeg && pose.setRotDeg) {
+                const rotRow = document.createElement('div');
+                rotRow.className = 'pose-row';
+                const rLbl = document.createElement('span');
+                rLbl.className = 'pose-row-lbl';
+                rLbl.textContent = 'Пов. (°)';
+                const grid = document.createElement('div');
+                grid.className = 'vec3-grid';
+
+                const rVals = pose.getRotDeg();
+                const rInputs = ['X', 'Y', 'Z'].map((ax, i) => {
+                    const cell = document.createElement('div');
+                    cell.className = 'vec3-cell';
+                    const sp = document.createElement('span');
+                    sp.className = `ax-${ax.toLowerCase()}`;
+                    sp.textContent = ax;
+                    const inp = document.createElement('input');
+                    inp.type = 'number';
+                    inp.step = '5';
+                    inp.value = rVals[i];
+                    cell.append(sp, inp);
+                    grid.appendChild(cell);
+                    return inp;
+                });
+
+                const commitRot = () => {
+                    pose.setRotDeg(
+                        parseFloat(rInputs[0].value) || 0,
+                        parseFloat(rInputs[1].value) || 0,
+                        parseFloat(rInputs[2].value) || 0
+                    );
+                };
+                rInputs.forEach(inp => inp.addEventListener('change', commitRot));
+                rotRow.append(rLbl, grid);
+                card.appendChild(rotRow);
+
+                this._poseInputBindings.push({
+                    type: 'rot',
+                    getRotDeg: pose.getRotDeg,
+                    inputs: rInputs
+                });
+            }
+
+            // Angle row (door open angle or lookYaw)
+            if (pose.getAngleDeg && pose.setAngleDeg) {
+                const angRow = document.createElement('div');
+                angRow.className = 'pose-row';
+                const aLbl = document.createElement('span');
+                aLbl.className = 'pose-row-lbl';
+                aLbl.style.width = '92px';
+                aLbl.textContent = pose.angleLabel || 'Угол (°)';
+                const aInp = document.createElement('input');
+                aInp.type = 'number';
+                aInp.step = '5';
+                aInp.style.flex = '1';
+                aInp.value = pose.getAngleDeg();
+                aInp.addEventListener('change', () => {
+                    pose.setAngleDeg(parseFloat(aInp.value) || 0);
+                });
+                angRow.append(aLbl, aInp);
+                card.appendChild(angRow);
+
+                this._poseInputBindings.push({
+                    type: 'angle',
+                    getAngleDeg: pose.getAngleDeg,
+                    input: aInp
+                });
+            }
+
+            frag.appendChild(card);
+        }
+
+        // Sub-parts selector card if composite object has child parts
+        if (rootObj && subParts.length > 0) {
+            const partsCard = document.createElement('div');
+            partsCard.className = 'pose-card';
+            const pHeader = document.createElement('div');
+            pHeader.className = 'pose-header';
+            const pTitle = document.createElement('div');
+            pTitle.className = 'pose-label';
+            pTitle.textContent = `Детали объекта ${rootObj.name} (${subParts.length + 1})`;
+            pHeader.appendChild(pTitle);
+            partsCard.appendChild(pHeader);
+
+            const chips = document.createElement('div');
+            chips.className = 'subparts-grid';
+
+            const rootChip = document.createElement('button');
+            rootChip.className = 'subpart-chip' + (this.selected?.obj === rootObj ? ' active' : '');
+            rootChip.textContent = '★ Весь объект';
+            rootChip.addEventListener('click', () => this.selectEntity({ kind: 'object', obj: rootObj }));
+            chips.appendChild(rootChip);
+
+            subParts.forEach((spObj, idx) => {
+                const chip = document.createElement('button');
+                chip.className = 'subpart-chip' + (this.selected?.obj === spObj ? ' active' : '');
+                const shortLabel = spObj.name.startsWith(rootObj.name + '__Part_')
+                    ? `Деталь #${idx + 1}`
+                    : spObj.name.replace(rootObj.name + '_', '');
+                chip.textContent = shortLabel;
+                chip.title = `${spObj.name} (${vecArr(spObj.position).join(', ')})`;
+                chip.addEventListener('click', () => this.selectEntity({ kind: 'object', obj: spObj }));
+                chips.appendChild(chip);
+            });
+
+            partsCard.appendChild(chips);
+            frag.appendChild(partsCard);
+        }
+
+        // Furniture group members selector card
+        if (groupMembers.length > 1) {
+            const grpId = rootObj?.userData?.groupId || this.selected?.obj?.userData?.groupId;
+            const grpCard = document.createElement('div');
+            grpCard.className = 'pose-card';
+            const gHeader = document.createElement('div');
+            gHeader.className = 'pose-header';
+            const gTitle = document.createElement('div');
+            gTitle.className = 'pose-label';
+            gTitle.textContent = `Элементы гарнитура: ${GROUP_LABELS[grpId] || grpId} (${groupMembers.length})`;
+            gHeader.appendChild(gTitle);
+            grpCard.appendChild(gHeader);
+
+            const chips = document.createElement('div');
+            chips.className = 'subparts-grid';
+            for (const gm of groupMembers) {
+                const chip = document.createElement('button');
+                chip.className = 'subpart-chip' + (this.selected?.obj === gm ? ' active' : '');
+                chip.textContent = gm.name;
+                chip.title = `${gm.name} (${vecArr(gm.position).join(', ')})`;
+                chip.addEventListener('click', () => this.selectEntity({ kind: 'object', obj: gm }));
+                chips.appendChild(chip);
+            }
+            grpCard.appendChild(chips);
+            frag.appendChild(grpCard);
+        }
+
+        listEl.appendChild(frag);
+    }
+
+    _updateAllPositionsValues() {
+        if (!this._poseInputBindings || this._poseInputBindings.length === 0) return;
+        const activeEl = document.activeElement;
+        for (const b of this._poseInputBindings) {
+            if (b.type === 'pos' && b.getPos) {
+                const vals = b.getPos();
+                for (let i = 0; i < 3; i++) {
+                    if (b.inputs[i] && b.inputs[i] !== activeEl) {
+                        b.inputs[i].value = round3(vals[i]);
+                    }
+                }
+            } else if (b.type === 'rot' && b.getRotDeg) {
+                const vals = b.getRotDeg();
+                for (let i = 0; i < 3; i++) {
+                    if (b.inputs[i] && b.inputs[i] !== activeEl) {
+                        b.inputs[i].value = vals[i];
+                    }
+                }
+            } else if (b.type === 'angle' && b.getAngleDeg) {
+                if (b.input && b.input !== activeEl) {
+                    b.input.value = b.getAngleDeg();
                 }
             }
         }

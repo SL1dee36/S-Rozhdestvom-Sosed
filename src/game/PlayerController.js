@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { Component, RigidBody, BoxCollider } from '../../lumina/index.js';
 
+const TWO_HANDED_ITEMS = new Set(['table', 'stool', 'decorBox']);
+
 export class PlayerController extends Component {
     constructor(gameObject, world) {
         super(gameObject);
@@ -9,9 +11,11 @@ export class PlayerController extends Component {
         this.pitch = 0;
         this.baseSensitivity = 0.0022;
         this.sensitivity = this.baseSensitivity;
-        this.walkSpeed = 3.0;
-        this.sprintSpeed = 4.5;
-        this.crouchSpeed = 1.75;
+
+        // Movement speeds reduced by 50%
+        this.walkSpeed = 1.50;
+        this.sprintSpeed = 2.25;
+        this.crouchSpeed = 0.88;
 
         this.isCrouching = false;
         this.eyeHeight = 1.54;
@@ -23,6 +27,11 @@ export class PlayerController extends Component {
         this.currentHidingSpot = null;
         this.isPeephole = false;
         this.controlsLocked = false;
+        this.allowLookWhileLocked = false;
+        this.lookYawCenter = null;
+        this.lookYawLimit = 1.15;
+        this.lookPitchMin = -0.65;
+        this.lookPitchMax = 0.65;
         this.forcedLookTarget = null;
         this.forcedLookSpeed = 5.0;
         this.forcedFov = null;
@@ -30,18 +39,22 @@ export class PlayerController extends Component {
         this.cigBurn = 0;
         this.cigPuffAnim = 0;
         this.cinematicBobOffset = 0;
+        this.cinematicRollOffset = 0;
 
         this._bobTime = 0;
         this._stepTimer = 0;
         this._cameraRig = new THREE.Object3D();
         this._handAnchor = new THREE.Object3D();
         this._handMeshes = {};
+        this._handYaw = 0;
+        this._handPitch = 0;
+        this._swayX = 0;
+        this._swayY = 0;
         this._cigSmokePuffs = [];
         this._cigSmokeGroup = null;
         this._cigPaperMesh = null;
         this._cigAshMesh = null;
         this._cigEmberTip = null;
-        this._cigEmberLight = null;
         this._cigWorldTip = new THREE.Vector3();
         this._exitSafePos = new THREE.Vector3();
         this._targetEuler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -58,9 +71,45 @@ export class PlayerController extends Component {
         this.camera.position.set(0, 0, 0);
         this.camera.rotation.order = 'YXZ';
 
-        this._handAnchor.position.set(0.28, -0.26, -0.45);
-        this.camera.add(this._handAnchor);
+        // Attach hand anchor to _cameraRig instead of camera so pitch doesn't lift heavy items above head
+        this._handAnchor.rotation.order = 'YXZ';
+        this._cameraRig.add(this._handAnchor);
         this._buildHandProps();
+    }
+
+    _makeSleeveArm(isLeft = false) {
+        const armGroup = new THREE.Group();
+        const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x2f3d4c, roughness: 0.88 });
+        const cuffMat = new THREE.MeshStandardMaterial({ color: 0x222c38, roughness: 0.9 });
+        const skinMat = new THREE.MeshStandardMaterial({ color: 0xd4aa8c, roughness: 0.78 });
+
+        const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.28), sleeveMat);
+        forearm.position.set(0, 0, 0.14);
+        const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.078, 0.078, 0.04), cuffMat);
+        cuff.position.set(0, 0, 0.01);
+        const hand = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.082, 0.085), skinMat);
+        hand.position.set(0, 0.005, -0.04);
+        const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.028, 0.045), skinMat);
+        thumb.position.set(isLeft ? 0.036 : -0.036, 0.028, -0.035);
+        armGroup.add(forearm, cuff, hand, thumb);
+        return armGroup;
+    }
+
+    _attachOneHand(propGroup, offsetX = 0.04, offsetY = -0.05, offsetZ = 0.06) {
+        const arm = this._makeSleeveArm(false);
+        arm.position.set(offsetX, offsetY, offsetZ);
+        arm.rotation.set(0.12, -0.15, 0);
+        propGroup.add(arm);
+    }
+
+    _attachTwoHands(propGroup, spanX = 0.24, handY = -0.06, handZ = 0.08) {
+        const leftArm = this._makeSleeveArm(true);
+        leftArm.position.set(-spanX, handY, handZ);
+        leftArm.rotation.set(0.08, 0.18, 0.08);
+        const rightArm = this._makeSleeveArm(false);
+        rightArm.position.set(spanX, handY, handZ);
+        rightArm.rotation.set(0.08, -0.18, -0.08);
+        propGroup.add(leftArm, rightArm);
     }
 
     _buildHandProps() {
@@ -70,7 +119,9 @@ export class PlayerController extends Component {
             this._handMeshes[key] = mesh;
         };
         const mats = this.world?.materials || {};
+        const builder = this.world?.builder;
 
+        // 1. Crystal glasses (one-handed)
         const crystalGroup = new THREE.Group();
         const crystalBody = new THREE.Mesh(
             new THREE.CylinderGeometry(0.042, 0.03, 0.13, 8),
@@ -82,61 +133,51 @@ export class PlayerController extends Component {
         );
         crystalBase.position.y = -0.065;
         crystalGroup.add(crystalBody, crystalBase);
+        this._attachOneHand(crystalGroup, 0.02, -0.04, 0.05);
+        crystalGroup.position.set(0.24, -0.24, -0.44);
         make('crystal', crystalGroup);
 
+        // 2. Pickles in 3D glass jar with cucumbers inside
         const picklesGroup = new THREE.Group();
-        const picklesJar = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.075, 0.078, 0.18, 10),
-            mats.pickles || new THREE.MeshStandardMaterial({ color: 0x5c8036 })
-        );
-        const picklesLid = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.068, 0.068, 0.022, 10),
-            mats.metal || new THREE.MeshStandardMaterial({ color: 0x8f949a, metalness: 0.5, roughness: 0.4 })
-        );
-        picklesLid.position.y = 0.095;
-        picklesGroup.add(picklesJar, picklesLid);
+        const picklesModel = builder?.createPicklesJarModel
+            ? builder.createPicklesJarModel(0.95)
+            : new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.078, 0.18, 10), mats.pickles);
+        picklesGroup.add(picklesModel);
+        this._attachOneHand(picklesGroup, 0.04, -0.05, 0.06);
+        picklesGroup.position.set(0.25, -0.25, -0.45);
         make('pickles', picklesGroup);
 
+        // 3. Olivier salad bowl
         const olivierGroup = new THREE.Group();
-        const olivierBowl = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.14, 0.095, 0.085, 10),
-            mats.olivier || new THREE.MeshStandardMaterial({ color: 0xd8d29c })
-        );
-        const olivierTop = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.132, 0.132, 0.015, 10),
-            mats.olivier || new THREE.MeshStandardMaterial({ color: 0xd8d29c })
-        );
-        olivierTop.position.y = 0.045;
-        olivierGroup.add(olivierBowl, olivierTop);
+        const olivierModel = builder?.createOlivierBowlModel
+            ? builder.createOlivierBowlModel(0.9)
+            : new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.095, 0.085, 10), mats.olivier);
+        olivierGroup.add(olivierModel);
+        this._attachOneHand(olivierGroup, 0.05, -0.05, 0.08);
+        olivierGroup.position.set(0.24, -0.25, -0.46);
         make('olivier', olivierGroup);
 
+        // 4. Meat & cheese platter
         const meatGroup = new THREE.Group();
-        const meatPlate = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.15, 0.13, 0.02, 10),
-            new THREE.MeshStandardMaterial({ color: 0xe6e1d3, roughness: 0.5 })
-        );
-        const meatSlices = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.135, 0.135, 0.024, 10),
-            mats.meat || new THREE.MeshStandardMaterial({ color: 0xb8554a })
-        );
-        meatSlices.position.y = 0.014;
-        meatGroup.add(meatPlate, meatSlices);
+        const meatModel = builder?.createMeatPlatterModel
+            ? builder.createMeatPlatterModel(0.9)
+            : new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.13, 0.02, 10), mats.meat);
+        meatGroup.add(meatModel);
+        this._attachOneHand(meatGroup, 0.06, -0.04, 0.08);
+        meatGroup.position.set(0.24, -0.25, -0.46);
         make('meat', meatGroup);
 
+        // 5. Roasted 3D chicken on baking tray
         const chickenGroup = new THREE.Group();
-        const chickenTray = new THREE.Mesh(
-            new THREE.BoxGeometry(0.25, 0.022, 0.19),
-            mats.metal || new THREE.MeshStandardMaterial({ color: 0x70757c, metalness: 0.4, roughness: 0.45 })
-        );
-        chickenTray.position.y = -0.04;
-        const chickenRoast = new THREE.Mesh(
-            new THREE.BoxGeometry(0.21, 0.095, 0.15),
-            mats.chicken || new THREE.MeshStandardMaterial({ color: 0xb56b2a })
-        );
-        chickenRoast.position.y = 0.01;
-        chickenGroup.add(chickenTray, chickenRoast);
+        const chickenModel = builder?.createRoastedChickenModel
+            ? builder.createRoastedChickenModel(0.85)
+            : new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.095, 0.15), mats.chicken);
+        chickenGroup.add(chickenModel);
+        this._attachTwoHands(chickenGroup, 0.15, -0.05, 0.08);
+        chickenGroup.position.set(0.0, -0.26, -0.48);
         make('chicken', chickenGroup);
 
+        // 6. Champagne bottle
         const champGroup = new THREE.Group();
         const champBody = new THREE.Mesh(
             new THREE.CylinderGeometry(0.044, 0.048, 0.19, 10),
@@ -154,8 +195,55 @@ export class PlayerController extends Component {
         );
         champFoil.position.y = 0.155;
         champGroup.add(champBody, champNeck, champFoil);
+        this._attachOneHand(champGroup, 0.03, -0.04, 0.05);
+        champGroup.position.set(0.25, -0.25, -0.45);
         make('champagne', champGroup);
 
+        // 7. Two-handed Folding Table (heavy)
+        const tableCarryGroup = new THREE.Group();
+        const woodMat = mats.woodDark || new THREE.MeshStandardMaterial({ color: 0x4a2614 });
+        const tCenter = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.52, 0.58), woodMat);
+        const tFlapL = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.48, 0.56), woodMat);
+        tFlapL.position.set(-0.155, -0.01, 0);
+        const tFlapR = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.48, 0.56), woodMat);
+        tFlapR.position.set(0.155, -0.01, 0);
+        tableCarryGroup.add(tCenter, tFlapL, tFlapR);
+        tableCarryGroup.rotation.y = Math.PI / 2;
+        const tableWrapper = new THREE.Group();
+        tableWrapper.add(tableCarryGroup);
+        this._attachTwoHands(tableWrapper, 0.28, 0.02, 0.14);
+        tableWrapper.position.set(0.0, -0.36, -0.56);
+        make('table', tableWrapper);
+
+        // 8. Two-handed Kitchen Stool
+        const stoolCarryGroup = new THREE.Group();
+        const stoolModel = builder?.createStoolModel
+            ? builder.createStoolModel(0.78)
+            : new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.36, 0.28), woodMat);
+        stoolModel.position.y = -0.18;
+        stoolModel.rotation.x = 0.22;
+        stoolCarryGroup.add(stoolModel);
+        this._attachTwoHands(stoolCarryGroup, 0.18, -0.02, 0.12);
+        stoolCarryGroup.position.set(0.0, -0.25, -0.50);
+        make('stool', stoolCarryGroup);
+
+        // 9. Two-handed Decor Box with tinsel
+        const boxCarryGroup = new THREE.Group();
+        const boxMat = mats.woodFrame || new THREE.MeshStandardMaterial({ color: 0x8f6b47 });
+        const goldMat = new THREE.MeshStandardMaterial({ color: 0xf7d046, emissive: 0x805a10, emissiveIntensity: 0.4 });
+        const redMat = new THREE.MeshStandardMaterial({ color: 0xc92222, emissive: 0x550808, emissiveIntensity: 0.4 });
+        const cBox = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 0.28), boxMat);
+        const cTinsel = new THREE.Mesh(new THREE.TorusGeometry(0.10, 0.025, 6, 10), goldMat);
+        cTinsel.rotation.x = Math.PI / 2;
+        cTinsel.position.set(-0.03, 0.11, 0.02);
+        const cBall = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 5), redMat);
+        cBall.position.set(0.07, 0.11, -0.04);
+        boxCarryGroup.add(cBox, cTinsel, cBall);
+        this._attachTwoHands(boxCarryGroup, 0.19, -0.03, 0.10);
+        boxCarryGroup.position.set(0.0, -0.27, -0.48);
+        make('decorBox', boxCarryGroup);
+
+        // 10. Cigarette (no dynamic PointLight inside to avoid shader recompilation freeze)
         const cigGroup = new THREE.Group();
         const filterMesh = new THREE.Mesh(
             new THREE.CylinderGeometry(0.0085, 0.0085, 0.028, 10),
@@ -178,24 +266,20 @@ export class PlayerController extends Component {
         this._cigAshMesh = ashMesh;
 
         const emberMesh = new THREE.Mesh(
-            new THREE.SphereGeometry(0.0074, 8, 8),
+            new THREE.SphereGeometry(0.0076, 8, 8),
             new THREE.MeshStandardMaterial({
-                color: 0xff3b00,
+                color: 0xff4400,
                 emissive: 0xff3300,
-                emissiveIntensity: 1.5,
-                roughness: 0.4
+                emissiveIntensity: 1.8,
+                roughness: 0.3
             })
         );
         emberMesh.position.y = 0.072;
         this._cigEmberTip = emberMesh;
 
-        const emberLight = new THREE.PointLight(0xff4411, 0.22, 0.6);
-        emberLight.position.y = 0.074;
-        this._cigEmberLight = emberLight;
-
-        cigGroup.add(filterMesh, paperMesh, ashMesh, emberMesh, emberLight);
+        cigGroup.add(filterMesh, paperMesh, ashMesh, emberMesh);
         cigGroup.rotation.set(-1.18, 0.14, 0.22);
-        cigGroup.position.set(-0.11, 0.09, 0.04);
+        cigGroup.position.set(0.17, -0.17, -0.41);
         make('cigarette', cigGroup);
 
         cigGroup.updateMatrix();
@@ -244,11 +328,9 @@ export class PlayerController extends Component {
         }
         if (this._cigAshMesh) this._cigAshMesh.position.y = 0.0665;
         if (this._cigEmberTip) this._cigEmberTip.position.y = 0.072;
-        if (this._cigEmberLight) this._cigEmberLight.position.y = 0.074;
-        if (!active) {
-            this._handAnchor.position.set(0.28, -0.26, -0.45);
-        }
         if (this._handMeshes.cigarette) {
+            this._handMeshes.cigarette.position.set(0.17, -0.17, -0.41);
+            this._handMeshes.cigarette.rotation.set(-1.18, 0.14, 0.22);
             this._handMeshes.cigarette.visible = active;
         }
         if (this._cigSmokeGroup) {
@@ -258,17 +340,24 @@ export class PlayerController extends Component {
 
     takeCigarettePuff() {
         if (!this.cigaretteActive || this.cigPuffAnim > 0.05 || this.cigBurn >= 0.95) return false;
-        this.cigPuffAnim = 1.65;
+        this.cigPuffAnim = 1.85;
         this.cigBurn = Math.min(0.95, this.cigBurn + 0.18);
-        this.engine.audioSystem.playSpatialOneShot('whisper_cue', null, { volume: 0.22 });
+        this.engine.audioSystem.playSpatialOneShot('smoke_puff', null, { volume: 0.72 });
         return true;
     }
 
     setPose(pos, yaw, pitch = 0) {
         this.transform.position.copy(pos);
-        if (this.rb) this.rb.velocity.set(0, 0, 0);
+        if (this.rb) {
+            this.rb.position.copy(pos);
+            this.rb.velocity.set(0, 0, 0);
+        }
         this.yaw = yaw;
         this.pitch = pitch;
+        this._handYaw = yaw;
+        this._handPitch = 0;
+        this._swayX = 0;
+        this._swayY = 0;
     }
 
     setSensitivityMultiplier(multiplier) {
@@ -279,6 +368,7 @@ export class PlayerController extends Component {
     enterPeephole() {
         if (this.isHidden) return;
         this.isPeephole = true;
+        this._handAnchor.visible = false;
         this._exitSafePos.copy(this.transform.position);
         this.peepholePos = new THREE.Vector3(3.075, 0.0, 4.45);
         this.yaw = Math.PI;
@@ -297,13 +387,15 @@ export class PlayerController extends Component {
     exitPeephole() {
         if (!this.isPeephole) return;
         this.isPeephole = false;
+        this._handAnchor.visible = true;
         this.transform.position.copy(this._exitSafePos);
-        this.yaw = 0;
-        this.pitch = 0;
         if (this.rb) {
+            this.rb.position.copy(this._exitSafePos);
             this.rb.useGravity = true;
             this.rb.velocity.set(0, 0, 0);
         }
+        this.yaw = 0;
+        this.pitch = 0;
         if (this.collider) this.collider.enabled = true;
         this._cameraRig.position.set(0, this.eyeHeight, 0);
         this.engine.renderer.setPostProcessParams({ peephole: 0.0 });
@@ -313,6 +405,7 @@ export class PlayerController extends Component {
     enterHidingSpot(spot) {
         if (this.isHidden || this.isPeephole) return;
         this.isHidden = true;
+        this._handAnchor.visible = false;
         this.currentHidingSpot = spot;
         this._exitSafePos.copy(this.transform.position);
         this.yaw = spot.lookYaw;
@@ -337,10 +430,12 @@ export class PlayerController extends Component {
         }
         this.isHidden = false;
         this.isPeeking = false;
+        this._handAnchor.visible = true;
         this.currentHidingSpot = null;
         this.engine.renderer.setPostProcessParams({ peephole: 0.0 });
         this.transform.position.copy(this._exitSafePos);
         if (this.rb) {
+            this.rb.position.copy(this._exitSafePos);
             this.rb.useGravity = true;
             this.rb.velocity.set(0, 0, 0);
         }
@@ -372,7 +467,7 @@ export class PlayerController extends Component {
             const kLook = Math.min(1, deltaTime * (this.forcedLookSpeed || 5.0));
             this.yaw += dy * kLook;
             this.pitch = THREE.MathUtils.lerp(this.pitch, this._targetEuler.x, kLook);
-        } else if (!this.controlsLocked && !this.isPeephole) {
+        } else if ((!this.controlsLocked || this.allowLookWhileLocked) && !this.isPeephole) {
             this.yaw -= delta.x * this.sensitivity;
             this.pitch -= delta.y * this.sensitivity;
             if (this.isHidden && this.currentHidingSpot) {
@@ -383,15 +478,55 @@ export class PlayerController extends Component {
                 while (diff < -Math.PI) diff += Math.PI * 2;
                 diff = Math.max(-yawRange, Math.min(yawRange, diff));
                 this.yaw = center + diff;
-                this.pitch = Math.max(-0.35, Math.min(0.35, this.pitch));
+                // Under the sofa restrict upward pitch so camera never clips into sofa base
+                const maxUpPitch = this.currentHidingSpot.id === 'sofa' ? 0.06 : 0.35;
+                this.pitch = Math.max(-0.28, Math.min(maxUpPitch, this.pitch));
+            } else if (this.allowLookWhileLocked && this.lookYawCenter !== null) {
+                let diff = this.yaw - this.lookYawCenter;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                diff = Math.max(-this.lookYawLimit, Math.min(this.lookYawLimit, diff));
+                this.yaw = this.lookYawCenter + diff;
+                this.pitch = Math.max(this.lookPitchMin, Math.min(this.lookPitchMax, this.pitch));
             } else {
                 this.pitch = Math.max(-1.42, Math.min(1.42, this.pitch));
             }
         }
 
-        const swayRoll = this.cigaretteActive ? Math.sin(performance.now() * 0.0022) * 0.028 : 0;
-        const swayPitch = this.cigaretteActive ? Math.cos(performance.now() * 0.0017) * 0.015 : 0;
+        const swayRoll = (this.cigaretteActive ? Math.sin(performance.now() * 0.0022) * 0.025 : 0) + (this.cinematicRollOffset || 0);
+        const swayPitch = this.cigaretteActive ? Math.cos(performance.now() * 0.0017) * 0.014 : 0;
         this.camera.rotation.set(this.pitch + swayPitch, this.yaw, swayRoll, 'YXZ');
+
+        // Smooth rotational inertia for held items & pitch horizon clamping (never lift table/items over head)
+        const isTwoHanded = TWO_HANDED_ITEMS.has(this.heldItem);
+        const inertiaRate = isTwoHanded ? 7.5 : 12.0;
+        let yawDiff = this.yaw - this._handYaw;
+        while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+        while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+        this._handYaw += yawDiff * Math.min(1, deltaTime * inertiaRate);
+
+        this._swayX = THREE.MathUtils.lerp(this._swayX, -delta.x * 0.00045, Math.min(1, deltaTime * 10));
+        this._swayY = THREE.MathUtils.lerp(this._swayY, delta.y * 0.00035, Math.min(1, deltaTime * 10));
+
+        // When looking up (pitch > 0), keep objects down at waist/chest level; when looking down, tilt slightly
+        let goalHandPitch = 0;
+        if (this.cigaretteActive && this.cigPuffAnim > 0.01) {
+            const puffProgress = this.cigPuffAnim / 1.85;
+            const raiseAmt = puffProgress > 0.45
+                ? Math.min(1, (1 - puffProgress) / 0.35)
+                : (puffProgress / 0.45);
+            goalHandPitch = THREE.MathUtils.lerp(Math.min(0.05, this.pitch * 0.25), this.pitch, raiseAmt);
+        } else if (isTwoHanded) {
+            goalHandPitch = this.pitch < 0 ? this.pitch * 0.16 : 0.0;
+        } else {
+            goalHandPitch = this.pitch < 0 ? this.pitch * 0.32 : Math.min(0.04, this.pitch * 0.05);
+        }
+        this._handPitch = THREE.MathUtils.lerp(this._handPitch, goalHandPitch, Math.min(1, deltaTime * inertiaRate));
+        this._handAnchor.rotation.set(this._handPitch, this._handYaw, this._swayX * 0.8, 'YXZ');
+
+        const bobY = Math.sin(this._bobTime * 2) * (isTwoHanded ? 0.014 : 0.009);
+        const bobX = Math.cos(this._bobTime) * (isTwoHanded ? 0.008 : 0.004);
+        this._handAnchor.position.set(bobX + this._swayX, bobY + this._swayY, 0);
 
         if (this.cigaretteActive && !this.controlsLocked && !this.isHidden && !this.isPeephole) {
             const puffPressed = input.wasKeyJustPressed('KeyF')
@@ -401,20 +536,31 @@ export class PlayerController extends Component {
             }
         }
 
-        if (this.cigaretteActive && this._cigSmokeGroup) {
+        if (this.cigaretteActive && this._cigSmokeGroup && this._handMeshes.cigarette) {
             if (this.cigPuffAnim > 0) {
                 this.cigPuffAnim = Math.max(0, this.cigPuffAnim - deltaTime);
             }
-            const puffProgress = this.cigPuffAnim > 0 ? this.cigPuffAnim / 1.65 : 0;
-            const raiseAmt = puffProgress > 0.55
-                ? (1 - (puffProgress - 0.55) / 0.45)
-                : (puffProgress / 0.55);
-            const targetHandX = THREE.MathUtils.lerp(0.28, 0.12, raiseAmt);
-            const targetHandY = THREE.MathUtils.lerp(-0.26, -0.14, raiseAmt);
-            const targetHandZ = THREE.MathUtils.lerp(-0.45, -0.31, raiseAmt);
-            this._handAnchor.position.x = THREE.MathUtils.lerp(this._handAnchor.position.x, targetHandX, Math.min(1, deltaTime * 8));
-            this._handAnchor.position.y = THREE.MathUtils.lerp(this._handAnchor.position.y, targetHandY, Math.min(1, deltaTime * 8));
-            this._handAnchor.position.z = THREE.MathUtils.lerp(this._handAnchor.position.z, targetHandZ, Math.min(1, deltaTime * 8));
+            const puffProgress = this.cigPuffAnim > 0 ? this.cigPuffAnim / 1.85 : 0;
+            // Smooth curve bringing cigarette close to face/mouth, holding for draw, then lowering
+            let raiseAmt = 0;
+            if (puffProgress > 0.72) {
+                raiseAmt = (1.0 - puffProgress) / 0.28;
+            } else if (puffProgress > 0.38) {
+                raiseAmt = 1.0;
+            } else if (puffProgress > 0) {
+                raiseAmt = puffProgress / 0.38;
+            }
+            raiseAmt = raiseAmt * raiseAmt * (3 - 2 * raiseAmt);
+
+            const cigMesh = this._handMeshes.cigarette;
+            const targetCigX = THREE.MathUtils.lerp(0.17, 0.018, raiseAmt);
+            const targetCigY = THREE.MathUtils.lerp(-0.17, -0.068, raiseAmt);
+            const targetCigZ = THREE.MathUtils.lerp(-0.41, -0.155, raiseAmt);
+            cigMesh.position.x = THREE.MathUtils.lerp(cigMesh.position.x, targetCigX, Math.min(1, deltaTime * 11));
+            cigMesh.position.y = THREE.MathUtils.lerp(cigMesh.position.y, targetCigY, Math.min(1, deltaTime * 11));
+            cigMesh.position.z = THREE.MathUtils.lerp(cigMesh.position.z, targetCigZ, Math.min(1, deltaTime * 11));
+            cigMesh.rotation.x = THREE.MathUtils.lerp(-1.18, -1.48, raiseAmt);
+            cigMesh.rotation.z = THREE.MathUtils.lerp(0.22, 0.05, raiseAmt);
 
             const paperRatio = Math.max(0.08, 1 - this.cigBurn);
             const paperLen = 0.062 * paperRatio;
@@ -425,35 +571,32 @@ export class PlayerController extends Component {
             const curPaperTop = this._cigPaperMesh ? (0.062 * this._cigPaperMesh.scale.y) : paperLen;
             if (this._cigAshMesh) this._cigAshMesh.position.y = curPaperTop + 0.0045;
             if (this._cigEmberTip) this._cigEmberTip.position.y = curPaperTop + 0.009;
-            if (this._cigEmberLight) this._cigEmberLight.position.y = curPaperTop + 0.011;
 
-            if (this._handMeshes.cigarette && this._cigEmberTip) {
-                this._handMeshes.cigarette.updateMatrix();
-                this._cigSmokeGroup.position.copy(this._cigEmberTip.position).applyMatrix4(this._handMeshes.cigarette.matrix);
+            if (this._cigEmberTip) {
+                cigMesh.updateMatrix();
+                this._cigSmokeGroup.position.copy(this._cigEmberTip.position).applyMatrix4(cigMesh.matrix);
             }
 
             const nowSec = performance.now() * 0.001;
-            const puffGlow = puffProgress > 0.45 ? 1.8 : 0;
-            const pulse = 1.2 + Math.sin(nowSec * 3.1) * 0.45 + puffGlow;
+            const puffGlow = (puffProgress > 0.35 && puffProgress < 0.85) ? 2.4 : 0;
+            const pulse = 1.3 + Math.sin(nowSec * 3.1) * 0.45 + puffGlow;
             if (this._cigEmberTip && this._cigEmberTip.material) {
                 this._cigEmberTip.material.emissiveIntensity = pulse;
             }
-            if (this._cigEmberLight) {
-                this._cigEmberLight.intensity = 0.16 + Math.sin(nowSec * 3.1) * 0.08 + puffGlow * 0.12;
-            }
-            const smokeSpeed = puffProgress > 0 && puffProgress < 0.65 ? 1.05 : 0.52;
+            const isExhaling = puffProgress > 0.02 && puffProgress < 0.40;
+            const smokeSpeed = isExhaling ? 1.45 : 0.52;
             for (const puff of this._cigSmokePuffs) {
                 const d = puff.userData;
                 d.phase = (d.phase + deltaTime * smokeSpeed) % 1;
                 const p = d.phase;
                 puff.position.set(
                     d.driftX * p + Math.sin(nowSec * 2.6 + d.wobble + p * 5.0) * 0.014 * p,
-                    p * 0.22,
-                    d.driftZ * p + Math.cos(nowSec * 2.0 + d.wobble) * 0.01 * p
+                    p * (isExhaling ? 0.28 : 0.20),
+                    d.driftZ * p + Math.cos(nowSec * 2.0 + d.wobble) * 0.01 * p - (isExhaling ? p * 0.14 : 0)
                 );
-                const s = 0.55 + p * 2.7;
+                const s = (0.55 + p * 2.7) * (isExhaling ? 1.35 : 1.0);
                 puff.scale.set(s, s * 0.9, s);
-                puff.material.opacity = Math.sin(p * Math.PI) * 0.34;
+                puff.material.opacity = Math.sin(p * Math.PI) * (isExhaling ? 0.46 : 0.32);
             }
             const smokeTransform = this.world?.cigSmokeEmitter?.transform
                 || this.world?.cigSmokeEmitter?.gameObject?.transform
@@ -468,8 +611,9 @@ export class PlayerController extends Component {
         const curFov = this.engine.renderer.camera.fov;
         this.engine.renderer.setFOV(THREE.MathUtils.lerp(curFov, goalFov, Math.min(1, deltaTime * 4.5)));
 
-        const interactPressed = input.wasKeyJustPressed('KeyE') || (input.isPointerLocked() && input.wasMouseButtonJustPressed(0));
-        const interactHeld = !this.cigaretteActive && (input.isKeyDown('KeyE') || (input.isPointerLocked() && input.isMouseButtonDown(0)));
+        // Interactions strictly bound to KeyE (freeing LMB)
+        const interactPressed = input.wasKeyJustPressed('KeyE');
+        const interactHeld = !this.cigaretteActive && input.isKeyDown('KeyE');
         const exitPressed = input.wasKeyJustPressed('KeyQ');
 
         if (!this.controlsLocked) {
@@ -501,6 +645,7 @@ export class PlayerController extends Component {
                 const goalPos = peeking ? s.peekPos : s.hidePos;
                 this.transform.position.x = THREE.MathUtils.lerp(this.transform.position.x, goalPos.x, Math.min(1, deltaTime * 8));
                 this.transform.position.z = THREE.MathUtils.lerp(this.transform.position.z, goalPos.z, Math.min(1, deltaTime * 8));
+                this._cameraRig.position.y = THREE.MathUtils.lerp(this._cameraRig.position.y, goalPos.y, Math.min(1, deltaTime * 8));
                 return;
             }
 
@@ -533,7 +678,7 @@ export class PlayerController extends Component {
             return;
         }
 
-        const wantCrouch = input.isKeyDown('ControlLeft') || input.isKeyDown('KeyC');
+        const wantCrouch = (input.isKeyDown('ControlLeft') || input.isKeyDown('KeyC')) && this.heldItem !== 'table';
         if (wantCrouch !== this.isCrouching) {
             this.isCrouching = wantCrouch;
             this.targetEyeHeight = this.isCrouching ? 0.96 : 1.54;
@@ -559,25 +704,34 @@ export class PlayerController extends Component {
             .addScaledVector(right, moveRight);
 
         const isMoving = moveVec.lengthSq() > 0.001;
-        const speed = this.isCrouching
+        const canSprint = input.isKeyDown('ShiftLeft') && !this.isCrouching && this.heldItem !== 'table';
+        let speed = this.isCrouching
             ? this.crouchSpeed
-            : (input.isKeyDown('ShiftLeft') ? this.sprintSpeed : this.walkSpeed);
+            : (canSprint ? this.sprintSpeed : this.walkSpeed);
+
+        // Heavy carry speed modifiers
+        if (this.heldItem === 'table') {
+            speed = this.walkSpeed * 0.58;
+        } else if (this.heldItem === 'stool' || this.heldItem === 'decorBox') {
+            speed *= 0.82;
+        }
 
         if (isMoving) {
             moveVec.normalize().multiplyScalar(speed);
             this.rb.velocity.x = moveVec.x;
             this.rb.velocity.z = moveVec.z;
 
-            const bobRate = speed * 3.1;
+            const bobRate = speed * 4.2;
             this._bobTime += deltaTime * bobRate;
-            this._cameraRig.position.y = this.eyeHeight + Math.sin(this._bobTime) * 0.038;
-            this._handAnchor.position.y = -0.26 + Math.sin(this._bobTime * 2) * 0.012;
+            const bobAmp = this.heldItem === 'table' ? 0.045 : 0.032;
+            this._cameraRig.position.y = this.eyeHeight + Math.sin(this._bobTime) * bobAmp;
 
             this._stepTimer -= deltaTime * (speed / this.walkSpeed);
             if (this._stepTimer <= 0) {
-                this._stepTimer = 0.46;
+                this._stepTimer = this.heldItem === 'table' ? 0.52 : 0.46;
                 this.engine.audioSystem.playSpatialOneShot(this._getSurfaceFootstep(), this.transform.position, {
-                    volume: this.isCrouching ? 0.14 : 0.3
+                    heavy: this.heldItem === 'table',
+                    volume: this.isCrouching ? 0.14 : (this.heldItem === 'table' ? 0.42 : 0.3)
                 });
             }
         } else {
@@ -589,4 +743,3 @@ export class PlayerController extends Component {
 }
 
 export default PlayerController;
-

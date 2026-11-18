@@ -31,16 +31,27 @@ export class TextureManager {
         canvas.height = 128;
         const ctx = canvas.getContext('2d');
 
-        ctx.fillStyle = '#d7cfb8';
+        const grad = ctx.createRadialGradient(64, 64, 8, 64, 64, 62);
+        grad.addColorStop(0, '#dfd6be');
+        grad.addColorStop(0.85, '#c2b699');
+        grad.addColorStop(1, '#85775d');
+        ctx.fillStyle = grad;
         ctx.fillRect(0, 0, 128, 128);
-        ctx.strokeStyle = '#33281b';
+
+        for (let i = 0; i < 600; i++) {
+            const v = 130 + Math.floor(Math.random() * 60);
+            ctx.fillStyle = `rgba(${v},${v - 10},${v - 25},0.16)`;
+            ctx.fillRect(Math.random() * 128, Math.random() * 128, 1.5, 1.5);
+        }
+
+        ctx.strokeStyle = '#2d2318';
         ctx.lineWidth = 6;
         ctx.beginPath();
         ctx.arc(64, 64, 58, 0, Math.PI * 2);
         ctx.stroke();
 
         ctx.fillStyle = '#1f1912';
-        ctx.font = 'bold 14px monospace';
+        ctx.font = 'bold 13px monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         for (let i = 1; i <= 12; i++) {
@@ -50,7 +61,7 @@ export class TextureManager {
             ctx.fillText(String(i), x, y);
         }
 
-        ctx.fillStyle = '#6b2222';
+        ctx.fillStyle = '#5e2020';
         ctx.font = 'bold 8px sans-serif';
         ctx.fillText('СЛАВА', 64, 42);
 
@@ -66,28 +77,32 @@ export class TextureManager {
         ctx.fillStyle = tint;
         ctx.fillRect(0, 0, 128, 128);
 
-        ctx.fillStyle = 'rgba(70, 58, 40, 0.22)';
+        ctx.fillStyle = 'rgba(58, 48, 34, 0.24)';
         for (let x = 0; x < 128; x += 16) {
-            ctx.fillRect(x, 0, 4, 128);
+            ctx.fillRect(x, 0, 3, 128);
+            ctx.fillRect(x + 8, 0, 1, 128);
         }
-        ctx.fillStyle = 'rgba(220, 210, 175, 0.16)';
+        ctx.fillStyle = 'rgba(215, 205, 175, 0.14)';
         for (let y = 0; y < 128; y += 32) {
             for (let x = 8; x < 128; x += 32) {
                 ctx.beginPath();
-                ctx.moveTo(x, y);
-                ctx.lineTo(x + 6, y + 10);
+                ctx.moveTo(x, y + 4);
+                ctx.lineTo(x + 5, y + 12);
                 ctx.lineTo(x, y + 20);
-                ctx.lineTo(x - 6, y + 10);
+                ctx.lineTo(x - 5, y + 12);
                 ctx.closePath();
                 ctx.fill();
             }
         }
-        for (let i = 0; i < 450; i++) {
-            ctx.fillStyle = `rgba(40,32,20,${Math.random() * 0.12})`;
+        for (let i = 0; i < 1200; i++) {
+            const dark = Math.random() > 0.5;
+            ctx.fillStyle = dark
+                ? `rgba(32,26,18,${Math.random() * 0.16})`
+                : `rgba(225,215,190,${Math.random() * 0.10})`;
             ctx.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
         }
         const tex = new THREE.CanvasTexture(canvas);
-        return configurePS1Texture(tex, 4, 2);
+        return configurePS1Texture(tex, 1, 1);
     }
 
     createWoodDarkTexture() {
@@ -95,18 +110,16 @@ export class TextureManager {
         canvas.width = 128;
         canvas.height = 128;
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#4a2614';
+        ctx.fillStyle = '#472514';
         ctx.fillRect(0, 0, 128, 128);
         for (let y = 0; y < 128; y += 2) {
-            ctx.fillStyle = y % 6 === 0 ? 'rgba(24,10,4,0.35)' : 'rgba(110,60,30,0.2)';
+            ctx.fillStyle = y % 8 === 0 ? 'rgba(22,9,3,0.38)' : 'rgba(105,56,28,0.22)';
             ctx.fillRect(0, y, 128, 2);
         }
-        const grad = ctx.createLinearGradient(0, 0, 128, 128);
-        grad.addColorStop(0, 'rgba(255,230,200,0.08)');
-        grad.addColorStop(0.5, 'rgba(255,230,200,0)');
-        grad.addColorStop(1, 'rgba(255,230,200,0.1)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, 128, 128);
+        for (let i = 0; i < 900; i++) {
+            ctx.fillStyle = i % 2 === 0 ? 'rgba(20,8,3,0.18)' : 'rgba(130,75,40,0.14)';
+            ctx.fillRect(Math.random() * 128, Math.random() * 128, 6, 1.5);
+        }
         const tex = new THREE.CanvasTexture(canvas);
         return configurePS1Texture(tex, 1, 1);
     }
@@ -118,7 +131,7 @@ export class TextureManager {
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, 128, 128);
 
-        ctx.strokeStyle = '#4d0808';
+        ctx.strokeStyle = '#4a0606';
         ctx.lineCap = 'round';
         for (let i = 0; i < 4; i++) {
             ctx.lineWidth = 5 + Math.random() * 3;
@@ -127,10 +140,10 @@ export class TextureManager {
             ctx.lineTo(32 + i * 19, 108 - Math.random() * 14);
             ctx.stroke();
         }
-        for (let s = 0; s < 32; s++) {
-            ctx.fillStyle = s % 2 === 0 ? 'rgba(95, 10, 10, 0.75)' : 'rgba(55, 4, 4, 0.8)';
+        for (let s = 0; s < 42; s++) {
+            ctx.fillStyle = s % 2 === 0 ? 'rgba(88, 8, 8, 0.78)' : 'rgba(48, 3, 3, 0.85)';
             ctx.beginPath();
-            ctx.arc(20 + Math.random() * 88, 20 + Math.random() * 88, 2 + Math.random() * 7, 0, Math.PI * 2);
+            ctx.arc(18 + Math.random() * 92, 18 + Math.random() * 92, 1.5 + Math.random() * 6, 0, Math.PI * 2);
             ctx.fill();
         }
         const tex = new THREE.CanvasTexture(canvas);
@@ -142,12 +155,9 @@ export class TextureManager {
         canvas.width = 128;
         canvas.height = 128;
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ddd7c9';
+        ctx.fillStyle = '#d8d0c0';
         ctx.fillRect(0, 0, 128, 128);
-        ctx.strokeStyle = '#9e2a2b';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(6, 6, 116, 116);
-        ctx.strokeStyle = 'rgba(158, 42, 43, 0.35)';
+        ctx.strokeStyle = 'rgba(138, 36, 36, 0.42)';
         ctx.lineWidth = 2;
         for (let i = 0; i < 128; i += 16) {
             ctx.beginPath();
@@ -159,28 +169,32 @@ export class TextureManager {
             ctx.lineTo(128, i);
             ctx.stroke();
         }
+        for (let i = 0; i < 900; i++) {
+            ctx.fillStyle = `rgba(75, 65, 50, ${Math.random() * 0.14})`;
+            ctx.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
+        }
         const tex = new THREE.CanvasTexture(canvas);
-        return configurePS1Texture(tex, 2, 2);
+        return configurePS1Texture(tex, 1, 1);
     }
 
-    createConcreteTexture(repeatX = 2, repeatY = 2) {
+    createConcreteTexture(repeatX = 1, repeatY = 1) {
         const canvas = document.createElement('canvas');
         canvas.width = 128;
         canvas.height = 128;
         const ctx = canvas.getContext('2d');
 
-        ctx.fillStyle = '#7b7f84';
+        ctx.fillStyle = '#787c82';
         ctx.fillRect(0, 0, 128, 128);
 
-        for (let i = 0; i < 1400; i++) {
-            const shade = 95 + Math.floor(Math.random() * 55);
-            ctx.fillStyle = `rgba(${shade}, ${shade + 2}, ${shade + 4}, 0.45)`;
+        for (let i = 0; i < 1600; i++) {
+            const shade = 88 + Math.floor(Math.random() * 62);
+            ctx.fillStyle = `rgba(${shade}, ${shade + 2}, ${shade + 4}, 0.48)`;
             ctx.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
         }
 
-        ctx.fillStyle = 'rgba(42, 45, 50, 0.35)';
-        ctx.fillRect(0, 0, 128, 3);
-        ctx.fillRect(0, 0, 3, 128);
+        ctx.fillStyle = 'rgba(42, 45, 50, 0.28)';
+        ctx.fillRect(0, 0, 128, 2);
+        ctx.fillRect(0, 0, 2, 128);
         ctx.fillRect(0, 63, 128, 2);
 
         const tex = new THREE.CanvasTexture(canvas);
@@ -189,58 +203,59 @@ export class TextureManager {
 
     createUpholsteryTexture() {
         const canvas = document.createElement('canvas');
-        canvas.width = 64;
-        canvas.height = 64;
+        canvas.width = 128;
+        canvas.height = 128;
         const ctx = canvas.getContext('2d');
 
-        ctx.fillStyle = '#5e2923';
-        ctx.fillRect(0, 0, 64, 64);
+        ctx.fillStyle = '#5a2721';
+        ctx.fillRect(0, 0, 128, 128);
 
-        for (let y = 0; y < 64; y += 4) {
-            ctx.fillStyle = y % 8 === 0 ? 'rgba(35, 12, 10, 0.35)' : 'rgba(135, 72, 52, 0.25)';
-            ctx.fillRect(0, y, 64, 2);
+        for (let y = 0; y < 128; y += 4) {
+            ctx.fillStyle = y % 8 === 0 ? 'rgba(32, 11, 9, 0.36)' : 'rgba(130, 68, 48, 0.24)';
+            ctx.fillRect(0, y, 128, 2);
         }
-        for (let x = 0; x < 64; x += 4) {
-            ctx.fillStyle = 'rgba(45, 18, 14, 0.22)';
-            ctx.fillRect(x, 0, 2, 64);
+        for (let x = 0; x < 128; x += 4) {
+            ctx.fillStyle = 'rgba(42, 16, 12, 0.24)';
+            ctx.fillRect(x, 0, 2, 128);
         }
-        ctx.fillStyle = 'rgba(175, 130, 88, 0.28)';
-        for (let y = 4; y < 64; y += 16) {
-            for (let x = 4; x < 64; x += 16) {
+        ctx.fillStyle = 'rgba(168, 124, 82, 0.25)';
+        for (let y = 4; y < 128; y += 16) {
+            for (let x = 4; x < 128; x += 16) {
                 ctx.fillRect(x, y, 3, 3);
                 ctx.fillRect(x + 8, y + 8, 3, 3);
             }
         }
+        for (let i = 0; i < 800; i++) {
+            ctx.fillStyle = `rgba(25, 10, 8, ${Math.random() * 0.18})`;
+            ctx.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
+        }
 
         const tex = new THREE.CanvasTexture(canvas);
-        return configurePS1Texture(tex, 3, 3);
+        return configurePS1Texture(tex, 1, 1);
     }
 
-    createStairwellWallTexture(repeatX = 2, repeatY = 1) {
+    createStairwellWallTexture(repeatX = 1, repeatY = 1) {
         const canvas = document.createElement('canvas');
         canvas.width = 128;
         canvas.height = 128;
         const ctx = canvas.getContext('2d');
 
-        ctx.fillStyle = '#b9b6aa';
+        ctx.fillStyle = '#b5b1a4';
         ctx.fillRect(0, 0, 128, 66);
 
-        ctx.fillStyle = '#253636';
+        ctx.fillStyle = '#253534';
         ctx.fillRect(0, 64, 128, 4);
 
-        ctx.fillStyle = '#3f6962';
+        ctx.fillStyle = '#3c635c';
         ctx.fillRect(0, 68, 128, 60);
 
-        for (let i = 0; i < 650; i++) {
+        for (let i = 0; i < 950; i++) {
             const y = Math.random() * 128;
             ctx.fillStyle = y < 64
-                ? `rgba(70, 65, 55, ${Math.random() * 0.16})`
-                : `rgba(22, 42, 38, ${Math.random() * 0.22})`;
+                ? `rgba(68, 62, 52, ${Math.random() * 0.18})`
+                : `rgba(20, 38, 34, ${Math.random() * 0.25})`;
             ctx.fillRect(Math.random() * 128, y, 2 + Math.random() * 2, 2);
         }
-        ctx.fillStyle = 'rgba(205, 200, 185, 0.28)';
-        ctx.fillRect(22, 78, 8, 5);
-        ctx.fillRect(88, 96, 12, 4);
 
         const tex = new THREE.CanvasTexture(canvas);
         return configurePS1Texture(tex, repeatX, repeatY);
@@ -252,49 +267,28 @@ export class TextureManager {
         canvas.height = 128;
         const ctx = canvas.getContext('2d');
 
-        ctx.fillStyle = '#e7e2d5';
+        const bg = ctx.createRadialGradient(64, 64, 10, 64, 64, 64);
+        bg.addColorStop(0, '#963b36');
+        bg.addColorStop(0.65, '#7a2a26');
+        bg.addColorStop(1, '#581d1a');
+        ctx.fillStyle = bg;
         ctx.fillRect(0, 0, 128, 128);
-        ctx.strokeStyle = '#4c6d92';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.arc(64, 64, 58, 0, Math.PI * 2);
-        ctx.stroke();
 
-        const slices = [
-            { x: 46, y: 50, r: 22, c: '#a23834', rim: '#7b2623', fat: true },
-            { x: 76, y: 46, r: 21, c: '#bd574c', rim: '#8b352d', fat: false },
-            { x: 42, y: 78, r: 20, c: '#b2483f', rim: '#7f2c27', fat: true },
-            { x: 74, y: 78, r: 22, c: '#9b312f', rim: '#6c1f1e', fat: true },
-            { x: 60, y: 62, r: 19, c: '#c96b5c', rim: '#96433a', fat: false }
-        ];
-        for (const s of slices) {
-            ctx.fillStyle = s.rim;
-            ctx.beginPath();
-            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = s.c;
-            ctx.beginPath();
-            ctx.arc(s.x, s.y, s.r - 2.5, 0, Math.PI * 2);
-            ctx.fill();
-            if (s.fat) {
-                ctx.fillStyle = '#e8d7c6';
-                for (let k = 0; k < 10; k++) {
-                    const a = k * 1.9 + s.x;
-                    const rr = (k % 3 + 1) * 4.5;
-                    ctx.fillRect(s.x + Math.cos(a) * rr - 1, s.y + Math.sin(a) * rr - 1, 2.5, 2);
-                }
+        // Realistic smoked sausage marbling & grain at 128x128
+        for (let i = 0; i < 1400; i++) {
+            const x = Math.random() * 128;
+            const y = Math.random() * 128;
+            const r = Math.random();
+            if (r < 0.22) {
+                ctx.fillStyle = `rgba(226, 206, 188, ${0.35 + Math.random() * 0.45})`;
+                ctx.fillRect(x, y, 2 + Math.random() * 2, 2 + Math.random() * 2);
+            } else if (r < 0.6) {
+                ctx.fillStyle = `rgba(115, 34, 30, ${0.3 + Math.random() * 0.35})`;
+                ctx.fillRect(x, y, 3, 2);
+            } else {
+                ctx.fillStyle = `rgba(62, 16, 14, ${0.25 + Math.random() * 0.3})`;
+                ctx.fillRect(x, y, 2, 2);
             }
-        }
-
-        ctx.strokeStyle = '#3b7332';
-        ctx.lineWidth = 2;
-        for (let i = 0; i < 6; i++) {
-            const x = 90 + (i % 3) * 4;
-            const y = 52 + Math.floor(i / 3) * 6;
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + 7, y - 5);
-            ctx.stroke();
         }
 
         const tex = new THREE.CanvasTexture(canvas);
@@ -307,10 +301,10 @@ export class TextureManager {
         canvas.height = 128;
         const ctx = canvas.getContext('2d');
 
-        ctx.fillStyle = '#c8e4f6';
+        ctx.fillStyle = '#c4dff0';
         ctx.fillRect(0, 0, 128, 128);
 
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
         ctx.lineWidth = 2;
         for (let i = -128; i <= 256; i += 16) {
             ctx.beginPath();
@@ -324,16 +318,7 @@ export class TextureManager {
             ctx.stroke();
         }
 
-        ctx.strokeStyle = 'rgba(92, 138, 174, 0.55)';
-        ctx.lineWidth = 1;
-        for (let i = -128; i <= 256; i += 16) {
-            ctx.beginPath();
-            ctx.moveTo(i + 3, 0);
-            ctx.lineTo(i + 131, 128);
-            ctx.stroke();
-        }
-
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
         ctx.fillRect(0, 4, 128, 4);
         ctx.fillRect(0, 118, 128, 6);
 
@@ -343,4 +328,3 @@ export class TextureManager {
 }
 
 export default TextureManager;
-

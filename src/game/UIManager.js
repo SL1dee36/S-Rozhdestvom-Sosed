@@ -16,11 +16,6 @@ const ENDINGS_CATALOG = [
         id: 3,
         title: 'КОНЦОВКА №3: «ПОБЕГ В ПОДЪЕЗД»',
         desc: 'Пока чудовище рыскало в глубине квартиры, вы выскочили из укрытия и бросились вниз по ледяным ступеням подъезда. Вы остались живы... но так и не узнали, что случилось в доме напротив.'
-    },
-    {
-        id: 4,
-        title: 'КОНЦОВКА №4: «ЛЕДЯНОЙ РУБЕЖ»',
-        desc: 'Вы заперлись на заснеженном балконе, слушая удары в промёрзшее стекло. Когда вдалеке ударили куранты, шаги в квартире затихли — вы дождались Нового года на морозе.'
     }
 ];
 
@@ -43,7 +38,10 @@ export class UIManager {
             settingsModal: document.getElementById('settings-modal'),
             hud: document.getElementById('hud'),
             crosshair: document.getElementById('crosshair'),
+            crosshairRing: document.getElementById('crosshair-ring'),
+            crosshairRingFill: document.getElementById('crosshair-ring-fill'),
             prompt: document.getElementById('interact-prompt'),
+            wakePrompt: document.getElementById('wake-prompt'),
             controlsHint: document.getElementById('controls-hint'),
             clock: document.getElementById('hud-clock'),
             objectives: document.getElementById('objectives-box'),
@@ -76,6 +74,7 @@ export class UIManager {
             btnCloseSettings: document.getElementById('btn-close-settings'),
             btnCredits: document.getElementById('btn-credits'),
             btnCloseCredits: document.getElementById('btn-close-credits'),
+            btnExitGame: document.getElementById('btn-exit-game'),
             btnResume: document.getElementById('btn-resume'),
             btnCheckpointPause: document.getElementById('btn-checkpoint-pause'),
             btnQuitMenu: document.getElementById('btn-quit-menu'),
@@ -195,6 +194,14 @@ export class UIManager {
             this.el.mainMenu?.classList.remove('hidden');
         });
 
+        this.el.btnExitGame?.addEventListener('click', () => {
+            fetch('/__quit', { method: 'POST' }).catch(() => {});
+            try { window.close(); } catch (e) {}
+            setTimeout(() => {
+                document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#000;color:#d8dce6;font-family:monospace;font-size:20px;letter-spacing:2px;">ИГРА ЗАВЕРШЕНА. МОЖНО ЗАКРЫТЬ ВКЛАДКУ.</div>';
+            }, 250);
+        });
+
         this.el.btnEndings?.addEventListener('click', () => {
             this._renderEndings();
             this.el.mainMenu?.classList.add('hidden');
@@ -252,7 +259,9 @@ export class UIManager {
         });
 
         this.el.rngVol?.addEventListener('input', (e) => {
+            this.engine.audioSystem.initContext();
             this.engine.audioSystem.setMasterVolume(parseFloat(e.target.value));
+            if (this.callbacks.onEnsureMenuMusic) this.callbacks.onEnsureMenuMusic();
         });
 
         this.el.rngSens?.addEventListener('input', (e) => {
@@ -290,12 +299,13 @@ export class UIManager {
     }
 
     applyVHSIntensity(value) {
-        const v = Number.isFinite(value) ? value : 0.2;
+        const v = Number.isFinite(value) ? value : 0.5;
         this.engine.renderer.setPostProcessParams({
-            grain: 0.09 * v,
-            aberration: 0.0028 * v,
-            vsync: 0.65 * v,
-            scanlines: 0.16 * v
+            grain: 0.085 * v,
+            sharpen: 0.58 * v,
+            aberration: 0.0008 * v,
+            vsync: 0.0,
+            scanlines: 0.0
         });
     }
 
@@ -522,15 +532,45 @@ export class UIManager {
         this.engine.inputManager.unlock();
     }
 
-    showGameplayHUD() {
+    showGameplayHUD(cleanIntro = false) {
         this._hideAllScreens();
         this.el.hud?.classList.remove('hidden');
         this.engine.inputManager.isUIOpen = false;
         this.engine.setSimulationPaused(false);
         this.engine.inputManager.lock();
-        if (!this._shownBaseControlsHint) {
+        this.setCleanIntroMode(cleanIntro);
+        if (!cleanIntro && !this._shownBaseControlsHint) {
             this._shownBaseControlsHint = true;
-            this.showControlsHint('Интеракция — ЛКМ   ·   Выглядывание — ПКМ   ·   Выход — Q', 5000);
+            this.showControlsHint('Взаимодействие — [E]   ·   Выглядывание — ПКМ   ·   Выход — [Q]', 5000);
+        }
+    }
+
+    setCleanIntroMode(clean) {
+        this._cleanIntro = !!clean;
+        if (this.el.crosshair) this.el.crosshair.classList.toggle('hidden', !!clean);
+        if (clean) {
+            this.el.objectives?.classList.add('hidden');
+            this.el.subtitles?.classList.add('hidden');
+            this.el.prompt?.classList.add('hidden');
+            this.el.controlsHint?.classList.add('controls-hint-hidden');
+        }
+    }
+
+    setWakePrompt(text = 'Пробел, чтобы встать', visible = false) {
+        if (!this.el.wakePrompt) return;
+        this.el.wakePrompt.textContent = text;
+        this.el.wakePrompt.classList.toggle('hidden', !visible);
+    }
+
+    setHoldProgress(ratio = 0) {
+        if (!this.el.crosshairRing || !this.el.crosshairRingFill) return;
+        const r = Math.max(0, Math.min(1, ratio));
+        if (r > 0.01 && !this._cleanIntro) {
+            this.el.crosshairRing.classList.remove('hidden');
+            const circumference = 88;
+            this.el.crosshairRingFill.style.strokeDashoffset = String(circumference * (1 - r));
+        } else {
+            this.el.crosshairRing.classList.add('hidden');
         }
     }
 
@@ -609,11 +649,17 @@ export class UIManager {
         this.el.objectives.innerHTML = `<div class="obj-item">${current.text}</div>`;
     }
 
-    setPrompt(text) {
+    setPrompt(text, holdRatio = 0) {
+        if (this._cleanIntro) {
+            this.setHoldProgress(0);
+            this.el.prompt?.classList.add('hidden');
+            return;
+        }
         const clean = text ? String(text).replace(/^\[[^\]]+\]\s*/g, '') : '';
         if (this.el.crosshair) {
             this.el.crosshair.classList.toggle('interactable', !!clean);
         }
+        this.setHoldProgress(holdRatio);
         if (!this.el.prompt) return;
         if (clean) {
             this.el.prompt.textContent = clean;

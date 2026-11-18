@@ -5,7 +5,7 @@ export class Interactable extends Component {
     constructor(gameObject, options = {}) {
         super(gameObject);
         this.promptText = options.promptText || '[E] Взаимодействовать';
-        this.maxDistance = options.maxDistance ?? 2.6;
+        this.maxDistance = options.maxDistance !== undefined ? Math.min(options.maxDistance, 1.85) : 1.65;
         this.enabled = options.enabled !== undefined ? options.enabled : true;
         this.canInteract = options.canInteract || (() => true);
         this.onInteract = options.onInteract || (() => {});
@@ -184,7 +184,7 @@ export class InteractionSystem {
         this.currentPrompt = '';
 
         if (activeInterMeshes.length > 0) {
-            this.raycaster.far = 4.0;
+            this.raycaster.far = 2.1;
             const visibleBlockers = this.blockerMeshes.filter(m => this._isVisibleInHierarchy(m));
             const testPool = [...activeInterMeshes, ...visibleBlockers];
             const hits = this.raycaster.intersectObjects(testPool, false);

@@ -5,8 +5,10 @@ export class AudioSystem {
         this.camera = camera;
         this.ctx = null;
         this.masterGain = null;
+        this._masterVolume = 0.85;
         this.buffers = new Map();
         this.activeLoops = new Map();
+        this._tvBroadcastSource = null;
 
         this.micEnabled = true;
         this.micStream = null;
@@ -40,7 +42,7 @@ export class AudioSystem {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         this.ctx = new AudioCtx();
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.85;
+        this.masterGain.gain.value = this._masterVolume;
         this.masterGain.connect(this.ctx.destination);
 
         const sampleRate = this.ctx.sampleRate;
@@ -59,8 +61,9 @@ export class AudioSystem {
     }
 
     setMasterVolume(vol) {
+        this._masterVolume = Math.max(0, Math.min(1, Number.isFinite(vol) ? vol : 0.85));
         if (this.masterGain && this.ctx) {
-            this.masterGain.gain.setTargetAtTime(Math.max(0, Math.min(1, vol)), this.ctx.currentTime, 0.05);
+            this.masterGain.gain.setTargetAtTime(this._masterVolume, this.ctx.currentTime, 0.04);
         }
     }
 
@@ -199,6 +202,9 @@ export class AudioSystem {
             position: position ? position.clone() : new THREE.Vector3(),
             tvFilter: !!options.tvFilter,
             baseVolume: options.volume ?? 0.4,
+            refDistance: options.refDistance ?? 1.6,
+            maxDistance: options.maxDistance ?? 38,
+            rolloffFactor: options.rolloffFactor ?? 1.35,
             checkOcclusion: options.checkOcclusion !== false
         };
         this.activeLoops.set(id, entry);
@@ -406,10 +412,18 @@ export class AudioSystem {
         gain.connect(dest);
         dest.connect(this.masterGain);
 
-        if (options.bufferKey && this.buffers.has(options.bufferKey)) {
+        const autoBufferMap = {
+            door_pound: 'door_bang',
+            glass_break: 'glass_break',
+            doorbell_soviet: 'doorbell',
+            door_knock: 'door_knock'
+        };
+        const resolvedBufferKey = options.bufferKey || autoBufferMap[type] || null;
+
+        if (resolvedBufferKey && this.buffers.has(resolvedBufferKey)) {
             const src = this.ctx.createBufferSource();
-            src.buffer = this.buffers.get(options.bufferKey);
-            src.playbackRate.value = options.playbackRate ?? (0.95 + Math.random() * 0.1);
+            src.buffer = this.buffers.get(resolvedBufferKey);
+            src.playbackRate.value = options.playbackRate ?? (0.94 + Math.random() * 0.10);
             src.connect(filter);
             src.start(t, options.offset || 0, options.duration);
             return;
@@ -483,53 +497,39 @@ export class AudioSystem {
                 break;
             }
             case 'doorbell_soviet': {
-                [0, 0.22, 0.44].forEach(off => {
-                    const o1 = this.ctx.createOscillator();
-                    const o2 = this.ctx.createOscillator();
-                    o1.type = 'square';
-                    o2.type = 'sine';
-                    o1.frequency.value = 880;
-                    o2.frequency.value = 660;
-                    const dg = this.ctx.createGain();
-                    dg.gain.setValueAtTime(0.32, t + off);
-                    dg.gain.exponentialRampToValueAtTime(0.001, t + off + 0.19);
-                    o1.connect(dg);
-                    o2.connect(dg);
-                    dg.connect(filter);
-                    o1.start(t + off);
-                    o2.start(t + off);
-                    o1.stop(t + off + 0.2);
-                    o2.stop(t + off + 0.2);
-                });
+                const bellBuf = this.buffers.get('doorbell');
+                if (bellBuf) {
+                    const src = this.ctx.createBufferSource();
+                    src.buffer = bellBuf;
+                    src.connect(filter);
+                    src.start(t);
+                }
                 break;
             }
             case 'door_pound': {
-                const osc = this.ctx.createOscillator();
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(105, t);
-                osc.frequency.exponentialRampToValueAtTime(32, t + 0.16);
-                const dg = this.ctx.createGain();
-                dg.gain.setValueAtTime(0.95, t);
-                dg.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
-                osc.connect(dg);
-                dg.connect(filter);
-                osc.start(t);
-                osc.stop(t + 0.26);
-
-                const thumpNoise = this.ctx.createBufferSource();
-                thumpNoise.buffer = this._noiseBuffer;
-                const lp = this.ctx.createBiquadFilter();
-                lp.type = 'lowpass';
-                lp.frequency.setValueAtTime(680, t);
-                lp.frequency.exponentialRampToValueAtTime(140, t + 0.18);
-                const ng = this.ctx.createGain();
-                ng.gain.setValueAtTime(0.85, t);
-                ng.gain.exponentialRampToValueAtTime(0.001, t + 0.20);
-                thumpNoise.connect(lp);
-                lp.connect(ng);
-                ng.connect(filter);
-                thumpNoise.start(t);
-                thumpNoise.stop(t + 0.22);
+                const bangBuf = this.buffers.get('door_bang');
+                if (bangBuf) {
+                    const src = this.ctx.createBufferSource();
+                    src.buffer = bangBuf;
+                    src.playbackRate.value = options.playbackRate ?? (0.88 + Math.random() * 0.14);
+                    src.connect(filter);
+                    src.start(t);
+                } else {
+                    const thumpNoise = this.ctx.createBufferSource();
+                    thumpNoise.buffer = this._noiseBuffer;
+                    const lp = this.ctx.createBiquadFilter();
+                    lp.type = 'lowpass';
+                    lp.frequency.setValueAtTime(420, t);
+                    lp.frequency.exponentialRampToValueAtTime(80, t + 0.22);
+                    const ng = this.ctx.createGain();
+                    ng.gain.setValueAtTime(1.1, t);
+                    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
+                    thumpNoise.connect(lp);
+                    lp.connect(ng);
+                    ng.connect(filter);
+                    thumpNoise.start(t);
+                    thumpNoise.stop(t + 0.25);
+                }
                 break;
             }
             case 'wood_creak': {
@@ -553,69 +553,131 @@ export class AudioSystem {
                 break;
             }
             case 'door_crash': {
-                const osc = this.ctx.createOscillator();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(140, t);
-                osc.frequency.exponentialRampToValueAtTime(24, t + 0.65);
-                const ig = this.ctx.createGain();
-                ig.gain.setValueAtTime(1.0, t);
-                ig.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
-                osc.connect(ig);
-                ig.connect(filter);
-                osc.start(t);
-                osc.stop(t + 0.85);
+                const bangBuf = this.buffers.get('door_bang');
+                if (bangBuf) {
+                    const s1 = this.ctx.createBufferSource();
+                    s1.buffer = bangBuf;
+                    s1.playbackRate.value = 0.72;
+                    s1.connect(filter);
+                    s1.start(t);
 
+                    const s2 = this.ctx.createBufferSource();
+                    s2.buffer = bangBuf;
+                    s2.playbackRate.value = 0.56;
+                    s2.connect(filter);
+                    s2.start(t + 0.07);
+                }
                 const noise = this.ctx.createBufferSource();
                 noise.buffer = this._noiseBuffer;
                 const lp = this.ctx.createBiquadFilter();
                 lp.type = 'lowpass';
-                lp.frequency.setValueAtTime(3200, t);
-                lp.frequency.exponentialRampToValueAtTime(250, t + 0.9);
+                lp.frequency.setValueAtTime(1600, t);
+                lp.frequency.exponentialRampToValueAtTime(140, t + 0.75);
                 const ng = this.ctx.createGain();
-                ng.gain.setValueAtTime(1.0, t);
-                ng.gain.exponentialRampToValueAtTime(0.001, t + 1.0);
+                ng.gain.setValueAtTime(0.95, t);
+                ng.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
                 noise.connect(lp);
                 lp.connect(ng);
                 ng.connect(filter);
                 noise.start(t);
-                noise.stop(t + 1.05);
+                noise.stop(t + 0.85);
                 break;
             }
             case 'monster_roar':
             case 'jumpscare': {
-                const o1 = this.ctx.createOscillator();
-                const o2 = this.ctx.createOscillator();
-                o1.type = 'sawtooth';
-                o2.type = 'square';
-                const base = type === 'jumpscare' ? 290 : 115;
-                o1.frequency.setValueAtTime(base, t);
-                o1.frequency.exponentialRampToValueAtTime(base * 0.45, t + 0.9);
-                o2.frequency.setValueAtTime(base * 1.41, t);
-                o2.frequency.exponentialRampToValueAtTime(base * 2.1, t + 0.3);
-                const rg = this.ctx.createGain();
-                rg.gain.setValueAtTime(0.9, t);
-                rg.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
-                o1.connect(rg);
-                o2.connect(rg);
-                rg.connect(filter);
-                o1.start(t);
-                o2.start(t);
-                o1.stop(t + 1.15);
-                o2.stop(t + 1.15);
-
-                const ns = this.ctx.createBufferSource();
-                ns.buffer = this._noiseBuffer;
-                const ng = this.ctx.createGain();
-                ng.gain.setValueAtTime(0.8, t);
-                ng.gain.exponentialRampToValueAtTime(0.001, t + 0.85);
-                ns.connect(ng);
-                ng.connect(filter);
-                ns.start(t);
-                ns.stop(t + 0.9);
+                const isJumpscare = type === 'jumpscare';
+                const dur = isJumpscare ? 1.05 : 0.85;
+                // Layered guttural breath/roar using formant-filtered noise + sub impact (no 8-bit square wave)
+                const formants = isJumpscare ? [240, 620, 1180] : [165, 420, 860];
+                formants.forEach((freq, idx) => {
+                    const ns = this.ctx.createBufferSource();
+                    ns.buffer = this._noiseBuffer;
+                    ns.playbackRate.value = 0.75 + idx * 0.15;
+                    const bp = this.ctx.createBiquadFilter();
+                    bp.type = 'bandpass';
+                    bp.frequency.setValueAtTime(freq * 1.15, t);
+                    bp.frequency.exponentialRampToValueAtTime(freq * 0.62, t + dur);
+                    bp.Q.value = 2.6;
+                    const fg = this.ctx.createGain();
+                    fg.gain.setValueAtTime(0.01, t);
+                    fg.gain.linearRampToValueAtTime(isJumpscare ? 0.85 : 0.65, t + 0.04);
+                    fg.gain.exponentialRampToValueAtTime(0.001, t + dur);
+                    ns.connect(bp);
+                    bp.connect(fg);
+                    fg.connect(filter);
+                    ns.start(t);
+                    ns.stop(t + dur + 0.05);
+                });
+                const sub = this.ctx.createOscillator();
+                sub.type = 'sine';
+                sub.frequency.setValueAtTime(isJumpscare ? 95 : 72, t);
+                sub.frequency.exponentialRampToValueAtTime(28, t + 0.45);
+                const sg = this.ctx.createGain();
+                sg.gain.setValueAtTime(0.85, t);
+                sg.gain.exponentialRampToValueAtTime(0.001, t + 0.48);
+                sub.connect(sg);
+                sg.connect(filter);
+                sub.start(t);
+                sub.stop(t + 0.5);
                 break;
             }
-            case 'steam_hiss':
             case 'smoke_puff': {
+                // Realistic cigarette draw (tobacco crackle + warm inhale + soft exhale)
+                const inhale = this.ctx.createBufferSource();
+                inhale.buffer = this._noiseBuffer;
+                const bpIn = this.ctx.createBiquadFilter();
+                bpIn.type = 'bandpass';
+                bpIn.frequency.setValueAtTime(1150, t);
+                bpIn.frequency.linearRampToValueAtTime(1650, t + 0.55);
+                bpIn.Q.value = 2.4;
+                const gIn = this.ctx.createGain();
+                gIn.gain.setValueAtTime(0.001, t);
+                gIn.gain.linearRampToValueAtTime(0.32, t + 0.15);
+                gIn.gain.linearRampToValueAtTime(0.26, t + 0.50);
+                gIn.gain.exponentialRampToValueAtTime(0.001, t + 0.72);
+                inhale.connect(bpIn);
+                bpIn.connect(gIn);
+                gIn.connect(this.masterGain);
+                inhale.start(t);
+                inhale.stop(t + 0.75);
+
+                // Subtle ember crackles during draw
+                [0.08, 0.19, 0.31, 0.44].forEach((cOff) => {
+                    const cr = this.ctx.createBufferSource();
+                    cr.buffer = this._noiseBuffer;
+                    const hp = this.ctx.createBiquadFilter();
+                    hp.type = 'highpass';
+                    hp.frequency.value = 3200;
+                    const cg = this.ctx.createGain();
+                    cg.gain.setValueAtTime(0.24, t + cOff);
+                    cg.gain.exponentialRampToValueAtTime(0.001, t + cOff + 0.035);
+                    cr.connect(hp);
+                    hp.connect(cg);
+                    cg.connect(this.masterGain);
+                    cr.start(t + cOff);
+                    cr.stop(t + cOff + 0.04);
+                });
+
+                // Soft exhale breath after draw
+                const exhale = this.ctx.createBufferSource();
+                exhale.buffer = this._noiseBuffer;
+                const bpEx = this.ctx.createBiquadFilter();
+                bpEx.type = 'bandpass';
+                bpEx.frequency.setValueAtTime(680, t + 0.85);
+                bpEx.frequency.exponentialRampToValueAtTime(380, t + 1.55);
+                bpEx.Q.value = 1.6;
+                const gEx = this.ctx.createGain();
+                gEx.gain.setValueAtTime(0.001, t + 0.85);
+                gEx.gain.linearRampToValueAtTime(0.28, t + 1.02);
+                gEx.gain.exponentialRampToValueAtTime(0.001, t + 1.58);
+                exhale.connect(bpEx);
+                bpEx.connect(gEx);
+                gEx.connect(this.masterGain);
+                exhale.start(t + 0.85);
+                exhale.stop(t + 1.62);
+                break;
+            }
+            case 'steam_hiss': {
                 const ns = this.ctx.createBufferSource();
                 ns.buffer = this._noiseBuffer;
                 const hp = this.ctx.createBiquadFilter();
@@ -715,48 +777,34 @@ export class AudioSystem {
         }
     }
 
+    stopTVBroadcast() {
+        if (this._tvBroadcastSource) {
+            try { this._tvBroadcastSource.stop(); } catch (e) {}
+            try { this._tvBroadcastSource.disconnect(); } catch (e) {}
+            this._tvBroadcastSource = null;
+        }
+    }
+
     speakTVBroadcast(text, tvPosition) {
         this.initContext();
+        this.stopTVBroadcast();
         const t = this.ctx.currentTime;
-        const panner = this.createPanner(tvPosition, { refDistance: 6.0, maxDistance: 30 });
-        const bp = this.ctx.createBiquadFilter();
-        bp.type = 'bandpass';
-        bp.frequency.value = 1250;
-        bp.Q.value = 1.2;
+        const panner = this.createPanner(tvPosition, { refDistance: 3.5, maxDistance: 22 });
         const g = this.ctx.createGain();
-        g.gain.value = 0.55;
-        bp.connect(g);
+        g.gain.value = 0.85;
         g.connect(panner);
         panner.connect(this.masterGain);
 
-        [0, 0.28, 0.56].forEach(off => {
-            const osc = this.ctx.createOscillator();
-            osc.type = 'sine';
-            osc.frequency.value = 1000;
-            const pg = this.ctx.createGain();
-            pg.gain.setValueAtTime(0.3, t + off);
-            pg.gain.exponentialRampToValueAtTime(0.001, t + off + 0.16);
-            osc.connect(pg);
-            pg.connect(bp);
-            osc.start(t + off);
-            osc.stop(t + off + 0.18);
-        });
-
-        if ('speechSynthesis' in window && text) {
-            try {
-                window.speechSynthesis.cancel();
-                const utter = new SpeechSynthesisUtterance(text);
-                utter.lang = 'ru-RU';
-                const voices = window.speechSynthesis.getVoices();
-                const ruVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('ru'));
-                if (ruVoice) utter.voice = ruVoice;
-                utter.pitch = 0.82;
-                utter.rate = 0.94;
-                utter.volume = 1.0;
-                setTimeout(() => {
-                    try { window.speechSynthesis.speak(utter); } catch (e) {}
-                }, 650);
-            } catch (e) {}
+        const voiceBuf = this.buffers.get('tv_emergency_voice');
+        if (voiceBuf) {
+            const src = this.ctx.createBufferSource();
+            src.buffer = voiceBuf;
+            src.connect(g);
+            src.start(t);
+            this._tvBroadcastSource = src;
+            src.onended = () => {
+                if (this._tvBroadcastSource === src) this._tvBroadcastSource = null;
+            };
         }
     }
 
@@ -836,12 +884,21 @@ export class AudioSystem {
         }
 
         for (const entry of this.activeLoops.values()) {
+            const dist = this.camera ? this._tempPos.distanceTo(entry.position) : 0;
+            const maxD = entry.maxDistance ?? 38;
+            let distCutoff = 1.0;
+            if (entry.rolloffFactor > 0 && dist > entry.refDistance) {
+                const norm = Math.max(0, Math.min(1, (dist - entry.refDistance) / Math.max(0.5, maxD - entry.refDistance)));
+                distCutoff = Math.pow(1.0 - norm, 1.8);
+            }
             if (!entry.tvFilter && entry.checkOcclusion) {
                 const occ = this.computeOcclusion(entry.position);
-                const targetFreq = occ ? 650 : 18000;
-                const targetGain = occ ? entry.baseVolume * 0.55 : entry.baseVolume;
+                const targetFreq = occ ? 480 : 18000;
+                const targetGain = entry.baseVolume * distCutoff * (occ ? 0.20 : 1.0);
                 entry.filter.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.1);
                 entry.gain.gain.setTargetAtTime(targetGain, this.ctx.currentTime, 0.1);
+            } else if (entry.rolloffFactor > 0) {
+                entry.gain.gain.setTargetAtTime(entry.baseVolume * distCutoff, this.ctx.currentTime, 0.1);
             }
         }
     }

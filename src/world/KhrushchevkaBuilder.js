@@ -55,19 +55,19 @@ export class KhrushchevkaBuilder {
             },
             builder: this,
             playerSpawn: {
-                position: new THREE.Vector3(-1.85, 0.05, -2.05),
-                yaw: -2.5,
+                position: new THREE.Vector3(-2.65, 0.05, -1.0),
+                yaw: -Math.PI / 2,
                 pitch: -0.05
             },
             patrolWaypoints: [
                 new THREE.Vector3(3.10, 0, 3.20),
                 new THREE.Vector3(2.95, 0, 0.68),
-                new THREE.Vector3(1.25, 0, 0.50),
-                new THREE.Vector3(0.85, 0, -1.45),
-                new THREE.Vector3(-1.60, 0, -1.40),
-                new THREE.Vector3(-1.60, 0, 0.50),
-                new THREE.Vector3(1.25, 0, 0.50),
-                new THREE.Vector3(2.98, 0, -1.55),
+                new THREE.Vector3(1.10, 0, 0.45),
+                new THREE.Vector3(0.45, 0, -1.55),
+                new THREE.Vector3(-0.35, 0, -2.35),
+                new THREE.Vector3(-0.35, 0, 0.45),
+                new THREE.Vector3(1.10, 0, 0.45),
+                new THREE.Vector3(2.90, 0, -1.45),
                 new THREE.Vector3(3.10, 0, 2.50),
                 new THREE.Vector3(4.60, 0, 2.55),
                 new THREE.Vector3(3.10, 0, 3.55)
@@ -195,12 +195,67 @@ export class KhrushchevkaBuilder {
         return light;
     }
 
+    _applyWorldSpaceBoxUVs(geo, w, h, d, ox = 0, oy = 0, oz = 0, mat = null) {
+        const matKey = mat?.userData?.materialKey || '';
+        if (matKey === 'carpet' || matKey === 'clockDial' || matKey === 'bloodClaw' || matKey === 'glass') {
+            return;
+        }
+        const tileScaleMap = {
+            tiles: 0.75,
+            parquet: 1.15,
+            linoleum: 1.15,
+            wallpaperHall: 1.25,
+            wallpaperKitchen: 1.25,
+            stairwellWall: 2.68,
+            concrete: 1.6,
+            panel: 2.2,
+            snow: 2.0,
+            woodDark: 0.85,
+            woodFrame: 0.85,
+            sofaFabric: 0.55,
+            tablecloth: 0.65,
+            dermantine: 1.1,
+            pine: 0.6
+        };
+        const tileSize = tileScaleMap[matKey] || 1.25;
+        const pos = geo.attributes.position;
+        const norm = geo.attributes.normal;
+        const uv = geo.attributes.uv;
+        if (!pos || !norm || !uv) return;
+
+        for (let i = 0; i < pos.count; i++) {
+            const vx = pos.getX(i) + ox;
+            const vy = pos.getY(i) + oy;
+            const vz = pos.getZ(i) + oz;
+            const nx = Math.abs(norm.getX(i));
+            const ny = Math.abs(norm.getY(i));
+            const nz = Math.abs(norm.getZ(i));
+
+            if (matKey === 'stairwellWall') {
+                // Keep vertical two-tone wall split aligned from floor to ceiling, tile horizontally
+                const uCoord = nx > 0.5 ? vz : vx;
+                const vNorm = (pos.getY(i) / Math.max(0.01, h)) + 0.5;
+                uv.setXY(i, uCoord / 1.8, vNorm);
+            } else if (ny > nx && ny > nz) {
+                uv.setXY(i, vx / tileSize, vz / tileSize);
+            } else if (nx > nz) {
+                uv.setXY(i, vz / tileSize, vy / tileSize);
+            } else {
+                uv.setXY(i, vx / tileSize, vy / tileSize);
+            }
+        }
+        uv.needsUpdate = true;
+    }
+
     _addStaticBox(name, x, y, z, w, h, d, mat, options = {}) {
         const go = new GameObject(name);
         const wSegs = options.wSegs ?? Math.min(8, Math.max(1, Math.round(w / 0.75)));
         const hSegs = options.hSegs ?? Math.min(6, Math.max(1, Math.round(h / 0.75)));
         const dSegs = options.dSegs ?? Math.min(8, Math.max(1, Math.round(d / 0.75)));
         const geo = new THREE.BoxGeometry(w, h, d, wSegs, hSegs, dSegs);
+        if (options.worldUV !== false) {
+            this._applyWorldSpaceBoxUVs(geo, w, h, d, x, y, z, mat);
+        }
         const mesh = new THREE.Mesh(geo, mat);
         const castShadow = options.castShadow !== false;
         mesh.receiveShadow = options.receiveShadow !== false;
@@ -271,6 +326,7 @@ export class KhrushchevkaBuilder {
         this._buildApartmentDecorations();
         this._buildCourtyardAndOppositeHouse();
         this._buildParticles();
+        this._autoRegisterChildParts();
 
         this.applyMapOverrides(getEffectiveMapOverrides());
         this._enableAllObjectShadows();
@@ -279,6 +335,42 @@ export class KhrushchevkaBuilder {
         this.engine.audioSystem.setOcclusionMeshes(this.blockerMeshes);
         this.world.setApartmentDestroyedState = () => this.setApartmentDestroyedState();
         return this.world;
+    }
+
+    _autoRegisterChildParts() {
+        const topObjects = [...this.editableObjects];
+        for (const root of topObjects) {
+            if (!root || root.isMesh || root.userData?.isSinglePrimitive) continue;
+            const meshChildren = [];
+            for (const ch of root.children) {
+                if (ch.userData?.isEditable) continue;
+                if (ch.isMesh || ch.children?.length > 0) {
+                    meshChildren.push(ch);
+                }
+            }
+            if (meshChildren.length <= 1) continue;
+            meshChildren.forEach((ch, idx) => {
+                const subName = `${root.name}__Part_${idx + 1}`;
+                if (this._editableByName.has(subName)) return;
+                let prim = ch.isMesh ? ch : null;
+                if (!prim) ch.traverse(c => { if (!prim && c.isMesh) prim = c; });
+                const matKey = prim?.material?.userData?.materialKey || root.userData?.materialKey || 'custom';
+                this._registerEditable(ch, subName, {
+                    category: root.userData?.category || 'props',
+                    groupId: root.userData?.groupId || null,
+                    activatedGroup: root.userData?.activatedGroup || null,
+                    defaultHidden: root.userData?.defaultHidden || false,
+                    extra: {
+                        isSceneProp: true,
+                        isSubPart: true,
+                        parentEditableName: root.name,
+                        parentActivatedObj: root,
+                        primaryMesh: prim,
+                        materialKey: matKey
+                    }
+                });
+            });
+        }
     }
 
     _enableAllObjectShadows() {
@@ -302,13 +394,13 @@ export class KhrushchevkaBuilder {
     }
 
     _initMaterials() {
-        const tParquet = this.tex.loadPhoto('parquet', 'parquet.jpg', 3, 3);
-        const tLinoleum = this.tex.loadPhoto('linoleum', 'linoleum.png', 3, 4);
+        const tParquet = this.tex.loadPhoto('parquet', 'parquet.jpg', 1, 1);
+        const tLinoleum = this.tex.loadPhoto('linoleum', 'linoleum.png', 1, 1);
         const tCarpet = this.tex.loadPhoto('carpet', 'carpet_soviet.jpg', 1, 1);
-        const tTiles = this.tex.loadPhoto('tiles', 'tiles_bathroom.jpg', 3, 2);
+        const tTiles = this.tex.loadPhoto('tiles', 'tiles_bathroom.jpg', 1, 1);
         const tDermantine = this.tex.loadPhoto('dermantine', 'dermantine.jpg', 1, 2);
-        const tPanel = this.tex.loadPhoto('panel', 'panel_wall.jpg', 3, 2);
-        const tSnow = this.tex.loadPhoto('snow', 'snow.jpg', 6, 6);
+        const tPanel = this.tex.loadPhoto('panel', 'panel_wall.jpg', 1, 1);
+        const tSnow = this.tex.loadPhoto('snow', 'snow.jpg', 1, 1);
         const tOlivier = this.tex.loadPhoto('olivier', 'food_olivier.jpg', 1, 1);
         const tChicken = this.tex.loadPhoto('chicken', 'food_chicken.jpg', 1, 1);
         const tPickles = this.tex.loadPhoto('pickles', 'pickles.jpg', 1, 1);
@@ -321,9 +413,9 @@ export class KhrushchevkaBuilder {
         const tTablecloth = this.tex.createTableclothTexture();
         const tClock = this.tex.createClockDialTexture();
         const tBlood = this.tex.createBloodClawTexture();
-        const tConcrete = this.tex.createConcreteTexture(2, 2);
+        const tConcrete = this.tex.createConcreteTexture(1, 1);
         const tUpholstery = this.tex.createUpholsteryTexture();
-        const tStairwell = this.tex.createStairwellWallTexture(2, 1);
+        const tStairwell = this.tex.createStairwellWallTexture(1, 1);
         const tMeat = this.tex.createMeatPlatterTexture();
         const tCrystal = this.tex.createCrystalTexture();
 
@@ -368,6 +460,184 @@ export class KhrushchevkaBuilder {
             mat.userData = { ...(mat.userData || {}), materialKey: key };
         }
         this.world.materials = this.materials;
+    }
+
+    createPicklesJarModel(scale = 1.0) {
+        const group = new THREE.Group();
+        const glassMat = this._ps1Mat({
+            color: 0xa8c8a2,
+            transparent: true,
+            opacity: 0.42,
+            roughness: 0.18,
+            depthWrite: false
+        });
+        const brineMat = this._ps1Mat({
+            color: 0x6b8c42,
+            transparent: true,
+            opacity: 0.36,
+            roughness: 0.3,
+            depthWrite: false
+        });
+        const cucumberMat = this._ps1Mat({
+            map: this.materials.pickles.map,
+            color: 0x557a2e,
+            roughness: 0.78
+        });
+        const lidMat = this._ps1Mat({ color: 0xc8a951, metalness: 0.55, roughness: 0.35 });
+
+        const jarBody = new THREE.Mesh(new THREE.CylinderGeometry(0.074 * scale, 0.076 * scale, 0.17 * scale, 10), glassMat);
+        const jarNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.062 * scale, 0.072 * scale, 0.025 * scale, 10), glassMat);
+        jarNeck.position.y = 0.095 * scale;
+        const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.065 * scale, 0.065 * scale, 0.018 * scale, 10), lidMat);
+        lid.position.y = 0.112 * scale;
+        const brine = new THREE.Mesh(new THREE.CylinderGeometry(0.068 * scale, 0.070 * scale, 0.145 * scale, 8), brineMat);
+        brine.position.y = -0.008 * scale;
+
+        const cukeSpecs = [
+            { x: -0.024, y: -0.015, z: 0.018, rx: 0.18, rz: -0.14, h: 0.095 },
+            { x: 0.025, y: -0.012, z: -0.015, rx: -0.22, rz: 0.16, h: 0.092 },
+            { x: -0.012, y: 0.005, z: -0.026, rx: 0.15, rz: 0.20, h: 0.088 },
+            { x: 0.018, y: -0.008, z: 0.025, rx: -0.16, rz: -0.22, h: 0.090 },
+            { x: 0.0, y: 0.025, z: 0.0, rx: 0.35, rz: 0.25, h: 0.082 }
+        ];
+        for (const c of cukeSpecs) {
+            const cuke = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.018 * scale, 0.019 * scale, c.h * scale, 7),
+                cucumberMat
+            );
+            cuke.position.set(c.x * scale, c.y * scale, c.z * scale);
+            cuke.rotation.set(c.rx, 0, c.rz);
+            group.add(cuke);
+        }
+
+        group.add(brine, jarBody, jarNeck, lid);
+        return group;
+    }
+
+    createRoastedChickenModel(scale = 1.0) {
+        const group = new THREE.Group();
+        const trayMat = this.materials.metal;
+        const roastMat = this._ps1Mat({
+            map: this.materials.chicken.map,
+            color: 0xc87d38,
+            roughness: 0.62
+        });
+        const boneMat = this._ps1Mat({ color: 0xede6d6, roughness: 0.75 });
+
+        const trayBase = new THREE.Mesh(new THREE.BoxGeometry(0.30 * scale, 0.016 * scale, 0.22 * scale), trayMat);
+        trayBase.position.y = -0.045 * scale;
+        const rimN = new THREE.Mesh(new THREE.BoxGeometry(0.30 * scale, 0.028 * scale, 0.014 * scale), trayMat);
+        rimN.position.set(0, -0.036 * scale, -0.105 * scale);
+        const rimS = new THREE.Mesh(new THREE.BoxGeometry(0.30 * scale, 0.028 * scale, 0.014 * scale), trayMat);
+        rimS.position.set(0, -0.036 * scale, 0.105 * scale);
+        const rimW = new THREE.Mesh(new THREE.BoxGeometry(0.014 * scale, 0.028 * scale, 0.20 * scale), trayMat);
+        rimW.position.set(-0.145 * scale, -0.036 * scale, 0);
+        const rimE = new THREE.Mesh(new THREE.BoxGeometry(0.014 * scale, 0.028 * scale, 0.20 * scale), trayMat);
+        rimE.position.set(0.145 * scale, -0.036 * scale, 0);
+
+        const body = new THREE.Mesh(new THREE.SphereGeometry(0.095 * scale, 8, 6), roastMat);
+        body.scale.set(1.32, 0.76, 0.92);
+        body.position.set(-0.01 * scale, 0.01 * scale, 0);
+
+        for (const side of [-1, 1]) {
+            const leg = new THREE.Mesh(new THREE.SphereGeometry(0.042 * scale, 7, 5), roastMat);
+            leg.scale.set(1.45, 0.85, 0.85);
+            leg.position.set(0.065 * scale, 0.018 * scale, side * 0.062 * scale);
+            leg.rotation.y = side * -0.25;
+            leg.rotation.z = 0.28;
+
+            const bone = new THREE.Mesh(new THREE.CylinderGeometry(0.009 * scale, 0.011 * scale, 0.045 * scale, 6), boneMat);
+            bone.rotation.z = Math.PI / 2.3;
+            bone.position.set(0.118 * scale, 0.036 * scale, side * 0.065 * scale);
+
+            const wing = new THREE.Mesh(new THREE.SphereGeometry(0.034 * scale, 6, 5), roastMat);
+            wing.scale.set(1.4, 0.65, 0.65);
+            wing.position.set(-0.035 * scale, 0.008 * scale, side * 0.082 * scale);
+            group.add(leg, bone, wing);
+        }
+
+        group.add(trayBase, rimN, rimS, rimW, rimE, body);
+        return group;
+    }
+
+    createOlivierBowlModel(scale = 1.0) {
+        const group = new THREE.Group();
+        const bowlMat = this._ps1Mat({ color: 0xd8e6f2, roughness: 0.35 });
+        const saladMat = this.materials.olivier;
+
+        const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.145 * scale, 0.095 * scale, 0.085 * scale, 10), bowlMat);
+        const mound = new THREE.Mesh(new THREE.SphereGeometry(0.132 * scale, 8, 6), saladMat);
+        mound.scale.set(1.0, 0.36, 1.0);
+        mound.position.y = 0.038 * scale;
+        group.add(bowl, mound);
+        return group;
+    }
+
+    createMeatPlatterModel(scale = 1.0) {
+        const group = new THREE.Group();
+        const plateMat = this._ps1Mat({ color: 0xe8e3d5, roughness: 0.45 });
+        const rimMat = this._ps1Mat({ color: 0x4c6d92, roughness: 0.5 });
+        const sausageMat = this.materials.meat;
+        const cheeseMat = this._ps1Mat({ color: 0xe3ba54, roughness: 0.72 });
+        const herbMat = this._ps1Mat({ color: 0x2f6b28, roughness: 0.85 });
+
+        const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.155 * scale, 0.125 * scale, 0.016 * scale, 12), plateMat);
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(0.145 * scale, 0.008 * scale, 5, 12), rimMat);
+        rim.rotation.x = Math.PI / 2;
+        rim.position.y = 0.009 * scale;
+        group.add(plate, rim);
+
+        for (let i = 0; i < 6; i++) {
+            const ang = (i / 6) * Math.PI * 2;
+            const slice = new THREE.Mesh(new THREE.CylinderGeometry(0.038 * scale, 0.038 * scale, 0.009 * scale, 8), sausageMat);
+            slice.position.set(Math.cos(ang) * 0.068 * scale, 0.014 * scale + (i % 2) * 0.003 * scale, Math.sin(ang) * 0.068 * scale);
+            slice.rotation.x = 0.08 * Math.sin(ang);
+            slice.rotation.z = -0.08 * Math.cos(ang);
+            group.add(slice);
+        }
+        for (let i = 0; i < 4; i++) {
+            const ang = (i / 4) * Math.PI * 2 + 0.4;
+            const cheese = new THREE.Mesh(new THREE.BoxGeometry(0.048 * scale, 0.008 * scale, 0.038 * scale), cheeseMat);
+            cheese.position.set(Math.cos(ang) * 0.032 * scale, 0.018 * scale, Math.sin(ang) * 0.032 * scale);
+            cheese.rotation.y = ang;
+            group.add(cheese);
+        }
+        const herb = new THREE.Mesh(new THREE.DodecahedronGeometry(0.018 * scale, 0), herbMat);
+        herb.scale.set(1.2, 0.5, 1.2);
+        herb.position.set(0, 0.024 * scale, 0);
+        group.add(herb);
+        return group;
+    }
+
+    createStoolModel(scale = 1.0) {
+        const group = new THREE.Group();
+        const seatMat = this.materials.woodDark;
+        const legMat = this.materials.woodFrame;
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(0.34 * scale, 0.036 * scale, 0.34 * scale), seatMat);
+        seat.position.y = 0.46 * scale;
+        group.add(seat);
+
+        const legPositions = [
+            [-0.125, -0.125],
+            [0.125, -0.125],
+            [-0.125, 0.125],
+            [0.125, 0.125]
+        ];
+        for (const [lx, lz] of legPositions) {
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.036 * scale, 0.45 * scale, 0.036 * scale), legMat);
+            leg.position.set(lx * scale, 0.225 * scale, lz * scale);
+            group.add(leg);
+        }
+        const rung1 = new THREE.Mesh(new THREE.BoxGeometry(0.24 * scale, 0.022 * scale, 0.022 * scale), legMat);
+        rung1.position.set(0, 0.15 * scale, -0.125 * scale);
+        const rung2 = new THREE.Mesh(new THREE.BoxGeometry(0.24 * scale, 0.022 * scale, 0.022 * scale), legMat);
+        rung2.position.set(0, 0.15 * scale, 0.125 * scale);
+        const rung3 = new THREE.Mesh(new THREE.BoxGeometry(0.022 * scale, 0.022 * scale, 0.24 * scale), legMat);
+        rung3.position.set(-0.125 * scale, 0.15 * scale, 0);
+        const rung4 = new THREE.Mesh(new THREE.BoxGeometry(0.022 * scale, 0.022 * scale, 0.24 * scale), legMat);
+        rung4.position.set(0.125 * scale, 0.15 * scale, 0);
+        group.add(rung1, rung2, rung3, rung4);
+        return group;
     }
 
     createCustomMaterial(materialKey, customProps = {}) {
@@ -432,7 +702,7 @@ export class KhrushchevkaBuilder {
         this.scene.add(moon);
 
         const tvLight = new THREE.PointLight(0x6890ff, 1.6, 8.5, 1.5);
-        tvLight.position.set(0.5, 1.15, 0.7);
+        tvLight.position.set(1.15, 1.15, -1.0);
         this.scene.add(tvLight);
 
         const hallLight = new THREE.PointLight(0xffe0a8, 0.0, 11.5, 1.35);
@@ -448,7 +718,7 @@ export class KhrushchevkaBuilder {
         this.scene.add(fridgeLight);
 
         const ovenLight = new THREE.PointLight(0xff7722, 0.0, 2.4, 1.8);
-        ovenLight.position.set(3.45, 0.45, -1.75);
+        ovenLight.position.set(3.45, 0.45, -2.10);
         this.scene.add(ovenLight);
 
         const hallwayLight = new THREE.PointLight(0xffcfa0, 1.8, 8.5, 1.5);
@@ -550,10 +820,11 @@ export class KhrushchevkaBuilder {
         balcDoorPivot.addComponent(RigidBody, { bodyType: 'static' });
         let balcOpen = false;
         let balcBaseYaw = 0;
+        let balcOpenAngle = 1.45;
         this.world.animatedDoors.push({
             pivot: balcDoorPivot,
             axis: 'y',
-            getTarget: () => balcBaseYaw + (balcOpen ? 1.45 : 0)
+            getTarget: () => balcBaseYaw + (balcOpen ? balcOpenAngle : 0)
         });
         const setBalconyOpen = (open, sound = true, instant = false) => {
             const next = !!open;
@@ -562,7 +833,7 @@ export class KhrushchevkaBuilder {
             }
             balcOpen = next;
             if (instant) {
-                balcDoorPivot.transform.rotation.y = balcBaseYaw + (balcOpen ? 1.45 : 0);
+                balcDoorPivot.transform.rotation.y = balcBaseYaw + (balcOpen ? balcOpenAngle : 0);
             }
             balcCol.enabled = !balcOpen;
             if (sound && this.engine?.audioSystem) {
@@ -581,26 +852,36 @@ export class KhrushchevkaBuilder {
                 gameObject: balcDoorPivot,
                 collide: true,
                 blocker: true,
+                initialOpenAngle: 1.45,
+                getOpenAngle: () => balcOpenAngle,
+                setOpenAngle: (a) => {
+                    balcOpenAngle = a;
+                    if (balcOpen) balcDoorPivot.transform.rotation.y = balcBaseYaw + balcOpenAngle;
+                },
+                isOpen: () => balcOpen,
+                setOpenState: (v) => setBalconyOpen(v, false, true),
                 setBaseYaw: (y) => { balcBaseYaw = y; }
             }
         });
         this.world.doors.balcony = {
             pivot: balcDoorPivot,
+            glassMesh: balcGlass,
             isOpen: () => balcOpen,
             setOpen: setBalconyOpen
         };
 
         const curtainGroup = new THREE.Group();
+        curtainGroup.position.set(-1.20, 1.38, -3.38);
         const rodMesh = new THREE.Mesh(
             new THREE.CylinderGeometry(0.016, 0.016, 2.46, 8),
             this.materials.woodDark
         );
         rodMesh.rotation.z = Math.PI / 2;
-        rodMesh.position.set(-1.20, 2.36, -3.36);
+        rodMesh.position.set(0, 0.98, 0.02);
         curtainGroup.add(rodMesh);
-        for (const bx of [-2.34, -0.06]) {
+        for (const [bIdx, bx] of [[-1.14, -0.05], [1.14, -0.05]].entries()) {
             const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.14), this.materials.woodDark);
-            bracket.position.set(bx, 2.36, -3.43);
+            bracket.position.set(bx, 0.98, -0.05);
             curtainGroup.add(bracket);
         }
 
@@ -637,17 +918,37 @@ export class KhrushchevkaBuilder {
 
         const tulleGeo = makePleatedCurtainGeo(2.08, 1.96, 24, 0.024);
         const tulleMesh = new THREE.Mesh(tulleGeo, tulleMat);
-        tulleMesh.position.set(-1.20, 1.38, -3.40);
+        tulleMesh.position.set(0, 0, -0.02);
         tulleMesh.renderOrder = 2;
         curtainGroup.add(tulleMesh);
 
         const drapeGeo = makePleatedCurtainGeo(0.84, 2.12, 16, 0.045);
         const drapeL = new THREE.Mesh(drapeGeo, fabricMat);
-        drapeL.position.set(-1.92, 1.30, -3.34);
+        drapeL.position.set(-0.72, -0.08, 0.04);
         const drapeR = new THREE.Mesh(drapeGeo, fabricMat);
-        drapeR.position.set(-0.48, 1.30, -3.34);
+        drapeR.position.set(0.72, -0.08, 0.04);
         curtainGroup.add(drapeL, drapeR);
         this.scene.add(curtainGroup);
+        this._registerEditable(curtainGroup, 'HallCurtains', {
+            category: 'furniture',
+            extra: { isSceneProp: true, primaryMesh: drapeL, materialKey: 'curtain' }
+        });
+        this._registerEditable(tulleMesh, 'HallCurtain_Tulle', {
+            category: 'furniture',
+            extra: { isSceneProp: true, primaryMesh: tulleMesh, materialKey: 'curtain' }
+        });
+        this._registerEditable(drapeL, 'HallCurtain_DrapeL', {
+            category: 'furniture',
+            extra: { isSceneProp: true, primaryMesh: drapeL, materialKey: 'curtain' }
+        });
+        this._registerEditable(drapeR, 'HallCurtain_DrapeR', {
+            category: 'furniture',
+            extra: { isSceneProp: true, primaryMesh: drapeR, materialKey: 'curtain' }
+        });
+        this._registerEditable(rodMesh, 'HallCurtain_Rod', {
+            category: 'furniture',
+            extra: { isSceneProp: true, primaryMesh: rodMesh, materialKey: 'woodDark' }
+        });
 
         this._addWallSegment('MidWall_Kitchen', 2.0, -3.5, 2.0, 0.2, 0, H, this.materials.wallpaperHall);
         this._addWallSegment('MidWall_DoorTop', 2.0, 0.2, 2.0, 1.3, 2.15, H, this.materials.wallpaperHall);
@@ -685,10 +986,10 @@ export class KhrushchevkaBuilder {
         this.world.doors.kitchen = this._addInteriorDoor({
             name: 'KitchenDoor',
             label: 'на кухню',
-            pivotPos: new THREE.Vector3(3.4, 0, -0.6),
+            pivotPos: new THREE.Vector3(2.42, 0, -0.6),
             size: new THREE.Vector3(0.98, 2.14, 0.06),
-            leafOffset: new THREE.Vector3(-0.49, 1.07, 0),
-            openAngle: -1.48,
+            leafOffset: new THREE.Vector3(0.49, 1.07, 0),
+            openAngle: 1.48,
             defaultOpen: true,
             doorMat: this.materials.woodFrame,
             hasGlass: true
@@ -715,6 +1016,10 @@ export class KhrushchevkaBuilder {
         this._addWallSegment('BathN', 4.2, 1.6, 6.1, 1.6, 0, H, this.materials.tiles);
         this._addWallSegment('BathE', 6.1, 1.6, 6.1, 3.5, 0, H, this.materials.tiles);
         this._addWallSegment('BathS', 4.2, 3.5, 6.1, 3.5, 0, H, this.materials.tiles);
+        // Inner tiled lining on the west wall of the bathroom so all 4 walls inside match
+        this._addStaticBox('BathW_TilesN', 4.296, H * 0.5, 1.85, 0.015, H, 0.50, this.materials.tiles, { collide: false, blocker: false });
+        this._addStaticBox('BathW_TilesTop', 4.296, 2.12 + (H - 2.12) * 0.5, 2.55, 0.015, H - 2.12, 0.90, this.materials.tiles, { collide: false, blocker: false });
+        this._addStaticBox('BathW_TilesS', 4.296, H * 0.5, 3.25, 0.015, H, 0.50, this.materials.tiles, { collide: false, blocker: false });
 
         this._addWallSegment('FrontWall_L', 2.0, 4.5, 2.6, 4.5, 0, H, this.materials.wallpaperHall);
         this._addWallSegment('FrontWall_Top', 2.6, 4.5, 3.55, 4.5, 2.15, H, this.materials.wallpaperHall);
@@ -771,6 +1076,10 @@ export class KhrushchevkaBuilder {
         );
         escapeGO.transform.add(escapeMesh);
         this.engine.addGameObject(escapeGO);
+        this._registerEditable(escapeGO.transform, 'EntranceEscapeZone', {
+            category: 'gameplay',
+            extra: { gameObject: escapeGO, primaryMesh: escapeMesh, collide: false, blocker: false }
+        });
         this.world.entranceEscapeZone = escapeGO;
 
         this._buildDetailedStairwell(H);
@@ -965,6 +1274,7 @@ export class KhrushchevkaBuilder {
         this.engine.addGameObject(pivot);
         this.world.interiorDoors.push(doorObj);
         this._doorConfigs.set(cfg.name, cfg);
+        const initialOpenAngle = cfg.openAngle;
         this._registerEditable(pivot.transform, cfg.name, {
             category: 'doors',
             groupId: null,
@@ -973,7 +1283,16 @@ export class KhrushchevkaBuilder {
                 collide: true,
                 blocker: true,
                 doorCfg: cfg,
+                initialOpenAngle,
                 doorOpenOffset: isOpen ? cfg.openAngle : 0,
+                getOpenAngle: () => cfg.openAngle,
+                setOpenAngle: (a) => {
+                    cfg.openAngle = a;
+                    pivot.transform.userData.doorOpenOffset = isOpen ? cfg.openAngle : 0;
+                    if (isOpen) pivot.transform.rotation.y = baseYaw + cfg.openAngle;
+                },
+                isOpen: () => isOpen,
+                setOpenState: (v) => doorObj.setOpen(v, false, true),
                 setBaseYaw: (y) => { baseYaw = y; }
             }
         });
@@ -1044,11 +1363,14 @@ export class KhrushchevkaBuilder {
         this._currentCategory = 'furniture';
         this._currentGroupId = null;
 
-        this._addStaticBox('WallCarpet', -3.41, 1.48, -1.0, 0.03, 1.45, 2.35, this.materials.carpet, { collide: false, blocker: false });
+        this._addStaticBox('WallCarpet', -3.41, 1.48, -1.0, 0.03, 1.45, 2.35, this.materials.carpet, { collide: false, blocker: false, worldUV: false });
 
         this._currentGroupId = 'group_sofa';
-        this._addStaticBox('SofaBase', -2.92, 0.45, -1.0, 1.02, 0.26, 2.1, this.materials.sofaFabric, { castShadow: true });
-        this._addStaticBox('SofaBack', -3.32, 0.72, -1.0, 0.22, 0.68, 2.1, this.materials.sofaFabric, { castShadow: true });
+        this._addStaticBox('SofaBase', -2.92, 0.46, -1.0, 1.02, 0.24, 2.1, this.materials.sofaFabric, { castShadow: true });
+        // Solid dark underside lining so looking up from under the sofa never shows backfaces or gaps
+        const underLiningMat = this._ps1Mat({ color: 0x161210, roughness: 0.95, doubleSided: true });
+        this._addStaticBox('SofaUnderLining', -2.92, 0.335, -1.0, 1.00, 0.02, 2.08, underLiningMat, { collide: false, blocker: true });
+        this._addStaticBox('SofaBack', -3.32, 0.74, -1.0, 0.22, 0.68, 2.1, this.materials.sofaFabric, { castShadow: true });
         this._addStaticBox('SofaArmN', -2.92, 0.65, -2.01, 1.02, 0.22, 0.12, this.materials.sofaFabric, { castShadow: true });
         this._addStaticBox('SofaArmS', -2.92, 0.65, 0.01, 1.02, 0.22, 0.12, this.materials.sofaFabric, { castShadow: true });
         [
@@ -1059,27 +1381,52 @@ export class KhrushchevkaBuilder {
         ].forEach(([lx, lz], idx) => {
             this._addStaticBox(`SofaLeg_${idx}`, lx, 0.16, lz, 0.08, 0.32, 0.08, this.materials.woodDark, { collide: false });
         });
+
+        // Draped sofa throw cover over seat & backrest + pleated front skirt flap
+        const throwMat = this._ps1Mat({ map: this.materials.carpet.map, color: 0xc89b7b, roughness: 0.92, doubleSided: true });
+        const sofaSeatThrow = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.025, 1.92), throwMat);
+        sofaSeatThrow.position.set(-2.88, 0.585, -1.0);
+        const sofaBackThrow = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.62, 1.92), throwMat);
+        sofaBackThrow.position.set(-3.20, 0.78, -1.0);
+        sofaBackThrow.rotation.z = -0.06;
+        this.scene.add(sofaSeatThrow, sofaBackThrow);
+        this._registerEditable(sofaSeatThrow, 'SofaSeatThrow', {
+            groupId: 'group_sofa',
+            extra: { isSceneProp: true, primaryMesh: sofaSeatThrow, materialKey: 'carpet' }
+        });
+        this._registerEditable(sofaBackThrow, 'SofaBackThrow', {
+            groupId: 'group_sofa',
+            extra: { isSceneProp: true, primaryMesh: sofaBackThrow, materialKey: 'carpet' }
+        });
+
         const sofaCoverPivot = new GameObject('SofaCoverPivot');
-        sofaCoverPivot.transform.position.set(-2.41, 0.42, -1.0);
-        const sofaCover = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.42, 2.05), this.materials.carpet);
-        sofaCover.position.set(0, -0.2, 0);
-        sofaCoverPivot.transform.add(sofaCover);
+        sofaCoverPivot.transform.position.set(-2.41, 0.35, -1.0);
+        const skirtGroup = new THREE.Group();
+        const mainSkirt = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.33, 1.94), throwMat);
+        mainSkirt.position.set(0, -0.165, 0);
+        skirtGroup.add(mainSkirt);
+        for (let f = -4; f <= 4; f++) {
+            const pleat = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.32, 0.07), throwMat);
+            pleat.position.set(0.005, -0.165, f * 0.21);
+            skirtGroup.add(pleat);
+        }
+        sofaCoverPivot.transform.add(skirtGroup);
         this.engine.addGameObject(sofaCoverPivot);
         this._registerEditable(sofaCoverPivot.transform, 'SofaCoverPivot', {
-            extra: { gameObject: sofaCoverPivot, primaryMesh: sofaCover, materialKey: 'carpet' }
+            extra: { gameObject: sofaCoverPivot, primaryMesh: mainSkirt, materialKey: 'carpet' }
         });
 
         this._registerHidingSpot({
             id: 'sofa',
             label: 'под диваном',
-            hidePos: new THREE.Vector3(-2.78, 0.25, -1.0),
-            peekPos: new THREE.Vector3(-2.35, 0.28, -1.0),
+            hidePos: new THREE.Vector3(-2.78, 0.16, -1.0),
+            peekPos: new THREE.Vector3(-2.35, 0.18, -1.0),
             lookYaw: -Math.PI / 2,
             doorPivot: sofaCoverPivot,
             doorClosedAngle: 0,
             doorOpenAngle: 1.05,
             axis: 'z',
-            enterObject: this._addStaticBox('SofaHideTrigger', -2.42, 0.28, -1.0, 0.2, 0.45, 1.8, this.materials.sofaFabric, { collide: false, blocker: false }).go,
+            enterObject: this._addStaticBox('SofaHideTrigger', -2.42, 0.24, -1.0, 0.2, 0.42, 1.8, this.materials.sofaFabric, { collide: false, blocker: false }).go,
             enterPrompt: '[E] Залезть под диван',
             doorPromptClose: '[E] Опустить покрывало дивана',
             doorPromptOpen: '[E] Приподнять покрывало'
@@ -1101,17 +1448,18 @@ export class KhrushchevkaBuilder {
         });
         this._currentGroupId = null;
 
+        // Swapped: Sideboard now stands along the South wall of the Hall (facing North -Z)
         this._currentGroupId = 'group_sideboard';
-        this._addStaticBox('SideboardLower', 1.65, 0.42, -2.05, 0.52, 0.84, 1.5, this.materials.woodDark, { castShadow: true });
-        this._addStaticBox('SideboardUpperL', 1.72, 1.38, -2.55, 0.36, 1.05, 0.48, this.materials.woodDark);
-        this._addStaticBox('SideboardUpperR', 1.72, 1.38, -1.55, 0.36, 1.05, 0.48, this.materials.woodDark);
-        this._addStaticBox('SideboardMirror', 1.88, 1.35, -2.05, 0.02, 0.88, 0.52, this.materials.glass, { collide: false });
+        this._addStaticBox('SideboardLower', -0.35, 0.42, 1.18, 1.5, 0.84, 0.52, this.materials.woodDark, { castShadow: true });
+        this._addStaticBox('SideboardUpperL', -0.85, 1.38, 1.25, 0.48, 1.05, 0.36, this.materials.woodDark);
+        this._addStaticBox('SideboardUpperR', 0.15, 1.38, 1.25, 0.48, 1.05, 0.36, this.materials.woodDark);
+        this._addStaticBox('SideboardMirror', -0.35, 1.35, 1.38, 0.52, 0.88, 0.02, this.materials.glass, { collide: false });
 
         const crystalGO = new GameObject('SideboardCrystal');
-        crystalGO.transform.position.set(1.62, 0.92, -2.05);
+        crystalGO.transform.position.set(-0.35, 0.86, 1.12);
         for (let i = 0; i < 3; i++) {
-            const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 0.15, 7), this.materials.crystal);
-            glass.position.set(0, 0.08, (i - 1) * 0.14);
+            const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 0.15, 8), this.materials.crystal);
+            glass.position.set((i - 1) * 0.14, 0.08, 0);
             crystalGO.transform.add(glass);
         }
         this.engine.addGameObject(crystalGO);
@@ -1123,7 +1471,7 @@ export class KhrushchevkaBuilder {
         this._currentGroupId = null;
 
         const fallenMirror = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.03, 0.85), this.materials.crystal);
-        fallenMirror.position.set(-1.55, 0.03, 0.25);
+        fallenMirror.position.set(-0.45, 0.03, 0.55);
         fallenMirror.rotation.y = 0.4;
         fallenMirror.visible = false;
         this.scene.add(fallenMirror);
@@ -1135,8 +1483,10 @@ export class KhrushchevkaBuilder {
         });
         this.world.fallenMirror = fallenMirror;
 
+        // WallClock moved to Kitchen wall above the doorway so 3D clock ticking comes from the kitchen
         const clockGO = new GameObject('WallClock');
-        clockGO.transform.position.set(1.9, 2.08, -1.1);
+        clockGO.transform.position.set(2.90, 2.25, -0.71);
+        clockGO.transform.rotation.y = -Math.PI / 2;
         const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.04, 12), this.materials.clockDial);
         dial.rotation.z = Math.PI / 2;
         const minutePivot = new THREE.Object3D();
@@ -1161,11 +1511,13 @@ export class KhrushchevkaBuilder {
         };
         this.world.setClockTime(0);
 
+        // Swapped: TV & TVStand now stand along the East wall of the Hall, directly opposite the Sofa!
         this._currentGroupId = 'group_tv';
         this.world.crtTV = new CRTTelevision(this.world.lights.tvLight);
-        this._addStaticBox('TVStand', 0.65, 0.34, 1.08, 0.9, 0.68, 0.54, this.materials.woodDark, { castShadow: true });
+        this._addStaticBox('TVStand', 1.60, 0.34, -1.0, 0.54, 0.68, 0.90, this.materials.woodDark, { castShadow: true });
         const tvGO = new GameObject('CRT_TV');
-        tvGO.transform.position.set(0.65, 0.94, 1.08);
+        tvGO.transform.position.set(1.58, 0.94, -1.0);
+        tvGO.transform.rotation.y = -Math.PI / 2;
         const tvBody = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.52, 0.44), this.materials.woodDark);
         const tvScreenMat = new THREE.MeshBasicMaterial({ map: this.world.crtTV.texture });
         const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.54, 0.4), tvScreenMat);
@@ -1185,39 +1537,53 @@ export class KhrushchevkaBuilder {
         this.world.tvGameObject = tvGO;
         this._currentGroupId = null;
 
+        // Folding Table: starts on the Balcony at (-0.55, 0, -4.25), then player carries it to (-1.35, 0, -1.0) in front of the Sofa
+        const tableBalconyPos = new THREE.Vector3(-0.55, 0, -4.25);
+        const tableBalconyRot = new THREE.Euler(0, 0, 0);
+        const tableHallPos = new THREE.Vector3(-1.35, 0, -1.0);
+        const tableHallRot = new THREE.Euler(0, Math.PI / 2, 0);
         const tableGO = new GameObject('FoldingTable');
-        tableGO.transform.position.set(-0.35, 0, -0.35);
-        const tableCol = tableGO.addComponent(BoxCollider, new THREE.Vector3(0.45, 0.76, 0.9), new THREE.Vector3(0, 0.38, 0));
-        tableGO.addComponent(RigidBody, { bodyType: 'static' });
+        tableGO.transform.position.copy(tableBalconyPos);
+        tableGO.transform.rotation.copy(tableBalconyRot);
+        const tableCol = tableGO.addComponent(BoxCollider, new THREE.Vector3(0.45, 0.76, 0.90), new THREE.Vector3(0, 0.38, 0));
+        const tableRB = tableGO.addComponent(RigidBody, { bodyType: 'static' });
         const tableCenter = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.74, 0.88), this.materials.woodDark);
         tableCenter.position.set(0, 0.37, 0);
-        const tableWingL = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.04, 0.88), this.materials.woodDark);
-        tableWingL.position.set(-0.46, 0.73, 0);
-        tableWingL.visible = false;
-        const tableWingR = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.04, 0.88), this.materials.woodDark);
-        tableWingR.position.set(0.46, 0.73, 0);
-        tableWingR.visible = false;
+
+        // Hinged pivots for the two folding wings so each half animates smoothly over 4 seconds
+        const wingLPivot = new THREE.Group();
+        wingLPivot.position.set(-0.21, 0.73, 0);
+        const tableWingL = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.04, 0.88), this.materials.woodDark);
+        tableWingL.position.set(-0.28, 0, 0);
+        wingLPivot.add(tableWingL);
+        wingLPivot.rotation.z = Math.PI / 2; // folded down initially
+
+        const wingRPivot = new THREE.Group();
+        wingRPivot.position.set(0.21, 0.73, 0);
+        const tableWingR = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.04, 0.88), this.materials.woodDark);
+        tableWingR.position.set(0.28, 0, 0);
+        wingRPivot.add(tableWingR);
+        wingRPivot.rotation.z = -Math.PI / 2; // folded down initially
+
         const tableclothMesh = new THREE.Mesh(new THREE.BoxGeometry(1.54, 0.02, 0.92), this.materials.tablecloth);
         tableclothMesh.position.set(0, 0.755, 0);
         tableclothMesh.visible = false;
-        tableGO.transform.add(tableCenter, tableWingL, tableWingR, tableclothMesh);
+        tableGO.transform.add(tableCenter, wingLPivot, wingRPivot, tableclothMesh);
         this.engine.addGameObject(tableGO);
         this._registerEditable(tableGO.transform, 'FoldingTable', {
             groupId: 'group_table_set',
             extra: { gameObject: tableGO, primaryMesh: tableCenter, materialKey: 'woodDark', collide: true }
         });
-        this._registerEditable(tableWingL, 'TableWingL', {
+        this._registerEditable(wingLPivot, 'TableWingL', {
             category: 'activated',
             groupId: 'group_table_set',
             activatedGroup: 'table',
-            defaultHidden: true,
             extra: { isSceneProp: true, primaryMesh: tableWingL, materialKey: 'woodDark' }
         });
-        this._registerEditable(tableWingR, 'TableWingR', {
+        this._registerEditable(wingRPivot, 'TableWingR', {
             category: 'activated',
             groupId: 'group_table_set',
             activatedGroup: 'table',
-            defaultHidden: true,
             extra: { isSceneProp: true, primaryMesh: tableWingR, materialKey: 'woodDark' }
         });
         this._registerEditable(tableclothMesh, 'Tablecloth', {
@@ -1228,6 +1594,90 @@ export class KhrushchevkaBuilder {
             extra: { isSceneProp: true, primaryMesh: tableclothMesh, materialKey: 'tablecloth' }
         });
 
+        // Glowing floor highlight square where the player must place the table in front of the sofa
+        const zoneGroup = new GameObject('TablePlacementZone');
+        zoneGroup.transform.position.copy(tableHallPos);
+        const zoneFillMat = new THREE.MeshBasicMaterial({
+            color: 0xffd166,
+            transparent: true,
+            opacity: 0.18,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        const zoneBorderMat = new THREE.MeshBasicMaterial({
+            color: 0xffe484,
+            transparent: true,
+            opacity: 0.75,
+            depthWrite: false
+        });
+        const zoneFill = new THREE.Mesh(new THREE.PlaneGeometry(0.96, 1.56), zoneFillMat);
+        zoneFill.rotation.x = -Math.PI / 2;
+        zoneFill.position.y = 0.014;
+        const bN = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.015, 0.04), zoneBorderMat);
+        bN.position.set(0, 0.016, -0.78);
+        const bS = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.015, 0.04), zoneBorderMat);
+        bS.position.set(0, 0.016, 0.78);
+        const bW = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.015, 1.56), zoneBorderMat);
+        bW.position.set(-0.48, 0.016, 0);
+        const bE = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.015, 1.56), zoneBorderMat);
+        bE.position.set(0.48, 0.016, 0);
+        const zoneHitBox = new THREE.Mesh(
+            new THREE.BoxGeometry(1.1, 0.8, 1.6),
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false })
+        );
+        zoneHitBox.position.y = 0.4;
+        zoneGroup.transform.add(zoneFill, bN, bS, bW, bE, zoneHitBox);
+        zoneGroup.transform.visible = false;
+        this.engine.addGameObject(zoneGroup);
+        this._registerEditable(zoneGroup.transform, 'TablePlacementZone', {
+            category: 'gameplay',
+            activatedGroup: 'table',
+            defaultHidden: true,
+            extra: { gameObject: zoneGroup, primaryMesh: zoneFill, collide: false, blocker: false }
+        });
+        this.world.tablePlacementZone = {
+            go: zoneGroup,
+            fillMat: zoneFillMat,
+            borderMat: zoneBorderMat
+        };
+
+        // Glowing floor highlight square & placed mesh for the kitchen stool beside the table
+        const stoolHallPos = new THREE.Vector3(-1.35, 0, -1.96);
+        const stoolZoneGO = new GameObject('StoolPlacementZone');
+        stoolZoneGO.transform.position.copy(stoolHallPos);
+        const sZoneFill = new THREE.Mesh(new THREE.PlaneGeometry(0.48, 0.48), zoneFillMat.clone());
+        sZoneFill.rotation.x = -Math.PI / 2;
+        sZoneFill.position.y = 0.014;
+        const sZoneHit = new THREE.Mesh(
+            new THREE.BoxGeometry(0.65, 0.7, 0.65),
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false })
+        );
+        sZoneHit.position.y = 0.35;
+        stoolZoneGO.transform.add(sZoneFill, sZoneHit);
+        stoolZoneGO.transform.visible = false;
+        this.engine.addGameObject(stoolZoneGO);
+        this._registerEditable(stoolZoneGO.transform, 'StoolPlacementZone', {
+            category: 'gameplay',
+            activatedGroup: 'table',
+            defaultHidden: true,
+            extra: { gameObject: stoolZoneGO, primaryMesh: sZoneFill, collide: false, blocker: false }
+        });
+
+        const placedStoolGO = new GameObject('PlacedHallStool');
+        placedStoolGO.transform.position.copy(stoolHallPos);
+        placedStoolGO.transform.add(this.createStoolModel(1.0));
+        placedStoolGO.transform.visible = false;
+        this.engine.addGameObject(placedStoolGO);
+        this._registerEditable(placedStoolGO.transform, 'PlacedHallStool', {
+            category: 'activated',
+            groupId: 'group_table_set',
+            activatedGroup: 'table',
+            defaultHidden: true,
+            extra: { gameObject: placedStoolGO, materialKey: 'woodDark' }
+        });
+        this.world.stoolPlacementZone = stoolZoneGO;
+        this.world.placedHallStool = placedStoolGO;
+
         const makeTableProp = (mesh) => {
             mesh.visible = false;
             tableGO.transform.add(mesh);
@@ -1236,20 +1686,20 @@ export class KhrushchevkaBuilder {
         const crystalGroup = new THREE.Group();
         const crystalGlasses = [];
         for (let i = 0; i < 3; i++) {
-            const g = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.025, 0.14, 7), this.materials.crystal);
+            const g = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.025, 0.14, 8), this.materials.crystal);
             g.position.set(-0.4 + i * 0.25, 0.83, -0.22);
             crystalGroup.add(g);
             crystalGlasses.push(g);
         }
-        const picklesTable = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.2, 8), this.materials.pickles);
-        picklesTable.position.set(-0.48, 0.86, 0.15);
-        const olivierTable = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.11, 0.11, 8), this.materials.olivier);
-        olivierTable.position.set(-0.08, 0.82, -0.05);
-        const meatTable = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.03, 8), this.materials.meat);
-        meatTable.position.set(0.24, 0.78, -0.18);
-        const chickenTable = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.12, 0.24), this.materials.chicken);
-        chickenTable.position.set(0.26, 0.83, 0.14);
-        const champTable = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.28, 7), this.materials.champagne);
+        const picklesTable = this.createPicklesJarModel(1.0);
+        picklesTable.position.set(-0.48, 0.85, 0.15);
+        const olivierTable = this.createOlivierBowlModel(1.0);
+        olivierTable.position.set(-0.08, 0.81, -0.05);
+        const meatTable = this.createMeatPlatterModel(1.0);
+        meatTable.position.set(0.24, 0.775, -0.18);
+        const chickenTable = this.createRoastedChickenModel(1.0);
+        chickenTable.position.set(0.26, 0.82, 0.14);
+        const champTable = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.28, 8), this.materials.champagne);
         champTable.position.set(0.55, 0.9, -0.02);
 
         this.world.itemsOnTable = {
@@ -1273,19 +1723,19 @@ export class KhrushchevkaBuilder {
         });
         this._registerEditable(picklesTable, 'TableItem_Pickles', {
             category: 'activated', groupId: 'group_table_set', activatedGroup: 'table', defaultHidden: true,
-            extra: { isSceneProp: true, primaryMesh: picklesTable, materialKey: 'pickles' }
+            extra: { isSceneProp: true, materialKey: 'pickles' }
         });
         this._registerEditable(olivierTable, 'TableItem_Olivier', {
             category: 'activated', groupId: 'group_table_set', activatedGroup: 'table', defaultHidden: true,
-            extra: { isSceneProp: true, primaryMesh: olivierTable, materialKey: 'olivier' }
+            extra: { isSceneProp: true, materialKey: 'olivier' }
         });
         this._registerEditable(meatTable, 'TableItem_Meat', {
             category: 'activated', groupId: 'group_table_set', activatedGroup: 'table', defaultHidden: true,
-            extra: { isSceneProp: true, primaryMesh: meatTable, materialKey: 'custom' }
+            extra: { isSceneProp: true, materialKey: 'meat' }
         });
         this._registerEditable(chickenTable, 'TableItem_Chicken', {
             category: 'activated', groupId: 'group_table_set', activatedGroup: 'table', defaultHidden: true,
-            extra: { isSceneProp: true, primaryMesh: chickenTable, materialKey: 'chicken' }
+            extra: { isSceneProp: true, materialKey: 'chicken' }
         });
         this._registerEditable(champTable, 'TableItem_Champagne', {
             category: 'activated', groupId: 'group_table_set', activatedGroup: 'table', defaultHidden: true,
@@ -1293,7 +1743,7 @@ export class KhrushchevkaBuilder {
         });
 
         const wreckedTable = new GameObject('WreckedTable');
-        wreckedTable.transform.position.set(0, 0, 0);
+        wreckedTable.transform.position.set(-1.0, 0, -0.65);
         const wBody = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.06, 0.88), this.materials.woodDark);
         wBody.position.set(-0.55, 0.34, -0.35);
         wBody.rotation.set(0.28, 0.4, 2.38);
@@ -1311,7 +1761,7 @@ export class KhrushchevkaBuilder {
         spilledOlivier.position.set(-0.22, 0.02, -0.15);
         const brokenPlate = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.12, 0.02, 5), this.materials.fridgeWhite);
         brokenPlate.position.set(-0.62, 0.02, -0.05);
-        const spilledChicken = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.11, 0.22), this.materials.chicken);
+        const spilledChicken = this.createRoastedChickenModel(0.95);
         spilledChicken.position.set(0.12, 0.07, -0.18);
         spilledChicken.rotation.set(0.1, 0.7, 2.9);
         const fallenChampagne = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.28, 7), this.materials.champagne);
@@ -1360,42 +1810,140 @@ export class KhrushchevkaBuilder {
             });
         });
 
+        const pushPlayerOutOfTable = () => {
+            const player = this.engine?.player;
+            if (!player || !tableCol.enabled) return;
+            const pPos = player.transform.position;
+            const pCol = player.getComponent?.(BoxCollider);
+            const pRadiusX = ((pCol?.size?.x ?? 0.46) * 0.5) + 0.06;
+            const pRadiusZ = ((pCol?.size?.z ?? 0.46) * 0.5) + 0.06;
+            const tBox = tableCol.getBox(tableGO.transform.position);
+            const minX = tBox.min.x - pRadiusX;
+            const maxX = tBox.max.x + pRadiusX;
+            const minZ = tBox.min.z - pRadiusZ;
+            const maxZ = tBox.max.z + pRadiusZ;
+            if (pPos.x > minX && pPos.x < maxX && pPos.z > minZ && pPos.z < maxZ) {
+                const dLeft = Math.abs(pPos.x - minX);
+                const dRight = Math.abs(maxX - pPos.x);
+                const dNorth = Math.abs(pPos.z - minZ);
+                const dSouth = Math.abs(maxZ - pPos.z);
+                const m = Math.min(dLeft, dRight, dNorth, dSouth);
+                if (m === dLeft) pPos.x = minX - 0.02;
+                else if (m === dRight) pPos.x = maxX + 0.02;
+                else if (m === dNorth) pPos.z = minZ - 0.02;
+                else pPos.z = maxZ + 0.02;
+                const rb = player.getComponent?.(RigidBody);
+                if (rb) rb.position.copy(pPos);
+            }
+        };
+
+        const updateTableColliderForState = (w1, w2) => {
+            const inHall = tableGO.transform.position.distanceTo(tableHallPos) < 0.5;
+            if (!inHall) {
+                tableCol.setSize(new THREE.Vector3(0.45, 0.76, 0.90));
+                tableCol.offset.set(0, 0.38, 0);
+            } else {
+                const lenL = w1 > 0.5 ? 0.56 : 0;
+                const lenR = w2 > 0.5 ? 0.56 : 0;
+                const totalZ = 0.42 + lenL + lenR;
+                const shiftZ = (lenL - lenR) * 0.5;
+                tableCol.setSize(new THREE.Vector3(0.90, 0.76, totalZ));
+                tableCol.offset.set(0, 0.38, shiftZ);
+            }
+            if (tableRB) tableRB.position.copy(tableGO.transform.position);
+            pushPlayerOutOfTable();
+        };
+
         this.world.table = {
             go: tableGO,
             wreckedGO: wreckedTable,
             collider: tableCol,
+            balconyPos: tableBalconyPos,
+            balconyRot: tableBalconyRot,
+            hallPos: tableHallPos,
+            hallRot: tableHallRot,
+            wingLPivot,
+            wingRPivot,
+            tableclothMesh,
+            placeOnBalcony: () => {
+                tableGO.transform.visible = true;
+                tableGO.transform.position.copy(tableBalconyPos);
+                tableGO.transform.rotation.copy(tableBalconyRot);
+                if (tableRB) tableRB.position.copy(tableBalconyPos);
+                tableCol.enabled = true;
+                wingLPivot.rotation.z = Math.PI / 2;
+                wingRPivot.rotation.z = -Math.PI / 2;
+                tableclothMesh.visible = false;
+                updateTableColliderForState(0, 0);
+            },
+            placeInHallFolded: () => {
+                tableGO.transform.visible = true;
+                tableGO.transform.position.copy(tableHallPos);
+                tableGO.transform.rotation.copy(tableHallRot);
+                if (tableRB) tableRB.position.copy(tableHallPos);
+                tableCol.enabled = true;
+                wingLPivot.rotation.z = Math.PI / 2;
+                wingRPivot.rotation.z = -Math.PI / 2;
+                tableclothMesh.visible = false;
+                updateTableColliderForState(0, 0);
+            },
+            setWingProgress: (wingIndex, ratio) => {
+                const r = Math.max(0, Math.min(1, ratio));
+                if (wingIndex === 1) {
+                    wingLPivot.rotation.z = THREE.MathUtils.lerp(Math.PI / 2, 0, r);
+                    if (r >= 0.99) updateTableColliderForState(1, wingRPivot.rotation.z > -0.1 ? 1 : 0);
+                } else if (wingIndex === 2) {
+                    wingRPivot.rotation.z = THREE.MathUtils.lerp(-Math.PI / 2, 0, r);
+                    if (r >= 0.99) {
+                        tableclothMesh.visible = true;
+                        updateTableColliderForState(1, 1);
+                    }
+                }
+            },
             unfold: () => {
-                tableWingL.visible = true;
-                tableWingR.visible = true;
+                tableGO.transform.visible = true;
+                tableGO.transform.position.copy(tableHallPos);
+                tableGO.transform.rotation.copy(tableHallRot);
+                if (tableRB) tableRB.position.copy(tableHallPos);
+                tableCol.enabled = true;
+                wingLPivot.rotation.z = 0;
+                wingRPivot.rotation.z = 0;
                 tableclothMesh.visible = true;
-                tableCol.setSize(new THREE.Vector3(1.54, 0.76, 0.92));
+                updateTableColliderForState(1, 1);
             },
             fold: () => {
-                tableWingL.visible = false;
-                tableWingR.visible = false;
+                wingLPivot.rotation.z = Math.PI / 2;
+                wingRPivot.rotation.z = -Math.PI / 2;
                 tableclothMesh.visible = false;
-                tableCol.setSize(new THREE.Vector3(0.45, 0.76, 0.9));
+                updateTableColliderForState(0, 0);
             }
         };
 
+        // Redesigned Christmas Tree: 6 flattened, wide overlapping tiers without sharp ugly spikes
         const treeGO = new GameObject('ChristmasTree');
         treeGO.transform.position.set(-2.75, 0, 0.85);
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.4, 6), this.materials.woodDark);
-        trunk.position.y = 0.2;
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.09, 0.42, 7), this.materials.woodDark);
+        trunk.position.y = 0.21;
         treeGO.transform.add(trunk);
-        for (let tier = 0; tier < 4; tier++) {
-            const r = 0.68 - tier * 0.14;
-            const h = 0.65 - tier * 0.08;
-            const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h, 7), this.materials.pine);
-            cone.position.y = 0.55 + tier * 0.4;
-            cone.castShadow = true;
-            treeGO.transform.add(cone);
+        const treeTiers = [
+            { y: 0.46, rTop: 0.16, rBot: 0.74, h: 0.34 },
+            { y: 0.74, rTop: 0.14, rBot: 0.64, h: 0.32 },
+            { y: 1.00, rTop: 0.12, rBot: 0.54, h: 0.30 },
+            { y: 1.25, rTop: 0.10, rBot: 0.43, h: 0.28 },
+            { y: 1.48, rTop: 0.07, rBot: 0.32, h: 0.26 },
+            { y: 1.70, rTop: 0.02, rBot: 0.21, h: 0.26 }
+        ];
+        for (const t of treeTiers) {
+            const tierMesh = new THREE.Mesh(new THREE.CylinderGeometry(t.rTop, t.rBot, t.h, 9), this.materials.pine);
+            tierMesh.position.y = t.y;
+            tierMesh.castShadow = true;
+            treeGO.transform.add(tierMesh);
         }
         const star = new THREE.Mesh(
-            new THREE.OctahedronGeometry(0.11, 0),
+            new THREE.OctahedronGeometry(0.10, 0),
             this._ps1Mat({ color: 0xff2222, emissive: 0x550000 })
         );
-        star.position.y = 2.12;
+        star.position.y = 1.92;
         treeGO.transform.add(star);
 
         const treeGarlandGroup = new THREE.Group();
@@ -1434,6 +1982,12 @@ export class KhrushchevkaBuilder {
         ));
         tornGarland.visible = false;
         this.scene.add(tornGarland);
+        this._registerEditable(tornGarland, 'TornGarland', {
+            category: 'activated',
+            activatedGroup: 'act4',
+            defaultHidden: true,
+            extra: { isSceneProp: true, materialKey: 'darkSilhouette' }
+        });
         this.world.tornGarland = tornGarland;
         for (let g = 0; g < 2; g++) {
             const pl = new THREE.PointLight(g === 0 ? 0xff4433 : 0x44aaff, 0.0, 4.5, 1.7);
@@ -1523,14 +2077,15 @@ export class KhrushchevkaBuilder {
         fridgeDoorPivot.transform.add(fDoorMesh, fHandle);
         this.blockerMeshes.push(fDoorMesh);
         let fridgeOpen = false;
+        let fridgeOpenAngle = -1.45;
         this.world.animatedDoors.push({
             pivot: fridgeDoorPivot,
             axis: 'y',
-            getTarget: () => (fridgeOpen ? -1.45 : 0)
+            getTarget: () => (fridgeOpen ? fridgeOpenAngle : 0)
         });
         const setFridgeOpen = (open, sound = true, instant = false) => {
             fridgeOpen = open;
-            if (instant) fridgeDoorPivot.transform.rotation.y = open ? -1.45 : 0;
+            if (instant) fridgeDoorPivot.transform.rotation.y = open ? fridgeOpenAngle : 0;
             this.world.lights.fridgeLight.intensity = (open && !this.world.powerOut) ? 1.45 : 0.0;
             if (sound && this.engine?.audioSystem) {
                 this.engine.audioSystem.playSpatialOneShot('door_open', fridgeDoorPivot.transform.position);
@@ -1542,37 +2097,52 @@ export class KhrushchevkaBuilder {
         });
         this.engine.addGameObject(fridgeDoorPivot);
         this._registerEditable(fridgeDoorPivot.transform, 'FridgeDoor', {
-            extra: { gameObject: fridgeDoorPivot, primaryMesh: fDoorMesh, materialKey: 'fridgeWhite', blocker: true }
+            extra: {
+                gameObject: fridgeDoorPivot,
+                primaryMesh: fDoorMesh,
+                materialKey: 'fridgeWhite',
+                blocker: true,
+                initialOpenAngle: -1.45,
+                getOpenAngle: () => fridgeOpenAngle,
+                setOpenAngle: (a) => {
+                    fridgeOpenAngle = a;
+                    if (fridgeOpen) fridgeDoorPivot.transform.rotation.y = fridgeOpenAngle;
+                },
+                isOpen: () => fridgeOpen,
+                setOpenState: (v) => setFridgeOpen(v, false, true)
+            }
         });
 
         const olivierFridge = new GameObject('FridgeOlivier');
-        olivierFridge.transform.position.set(3.62, 1.13, -2.85);
-        const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.10, 0.11, 8), this.materials.olivier);
-        olivierFridge.transform.add(bowl);
+        olivierFridge.transform.position.set(3.62, 1.12, -2.85);
+        const bowlModel = this.createOlivierBowlModel(0.95);
+        olivierFridge.transform.add(bowlModel);
         this.engine.addGameObject(olivierFridge);
         this._registerEditable(olivierFridge.transform, 'FridgeOlivier', {
             activatedGroup: 'pickup',
-            extra: { gameObject: olivierFridge, primaryMesh: bowl, materialKey: 'olivier' }
+            extra: { gameObject: olivierFridge, materialKey: 'olivier' }
         });
         this.world.fridgeOlivier = olivierFridge;
 
         const meatFridge = new GameObject('FridgeMeat');
-        meatFridge.transform.position.set(3.62, 0.78, -2.85);
-        const platter = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.04, 8), this.materials.meat);
-        meatFridge.transform.add(platter);
+        meatFridge.transform.position.set(3.62, 0.77, -2.85);
+        const platterModel = this.createMeatPlatterModel(0.95);
+        meatFridge.transform.add(platterModel);
         this.engine.addGameObject(meatFridge);
         this._registerEditable(meatFridge.transform, 'FridgeMeat', {
             activatedGroup: 'pickup',
-            extra: { gameObject: meatFridge, primaryMesh: platter, materialKey: 'meat' }
+            extra: { gameObject: meatFridge, materialKey: 'meat' }
         });
         this.world.fridgeMeat = meatFridge;
 
         this.world.fridge = { pivot: fridgeDoorPivot, isOpen: () => fridgeOpen, setOpen: setFridgeOpen };
         this._currentGroupId = null;
 
+        // Stove shifted to z = -2.10 so the kitchen door never blocks the oven; Range Hood added above it
+        const stoveZ = -2.10;
         this._currentGroupId = 'group_stove';
         const stoveColGO = new GameObject('StoveCollider');
-        stoveColGO.transform.position.set(3.75, 0.44, -1.75);
+        stoveColGO.transform.position.set(3.75, 0.44, stoveZ);
         stoveColGO.addComponent(BoxCollider, new THREE.Vector3(0.65, 0.88, 0.68));
         stoveColGO.addComponent(RigidBody, { bodyType: 'static' });
         this.engine.addGameObject(stoveColGO);
@@ -1580,36 +2150,46 @@ export class KhrushchevkaBuilder {
             extra: { gameObject: stoveColGO, collide: true }
         });
 
-        this._addStaticBox('StoveBottom', 3.75, 0.08, -1.75, 0.65, 0.16, 0.68, this.materials.stoveWhite, { collide: false });
-        this._addStaticBox('StoveTop', 3.75, 0.80, -1.75, 0.65, 0.16, 0.68, this.materials.stoveWhite, { collide: false, castShadow: true });
-        this._addStaticBox('StoveBack', 4.04, 0.44, -1.75, 0.07, 0.88, 0.68, this.materials.stoveWhite, { collide: false });
-        this._addStaticBox('StoveSideN', 3.75, 0.44, -2.06, 0.65, 0.88, 0.06, this.materials.stoveWhite, { collide: false });
-        this._addStaticBox('StoveSideS', 3.75, 0.44, -1.44, 0.65, 0.88, 0.06, this.materials.stoveWhite, { collide: false });
-        this._addStaticBox('OvenRack', 3.74, 0.27, -1.75, 0.54, 0.02, 0.54, this.materials.metal, { collide: false, blocker: false });
+        this._addStaticBox('StoveBottom', 3.75, 0.08, stoveZ, 0.65, 0.16, 0.68, this.materials.stoveWhite, { collide: false });
+        this._addStaticBox('StoveTop', 3.75, 0.80, stoveZ, 0.65, 0.16, 0.68, this.materials.stoveWhite, { collide: false, castShadow: true });
+        this._addStaticBox('StoveBack', 4.04, 0.44, stoveZ, 0.07, 0.88, 0.68, this.materials.stoveWhite, { collide: false });
+        this._addStaticBox('StoveSideN', 3.75, 0.44, stoveZ - 0.31, 0.65, 0.88, 0.06, this.materials.stoveWhite, { collide: false });
+        this._addStaticBox('StoveSideS', 3.75, 0.44, stoveZ + 0.31, 0.65, 0.88, 0.06, this.materials.stoveWhite, { collide: false });
+        this._addStaticBox('OvenRack', 3.74, 0.27, stoveZ, 0.54, 0.02, 0.54, this.materials.metal, { collide: false, blocker: false });
         [
             [-0.14, -0.15],
             [0.14, -0.15],
             [-0.14, 0.15],
             [0.14, 0.15]
         ].forEach(([bx, bz], idx) => {
-            this._addStaticBox(`StoveBurner_${idx}`, 3.75 + bx, 0.895, -1.75 + bz, 0.14, 0.03, 0.14, this.materials.metal, { collide: false, blocker: false });
+            this._addStaticBox(`StoveBurner_${idx}`, 3.75 + bx, 0.895, stoveZ + bz, 0.14, 0.03, 0.14, this.materials.metal, { collide: false, blocker: false });
         });
 
+        // Range Hood (Вытяжка над плитой)
+        this._addStaticBox('RangeHoodCanopy', 3.75, 1.66, stoveZ, 0.66, 0.14, 0.68, this.materials.stoveWhite, { collide: false });
+        this._addStaticBox('RangeHoodVisor', 3.41, 1.63, stoveZ, 0.06, 0.08, 0.68, this.materials.metal, { collide: false });
+        this._addStaticBox('RangeHoodDuct', 3.88, 2.18, stoveZ, 0.28, 0.92, 0.32, this.materials.metal, { collide: false });
+
         const ovenDoorPivot = new GameObject('OvenDoor');
-        ovenDoorPivot.transform.position.set(3.41, 0.15, -1.75);
+        ovenDoorPivot.transform.position.set(3.41, 0.15, stoveZ);
         const oDoorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.45, 0.56), this.materials.metal);
         oDoorMesh.position.set(0, 0.225, 0);
-        ovenDoorPivot.transform.add(oDoorMesh);
+        const oWindowMesh = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.24, 0.38), this.materials.glass);
+        oWindowMesh.position.set(0, 0.24, 0);
+        const oHandleMesh = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 0.42), this.materials.stoveWhite);
+        oHandleMesh.position.set(-0.04, 0.40, 0);
+        ovenDoorPivot.transform.add(oDoorMesh, oWindowMesh, oHandleMesh);
         this.blockerMeshes.push(oDoorMesh);
         let ovenOpen = false;
+        let ovenOpenAngle = 1.25;
         this.world.animatedDoors.push({
             pivot: ovenDoorPivot,
             axis: 'z',
-            getTarget: () => (ovenOpen ? 1.25 : 0)
+            getTarget: () => (ovenOpen ? ovenOpenAngle : 0)
         });
         const setOvenOpen = (open, sound = true, instant = false) => {
             ovenOpen = open;
-            if (instant) ovenDoorPivot.transform.rotation.z = open ? 1.25 : 0;
+            if (instant) ovenDoorPivot.transform.rotation.z = open ? ovenOpenAngle : 0;
             this.world.lights.ovenLight.intensity = (open && !this.world.powerOut) ? 1.4 : 0.0;
             if (this.world.steamEmitter) this.world.steamEmitter.setActive(open && !this.world.powerOut);
             if (sound && this.engine?.audioSystem) {
@@ -1622,23 +2202,67 @@ export class KhrushchevkaBuilder {
         });
         this.engine.addGameObject(ovenDoorPivot);
         this._registerEditable(ovenDoorPivot.transform, 'OvenDoor', {
-            extra: { gameObject: ovenDoorPivot, primaryMesh: oDoorMesh, materialKey: 'metal', blocker: true }
+            extra: {
+                gameObject: ovenDoorPivot,
+                primaryMesh: oDoorMesh,
+                materialKey: 'metal',
+                blocker: true,
+                initialOpenAngle: 1.25,
+                getOpenAngle: () => ovenOpenAngle,
+                setOpenAngle: (a) => {
+                    ovenOpenAngle = a;
+                    if (ovenOpen) ovenDoorPivot.transform.rotation.z = ovenOpenAngle;
+                },
+                isOpen: () => ovenOpen,
+                setOpenState: (v) => setOvenOpen(v, false, true)
+            }
         });
 
         const chickenOven = new GameObject('OvenChicken');
-        chickenOven.transform.position.set(3.60, 0.34, -1.75);
-        const tray = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.12, 0.26), this.materials.chicken);
-        chickenOven.transform.add(tray);
+        chickenOven.transform.position.set(3.62, 0.34, stoveZ);
+        const chickenModel = this.createRoastedChickenModel(0.95);
+        chickenOven.transform.add(chickenModel);
         this.engine.addGameObject(chickenOven);
         this._registerEditable(chickenOven.transform, 'OvenChicken', {
             activatedGroup: 'pickup',
-            extra: { gameObject: chickenOven, primaryMesh: tray, materialKey: 'chicken' }
+            extra: { gameObject: chickenOven, materialKey: 'chicken' }
         });
         this.world.ovenChicken = chickenOven;
         this.world.stove = { pivot: ovenDoorPivot, isOpen: () => ovenOpen, setOpen: setOvenOpen };
         this._currentGroupId = null;
 
-        this._addStaticBox('KitchenTable', 2.45, 0.38, -2.55, 0.72, 0.76, 0.95, this.materials.woodDark);
+        // Kitchen Sink (Раковина на кухне) next to the stove at z = -1.25
+        const kSinkZ = -1.25;
+        this._currentGroupId = 'group_kitchen_sink';
+        this._addStaticBox('KitchenSinkCabinet', 3.76, 0.41, kSinkZ, 0.62, 0.82, 0.72, this.materials.stoveWhite, { castShadow: true });
+        this._addStaticBox('KitchenSinkRimN', 3.76, 0.85, kSinkZ - 0.31, 0.62, 0.08, 0.10, this.materials.metal, { collide: false });
+        this._addStaticBox('KitchenSinkRimS', 3.76, 0.85, kSinkZ + 0.31, 0.62, 0.08, 0.10, this.materials.metal, { collide: false });
+        this._addStaticBox('KitchenSinkRimW', 3.50, 0.85, kSinkZ, 0.10, 0.08, 0.52, this.materials.metal, { collide: false });
+        this._addStaticBox('KitchenSinkRimE', 4.02, 0.85, kSinkZ, 0.10, 0.08, 0.52, this.materials.metal, { collide: false });
+        this._addStaticBox('KitchenSinkFaucetBase', 4.00, 0.96, kSinkZ, 0.06, 0.16, 0.06, this.materials.metal, { collide: false });
+        this._addStaticBox('KitchenSinkFaucetSpout', 3.88, 1.03, kSinkZ, 0.22, 0.04, 0.04, this.materials.metal, { collide: false });
+        this._currentGroupId = null;
+
+        // Small kitchen table against west wall & pickupable Kitchen Stool
+        this._addStaticBox('KitchenSmallTable', 2.38, 0.74, -2.55, 0.64, 0.05, 0.86, this.materials.woodDark);
+        [
+            [2.12, -2.92],
+            [2.64, -2.92],
+            [2.12, -2.18],
+            [2.64, -2.18]
+        ].forEach(([lx, lz], idx) => {
+            this._addStaticBox(`KitchenSmallTableLeg_${idx}`, lx, 0.36, lz, 0.05, 0.72, 0.05, this.materials.woodFrame, { collide: false });
+        });
+
+        const stoolGO = new GameObject('KitchenStool');
+        stoolGO.transform.position.set(2.45, 0, -1.68);
+        stoolGO.transform.add(this.createStoolModel(1.0));
+        this.engine.addGameObject(stoolGO);
+        this._registerEditable(stoolGO.transform, 'KitchenStool', {
+            activatedGroup: 'pickup',
+            extra: { gameObject: stoolGO, materialKey: 'woodDark' }
+        });
+        this.world.kitchenStool = stoolGO;
     }
 
     _buildHallwayPantryBathroom() {
@@ -1787,26 +2411,67 @@ export class KhrushchevkaBuilder {
             extra: { gameObject: pantryPivot, primaryMesh: pantryLeaf, materialKey: 'woodFrame', blocker: true, collide: true }
         });
 
+        // Organized Pantry: pickle jars neatly grouped on shelves + extra household items
         this._addStaticBox('PantryShelf1', 1.14, 1.05, 2.4, 0.52, 0.05, 1.05, this.materials.woodDark);
-        this._addStaticBox('PantryShelf2', 1.05, 1.55, 2.4, 0.35, 0.05, 1.05, this.materials.woodDark);
-        for (let j = 0; j < 4; j++) {
-            const jar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.2, 8), this.materials.pickles);
-            jar.position.set(1.05, 1.68, 2.0 + j * 0.25);
+        this._addStaticBox('PantryShelf2', 1.05, 1.55, 2.4, 0.38, 0.05, 1.05, this.materials.woodDark);
+        const jarCoords = [
+            [1.02, 1.68, 2.00],
+            [1.04, 1.68, 2.18],
+            [1.02, 1.68, 2.36],
+            [1.14, 1.18, 2.02],
+            [1.14, 1.18, 2.20]
+        ];
+        jarCoords.forEach(([jx, jy, jz], j) => {
+            const jar = this.createPicklesJarModel(0.95);
+            jar.position.set(jx, jy, jz);
             this.scene.add(jar);
             this._registerEditable(jar, `PantryJar_${j}`, {
-                extra: { isSceneProp: true, primaryMesh: jar, materialKey: 'pickles' }
+                extra: { isSceneProp: true, materialKey: 'pickles' }
             });
-        }
+        });
         const interactivePickles = new GameObject('PantryPicklesJar');
-        interactivePickles.transform.position.set(1.32, 1.18, 2.42);
-        const pJarMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.21, 8), this.materials.pickles);
-        interactivePickles.transform.add(pJarMesh);
+        interactivePickles.transform.position.set(1.26, 1.18, 2.34);
+        const pJarModel = this.createPicklesJarModel(1.0);
+        interactivePickles.transform.add(pJarModel);
         this.engine.addGameObject(interactivePickles);
         this._registerEditable(interactivePickles.transform, 'PantryPicklesJar', {
             activatedGroup: 'pickup',
-            extra: { gameObject: interactivePickles, primaryMesh: pJarMesh, materialKey: 'pickles' }
+            extra: { gameObject: interactivePickles, materialKey: 'pickles' }
         });
         this.world.pantryPickles = interactivePickles;
+
+        // Additional pantry props: enamel stockpot, toolbox, cardboard storage box, wooden crate with potatoes, broom
+        const potGroup = new THREE.Group();
+        const potMat = this._ps1Mat({ color: 0x3b6e8c, roughness: 0.45 });
+        const potBody = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.10, 0.16, 10), potMat);
+        const potLid = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.02, 10), this.materials.stoveWhite);
+        potLid.position.y = 0.085;
+        const potKnob = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 5), this.materials.darkSilhouette);
+        potKnob.position.y = 0.102;
+        potGroup.add(potBody, potLid, potKnob);
+        potGroup.position.set(1.16, 1.16, 2.72);
+        this.scene.add(potGroup);
+        this._registerEditable(potGroup, 'PantryPot', {
+            category: 'props',
+            extra: { isSceneProp: true, primaryMesh: potBody, materialKey: 'metal' }
+        });
+
+        this._addStaticBox('PantryToolbox', 1.04, 1.66, 2.72, 0.24, 0.16, 0.34, this.materials.metal, { collide: false });
+        this._addStaticBox('PantryPotatoCrate', 1.12, 0.18, 2.08, 0.42, 0.34, 0.44, this.materials.woodFrame, { collide: false });
+        this._addStaticBox('PantryStorageBox', 1.10, 0.50, 2.10, 0.34, 0.26, 0.36, this.materials.woodDark, { collide: false });
+        const mopGroup = new THREE.Group();
+        mopGroup.position.set(0.98, 0.0, 2.86);
+        const mopHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 1.35, 6), this.materials.woodFrame);
+        mopHandle.position.set(-0.03, 0.68, 0);
+        mopHandle.rotation.z = -0.12;
+        const mopHead = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.28), this.materials.woodDark);
+        mopHead.position.set(0.05, 0.03, 0);
+        mopGroup.add(mopHandle, mopHead);
+        this.scene.add(mopGroup);
+        this._registerEditable(mopGroup, 'PantryMop', {
+            category: 'props',
+            extra: { isSceneProp: true, primaryMesh: mopHead, materialKey: 'woodDark' }
+        });
 
         this._registerHidingSpot({
             id: 'pantry',
@@ -2026,6 +2691,22 @@ export class KhrushchevkaBuilder {
             defaultClosed: !!cfg.defaultClosed
         };
 
+        const initialDoorOpenAngle = cfg.doorOpenAngle;
+        if (cfg.doorPivot?.transform?.userData) {
+            const ud = cfg.doorPivot.transform.userData;
+            ud.initialOpenAngle = initialDoorOpenAngle;
+            ud.getOpenAngle = () => cfg.doorOpenAngle;
+            ud.setOpenAngle = (a) => {
+                cfg.doorOpenAngle = a;
+                applyDoorPose(true);
+            };
+            ud.isOpen = () => !isClosed;
+            ud.setOpenState = (open) => {
+                isClosed = !open;
+                applyDoorPose(true);
+            };
+        }
+
         applyDoorPose(true);
 
         if (cfg.id === 'pantry' || cfg.id === 'sofa' || cfg.id === 'wardrobe') {
@@ -2229,15 +2910,16 @@ export class KhrushchevkaBuilder {
 
         let balcWinOpen = false;
         let balcWinBaseYaw = 0;
+        let balcWinOpenAngle = -1.28;
         this.world.animatedDoors.push({
             pivot: openFramePivot,
             axis: 'y',
-            getTarget: () => balcWinBaseYaw + (balcWinOpen ? -1.28 : 0)
+            getTarget: () => balcWinBaseYaw + (balcWinOpen ? balcWinOpenAngle : 0)
         });
         const setBalcWinOpen = (open, sound = true, instant = false) => {
             balcWinOpen = !!open;
             if (instant) {
-                openFramePivot.transform.rotation.y = balcWinBaseYaw + (balcWinOpen ? -1.28 : 0);
+                openFramePivot.transform.rotation.y = balcWinBaseYaw + (balcWinOpen ? balcWinOpenAngle : 0);
             }
             if (sound && this.engine?.audioSystem) {
                 this.engine.audioSystem.playSpatialOneShot('door_open', openFramePivot.transform.position);
@@ -2254,6 +2936,14 @@ export class KhrushchevkaBuilder {
                 gameObject: openFramePivot,
                 primaryMesh: ofTop,
                 materialKey: 'woodFrame',
+                initialOpenAngle: -1.28,
+                getOpenAngle: () => balcWinOpenAngle,
+                setOpenAngle: (a) => {
+                    balcWinOpenAngle = a;
+                    if (balcWinOpen) openFramePivot.transform.rotation.y = balcWinBaseYaw + balcWinOpenAngle;
+                },
+                isOpen: () => balcWinOpen,
+                setOpenState: (v) => setBalcWinOpen(v, false, true),
                 setBaseYaw: (y) => { balcWinBaseYaw = y; }
             }
         });
@@ -2290,6 +2980,10 @@ export class KhrushchevkaBuilder {
         balconyGarlandGroup.add(balcGarlandLight);
         this.world.garlandLights.push(balcGarlandLight);
         this.scene.add(balconyGarlandGroup);
+        this._registerEditable(balconyGarlandGroup, 'BalconyMenuGarland', {
+            category: 'balcony',
+            extra: { isSceneProp: true, materialKey: 'pine' }
+        });
 
         this._addStaticBox('FrozenBox1', -0.35, 0.22, -4.35, 0.5, 0.44, 0.45, this.materials.woodFrame);
         this._addStaticBox('FrozenBox2', -0.32, 0.58, -4.38, 0.38, 0.28, 0.35, this.materials.woodFrame);
@@ -2900,6 +3594,10 @@ export class KhrushchevkaBuilder {
         b2.position.set(0.025, -0.085, -0.015);
         mistletoeHanging.add(mRibbon, mLeaf1, mLeaf2, b1, b2);
         this.scene.add(mistletoeHanging);
+        this._registerEditable(mistletoeHanging, 'Mistletoe_Hanging', {
+            category: 'props',
+            extra: { isSceneProp: true, primaryMesh: mLeaf1, materialKey: 'pine' }
+        });
 
         const mistletoeTrampled = new THREE.Group();
         mistletoeTrampled.position.set(1.98, 0.018, 0.68);
@@ -2916,19 +3614,74 @@ export class KhrushchevkaBuilder {
         mistletoeTrampled.add(crushedRed, crushedBerry);
         mistletoeTrampled.visible = false;
         this.scene.add(mistletoeTrampled);
+        this._registerEditable(mistletoeTrampled, 'Mistletoe_Trampled', {
+            category: 'activated',
+            activatedGroup: 'act4',
+            defaultHidden: true,
+            extra: { isSceneProp: true, primaryMesh: crushedRed, materialKey: 'pine' }
+        });
         this.world.mistletoe = { hanging: mistletoeHanging, trampled: mistletoeTrampled };
 
         const strollerGroup = new THREE.Group();
-        const stCoat = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 1.05, 8), this._ps1Mat({ color: 0x262a33 }));
-        stCoat.position.y = 0.72;
-        const stHead = new THREE.Mesh(new THREE.SphereGeometry(0.14, 7, 7), this._ps1Mat({ color: 0x8f7565 }));
-        stHead.position.y = 1.42;
-        const stHat = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.15, 0.14, 7), this._ps1Mat({ color: 0x1a1c20 }));
-        stHat.position.y = 1.54;
-        strollerGroup.add(stCoat, stHead, stHat);
+        const stCoatMat = this._ps1Mat({ color: 0x28303d, roughness: 0.9 });
+        const stPantsMat = this._ps1Mat({ color: 0x1a1e26, roughness: 0.92 });
+        const stBootMat = this._ps1Mat({ color: 0x121214, roughness: 0.85 });
+        const stSkinMat = this._ps1Mat({ color: 0xc8a287, roughness: 0.85 });
+        const stFurMat = this._ps1Mat({ color: 0x45382e, roughness: 0.95 });
+
+        const stLeftLeg = new THREE.Group();
+        stLeftLeg.position.set(-0.10, 0.78, 0);
+        const stLLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.62, 0.16), stPantsMat);
+        stLLegMesh.position.y = -0.31;
+        const stLBoot = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.16, 0.24), stBootMat);
+        stLBoot.position.set(0.03, -0.70, 0);
+        stLeftLeg.add(stLLegMesh, stLBoot);
+
+        const stRightLeg = new THREE.Group();
+        stRightLeg.position.set(0.10, 0.78, 0);
+        const stRLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.62, 0.16), stPantsMat);
+        stRLegMesh.position.y = -0.31;
+        const stRBoot = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.16, 0.24), stBootMat);
+        stRBoot.position.set(0.03, -0.70, 0);
+        stRightLeg.add(stRLegMesh, stRBoot);
+
+        const stTorso = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.78, 0.44), stCoatMat);
+        stTorso.position.y = 1.12;
+        const stCollar = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.12, 0.36), stFurMat);
+        stCollar.position.y = 1.48;
+
+        const stLeftArm = new THREE.Group();
+        stLeftArm.position.set(0, 1.42, -0.26);
+        const stLArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.58, 0.13), stCoatMat);
+        stLArmMesh.position.y = -0.26;
+        stLeftArm.add(stLArmMesh);
+
+        const stRightArm = new THREE.Group();
+        stRightArm.position.set(0, 1.42, 0.26);
+        const stRArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.58, 0.13), stCoatMat);
+        stRArmMesh.position.y = -0.26;
+        stRightArm.add(stRArmMesh);
+
+        const stHead = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.22), stSkinMat);
+        stHead.position.y = 1.64;
+        const stHat = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.16, 0.25), stFurMat);
+        stHat.position.y = 1.76;
+        const stEarFlapL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.18, 0.05), stFurMat);
+        stEarFlapL.position.set(0.02, 1.66, -0.13);
+        const stEarFlapR = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.18, 0.05), stFurMat);
+        stEarFlapR.position.set(0.02, 1.66, 0.13);
+
+        strollerGroup.add(stLeftLeg, stRightLeg, stTorso, stCollar, stLeftArm, stRightArm, stHead, stHat, stEarFlapL, stEarFlapR);
+        strollerGroup.userData.limbs = { leftLeg: stLeftLeg, rightLeg: stRightLeg, leftArm: stLeftArm, rightArm: stRightArm };
         strollerGroup.position.set(-14.0, -6.5, -17.5);
         strollerGroup.visible = false;
         this.scene.add(strollerGroup);
+        this._registerEditable(strollerGroup, 'CourtyardStroller', {
+            category: 'activated',
+            activatedGroup: 'act2',
+            defaultHidden: true,
+            extra: { isSceneProp: true, primaryMesh: stTorso, materialKey: 'sofaFabric' }
+        });
         this.world.courtyardStroller = strollerGroup;
 
         const spotMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false });
@@ -2998,7 +3751,7 @@ export class KhrushchevkaBuilder {
         });
 
         const steamGO = new GameObject('OvenSteam');
-        steamGO.transform.position.set(3.55, 0.36, -1.75);
+        steamGO.transform.position.set(3.55, 0.36, -2.10);
         this.world.steamEmitter = steamGO.addComponent(ParticleEmitter, {
             mode: 'steam',
             count: 55,
@@ -3402,7 +4155,43 @@ export class KhrushchevkaBuilder {
                 if (Array.isArray(trP.rotation)) this.world.destroyedPoses.tree.rotation.set(...trP.rotation);
             }
         }
+        if (gp.tablePoses && typeof gp.tablePoses === 'object' && this.world.table) {
+            if (gp.tablePoses.balcony) {
+                const bp = gp.tablePoses.balcony;
+                if (Array.isArray(bp.position)) {
+                    this.world.table.balconyPos.set(...bp.position);
+                    this.world.table.go.transform.position.copy(this.world.table.balconyPos);
+                }
+                if (Array.isArray(bp.rotation)) {
+                    this.world.table.balconyRot.set(...bp.rotation);
+                    this.world.table.go.transform.rotation.copy(this.world.table.balconyRot);
+                }
+            }
+            if (gp.tablePoses.hall) {
+                const hp = gp.tablePoses.hall;
+                if (Array.isArray(hp.position)) {
+                    this.world.table.hallPos.set(...hp.position);
+                    if (this.world.tablePlacementZone?.go) {
+                        this.world.tablePlacementZone.go.transform.position.copy(this.world.table.hallPos);
+                    }
+                }
+                if (Array.isArray(hp.rotation)) {
+                    this.world.table.hallRot.set(...hp.rotation);
+                    if (this.world.tablePlacementZone?.go) {
+                        this.world.tablePlacementZone.go.transform.rotation.copy(this.world.table.hallRot);
+                    }
+                }
+            }
+        }
 
+        if (gp.doorOpenAngles && typeof gp.doorOpenAngles === 'object') {
+            for (const [doorName, angleVal] of Object.entries(gp.doorOpenAngles)) {
+                const doorObj = this._editableByName.get(doorName);
+                if (doorObj?.userData?.setOpenAngle && typeof angleVal === 'number') {
+                    doorObj.userData.setOpenAngle(angleVal);
+                }
+            }
+        }
         if (this.world.frontDoor) {
             this.world.frontDoor.initialPos = this.world.frontDoor.go.transform.position.clone();
             this.world.frontDoor.initialRot = this.world.frontDoor.go.transform.rotation.clone();

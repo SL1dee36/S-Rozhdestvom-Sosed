@@ -95,14 +95,39 @@ export class CRTTelevision {
 
         ctx.fillStyle = '#5c1a33';
         ctx.fillRect(20, 125, 216, 40);
-        ctx.fillStyle = '#090910';
         const sway = Math.sin(t * 3.1) * 4;
+        // Singer in retro suit instead of black silhouette
+        ctx.fillStyle = '#1e2436';
+        ctx.fillRect(116 + sway, 118, 10, 24);
+        ctx.fillRect(130 + sway, 118, 10, 24);
+        ctx.fillStyle = '#283147';
+        ctx.fillRect(110 + sway, 86, 36, 36);
+        ctx.fillStyle = '#f0ebe1';
         ctx.beginPath();
-        ctx.arc(128 + sway, 72, 14, 0, Math.PI * 2);
+        ctx.moveTo(122 + sway, 86);
+        ctx.lineTo(134 + sway, 86);
+        ctx.lineTo(128 + sway, 104);
+        ctx.closePath();
         ctx.fill();
-        ctx.fillRect(110 + sway, 86, 36, 45);
+        ctx.fillStyle = '#a81c1c';
+        ctx.fillRect(125 + sway, 88, 6, 4);
+        ctx.fillStyle = '#d9b396';
+        ctx.beginPath();
+        ctx.arc(128 + sway, 72, 12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#3b281c';
+        ctx.beginPath();
+        ctx.arc(128 + sway, 66, 12, Math.PI, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#241a14';
+        ctx.fillRect(123 + sway, 70, 2, 2);
+        ctx.fillRect(131 + sway, 70, 2, 2);
         ctx.fillStyle = '#c8c8d8';
-        ctx.fillRect(136, 78, 2, 50);
+        ctx.fillRect(138, 78, 2, 52);
+        ctx.fillStyle = '#8890a0';
+        ctx.beginPath();
+        ctx.arc(139, 76, 3.5, 0, Math.PI * 2);
+        ctx.fill();
 
         ctx.fillStyle = 'rgba(255,255,255,0.75)';
         ctx.font = 'bold 10px monospace';
@@ -413,20 +438,49 @@ export class NeighborWindowCanvas {
         const flicker = 0.94 + Math.sin(this._time * 13) * 0.04;
         this._drawRoomBackdrop(ctx, W, H, flicker);
 
+        // Victim (detailed retro human figure in sweater and trousers)
         const vx = 186;
         const vy = 94 + Math.sin(this._time * 2.0) * 1.5;
-        ctx.fillStyle = '#181415';
+        ctx.fillStyle = '#252b38';
+        ctx.fillRect(vx - 13, vy + 52, 11, 44);
+        ctx.fillRect(vx + 2, vy + 52, 11, 44);
+        ctx.fillStyle = '#3b5249';
+        ctx.fillRect(vx - 16, vy + 14, 32, 42);
+        ctx.fillStyle = '#2f423b';
+        ctx.fillRect(vx - 22, vy + 16, 7, 34);
+        ctx.fillRect(vx + 15, vy + 16, 7, 34);
+        ctx.fillStyle = '#cfa788';
         ctx.beginPath();
-        ctx.arc(vx, vy, 13, 0, Math.PI * 2);
+        ctx.arc(vx, vy, 12, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillRect(vx - 17, vy + 14, 34, 86);
+        ctx.fillStyle = '#423022';
+        ctx.beginPath();
+        ctx.arc(vx, vy - 4, 12, Math.PI, Math.PI * 2);
+        ctx.fill();
 
+        // Maniac in dirty red Santa coat & beard
         const mx = 78 + Math.sin(this._time * 1.5) * 2;
         const my = 72;
-        ctx.fillStyle = '#09080a';
-        ctx.fillRect(mx - 22, my + 16, 46, 108);
+        ctx.fillStyle = '#181a20';
+        ctx.fillRect(mx - 16, my + 74, 14, 48);
+        ctx.fillRect(mx + 4, my + 74, 14, 48);
+        ctx.fillStyle = '#5e1313';
+        ctx.fillRect(mx - 22, my + 16, 46, 62);
+        ctx.fillStyle = '#b8b2a6';
+        ctx.fillRect(mx - 4, my + 16, 8, 62);
+        ctx.fillRect(mx - 22, my + 72, 46, 6);
+        ctx.fillStyle = '#141416';
+        ctx.fillRect(mx - 22, my + 46, 46, 7);
+        ctx.fillStyle = '#b59c84';
         ctx.beginPath();
-        ctx.arc(mx + 2, my + 2, 15, 0, Math.PI * 2);
+        ctx.arc(mx + 2, my + 2, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#b8b2a6';
+        ctx.beginPath();
+        ctx.moveTo(mx - 10, my + 4);
+        ctx.lineTo(mx + 14, my + 4);
+        ctx.lineTo(mx + 4, my + 24);
+        ctx.closePath();
         ctx.fill();
         this._drawSantaHat(ctx, mx + 2, my - 8, false, 1.0);
 
@@ -475,25 +529,41 @@ export class NeighborWindowCanvas {
         const collapse = Math.max(0, Math.min(1, (t - 1.15) / 0.55));
         const vx = 182 + windup * 12;
         const vy = 94 + collapse * 88;
-        ctx.fillStyle = '#181415';
+        ctx.fillStyle = '#3b5249';
+        ctx.fillRect(vx - 16, vy + 14, 32, 42);
+        ctx.fillStyle = '#252b38';
+        ctx.fillRect(vx - 14, vy + 54, 28, 42);
+        ctx.fillStyle = '#cfa788';
         ctx.beginPath();
-        ctx.arc(vx, vy, 13, 0, Math.PI * 2);
+        ctx.arc(vx, vy, 12, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillRect(vx - 17, vy + 14, 34, 86);
         if (collapse < 0.7) {
             ctx.save();
             ctx.translate(vx - 16, vy + 24);
             ctx.rotate(-0.85);
+            ctx.fillStyle = '#3b5249';
             ctx.fillRect(-18, -5, 22, 9);
             ctx.restore();
         }
 
         const mx = 80 + Math.min(1, t / 0.9) * 56;
         const my = 72 + (stabbing ? Math.abs(slashCycle) * 6 : 0);
-        ctx.fillStyle = '#09080a';
-        ctx.fillRect(mx - 24, my + 16, 48, 112);
+        ctx.fillStyle = '#5e1313';
+        ctx.fillRect(mx - 24, my + 16, 48, 66);
+        ctx.fillStyle = '#b8b2a6';
+        ctx.fillRect(mx - 4, my + 16, 8, 66);
+        ctx.fillStyle = '#181a20';
+        ctx.fillRect(mx - 20, my + 80, 40, 46);
+        ctx.fillStyle = '#b59c84';
         ctx.beginPath();
-        ctx.arc(mx + 4, my + 2, 15, 0, Math.PI * 2);
+        ctx.arc(mx + 4, my + 2, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#b8b2a6';
+        ctx.beginPath();
+        ctx.moveTo(mx - 8, my + 4);
+        ctx.lineTo(mx + 16, my + 4);
+        ctx.lineTo(mx + 6, my + 22);
+        ctx.closePath();
         ctx.fill();
         this._drawSantaHat(ctx, mx + 4, my - 8, false, 1.02);
 
@@ -504,7 +574,7 @@ export class NeighborWindowCanvas {
         ctx.save();
         ctx.translate(mx + 14, my + 28);
         ctx.rotate(armAngle);
-        ctx.fillStyle = '#09080a';
+        ctx.fillStyle = '#5e1313';
         ctx.fillRect(0, -6, 36, 12);
         ctx.fillStyle = '#e5eef5';
         ctx.beginPath();
@@ -532,7 +602,7 @@ export class NeighborWindowCanvas {
         const cx = THREE.MathUtils.lerp(136, W * 0.5, snap) + (Math.random() - 0.5) * 1.5;
         const cy = 62 + Math.sin(this._time * 18) * 1.2;
 
-        ctx.fillStyle = '#060507';
+        ctx.fillStyle = '#5e1313';
         ctx.beginPath();
         ctx.moveTo(cx - 56, H);
         ctx.lineTo(cx - 46, cy + 32);
@@ -540,9 +610,19 @@ export class NeighborWindowCanvas {
         ctx.lineTo(cx + 56, H);
         ctx.closePath();
         ctx.fill();
+        ctx.fillStyle = '#b8b2a6';
+        ctx.fillRect(cx - 7, cy + 32, 14, H - (cy + 32));
 
+        ctx.fillStyle = '#9c8470';
         ctx.beginPath();
-        ctx.arc(cx, cy + 6, 25, 0, Math.PI * 2);
+        ctx.arc(cx, cy + 6, 24, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#b8b2a6';
+        ctx.beginPath();
+        ctx.moveTo(cx - 20, cy + 12);
+        ctx.lineTo(cx + 20, cy + 12);
+        ctx.lineTo(cx, cy + 44);
+        ctx.closePath();
         ctx.fill();
 
         this._drawSantaHat(ctx, cx, cy - 12, true, 1.38);

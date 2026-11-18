@@ -74,14 +74,32 @@ export class Renderer {
     setPostProcessParams(params = {}) {
         const u = this.postMaterial.uniforms;
         if (params.grain !== undefined) u.uGrain.value = params.grain;
+        if (params.sharpen !== undefined) u.uSharpen.value = params.sharpen;
         if (params.aberration !== undefined) u.uAberration.value = params.aberration;
         if (params.vsync !== undefined) u.uVSync.value = params.vsync;
         if (params.scanlines !== undefined) u.uScanlines.value = params.scanlines;
         if (params.vignette !== undefined) u.uVignette.value = params.vignette;
+        if (params.wakeVignette !== undefined) u.uWakeVignette.value = params.wakeVignette;
         if (params.panic !== undefined) u.uPanic.value = params.panic;
         if (params.fade !== undefined) u.uFade.value = params.fade;
         if (params.peephole !== undefined) u.uPeephole.value = params.peephole;
         if (params.glitchSpike !== undefined) u.uGlitchSpike.value = params.glitchSpike;
+    }
+
+    precompileScene() {
+        const hiddenStates = [];
+        this.scene.traverse((obj) => {
+            if (!obj.visible) {
+                hiddenStates.push(obj);
+                obj.visible = true;
+            }
+        });
+        try {
+            this.renderer.compile(this.scene, this.camera);
+        } catch (e) {}
+        for (const obj of hiddenStates) {
+            obj.visible = false;
+        }
     }
 
     triggerGlitch(intensity = 1.0) {

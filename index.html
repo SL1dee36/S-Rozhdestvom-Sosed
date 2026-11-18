@@ -11,12 +11,18 @@
     <canvas id="gameCanvas"></canvas>
 
     <div id="hud" class="hidden">
-        <div id="crosshair"></div>
+        <div id="crosshair">
+            <svg id="crosshair-ring" viewBox="0 0 36 36" class="hidden">
+                <circle class="ring-bg" cx="18" cy="18" r="14"></circle>
+                <circle id="crosshair-ring-fill" class="ring-fill" cx="18" cy="18" r="14"></circle>
+            </svg>
+        </div>
         <div id="hud-top-left">
             <div id="hud-clock">23:30</div>
             <div id="objectives-box" class="hidden"></div>
         </div>
         <div id="interact-prompt" class="hidden"></div>
+        <div id="wake-prompt" class="wake-prompt hidden">Пробел, чтобы встать</div>
         <div id="controls-hint" class="controls-hint-hidden"></div>
         <div id="subtitles" class="hidden"></div>
         <div id="stealth-panel" class="hidden">
@@ -50,6 +56,7 @@
                     <button id="btn-endings" class="menu-text-btn hidden">Концовки</button>
                     <button id="btn-open-settings" class="menu-text-btn">Настройки</button>
                     <button id="btn-credits" class="menu-text-btn">Авторство</button>
+                    <button id="btn-exit-game" class="menu-text-btn">Выйти из игры</button>
                 </div>
             </div>
         </div>
@@ -76,8 +83,8 @@
                         <input type="checkbox" id="opt-ps1-jitter" checked>
                     </div>
                     <div class="setting-row">
-                        <label for="opt-vhs-intensity">Интенсивность VHS / ЭЛТ</label>
-                        <input type="range" id="opt-vhs-intensity" min="0" max="1.5" step="0.05" value="0.2">
+                        <label for="opt-vhs-intensity">Зернистость и резкость PS1</label>
+                        <input type="range" id="opt-vhs-intensity" min="0" max="1.5" step="0.05" value="0.5">
                     </div>
                     <div class="setting-row">
                         <label for="opt-volume">Громкость звука</label>
@@ -225,7 +232,7 @@
         }
     }
     </script>
-    <script type="module" src="./main.js?v=2"></script>
+    <script type="module" src="./main.js?v=3"></script>
 </body>
 </html>
 
