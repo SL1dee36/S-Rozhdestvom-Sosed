@@ -8,6 +8,7 @@ export class AudioSystem {
         this._masterVolume = 0.85;
         this.buffers = new Map();
         this.activeLoops = new Map();
+        this._activeOneShotSources = new Map();
         this._tvBroadcastSource = null;
 
         this.micEnabled = true;
@@ -396,6 +397,22 @@ export class AudioSystem {
         src.stop(t + 1.05);
     }
 
+    stopOneShotsByType(type) {
+        const list = this._activeOneShotSources.get(type);
+        if (!list || list.length === 0) return;
+        const t = this.ctx ? this.ctx.currentTime : 0;
+        for (const item of list) {
+            try {
+                if (item.gain && this.ctx) {
+                    item.gain.gain.setValueAtTime(item.gain.gain.value, t);
+                    item.gain.gain.linearRampToValueAtTime(0.0001, t + 0.04);
+                }
+                item.src.stop(t + 0.045);
+            } catch (e) {}
+        }
+        this._activeOneShotSources.set(type, []);
+    }
+
     playSpatialOneShot(type, position, options = {}) {
         this.initContext();
         const t = this.ctx.currentTime;
@@ -425,8 +442,19 @@ export class AudioSystem {
             src.buffer = this.buffers.get(resolvedBufferKey);
             src.playbackRate.value = options.playbackRate ?? (0.94 + Math.random() * 0.10);
             src.connect(filter);
+            const list = this._activeOneShotSources.get(type) || [];
+            const entry = { src, gain };
+            list.push(entry);
+            this._activeOneShotSources.set(type, list);
+            src.onended = () => {
+                const cur = this._activeOneShotSources.get(type);
+                if (cur) {
+                    const idx = cur.indexOf(entry);
+                    if (idx >= 0) cur.splice(idx, 1);
+                }
+            };
             src.start(t, options.offset || 0, options.duration);
-            return;
+            return entry;
         }
 
         switch (type) {

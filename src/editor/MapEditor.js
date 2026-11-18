@@ -60,6 +60,8 @@ const MATERIAL_LABELS = {
     metal: 'Металл',
     curtain: 'Штора / Ткань',
     glass: 'Стекло',
+    mirror: 'Зеркало',
+    wineLabel: 'Этикетка вина',
     crystal: 'Хрусталь',
     water: 'Вода',
     pine: 'Хвоя (Ёлка)',
@@ -3210,10 +3212,11 @@ class MapEditor {
         }
         const keyName = rootObj ? rootObj.name : null;
 
-        // 1. Folding Table family (Balcony -> Hall -> Highlight Zone -> Wrecked Act IV)
+        // 1. Folding Table & Tablecloth family (Balcony -> Hall -> Highlight Zone -> Wardrobe Tablecloth -> Wrecked Act IV)
         const tableFamily = new Set([
             'FoldingTable', 'TablePlacementZone', 'WreckedTable',
-            'TableWingL', 'TableWingR', 'Tablecloth',
+            'TableWingL', 'TableWingR', 'TableLegL', 'TableLegR',
+            'WardrobeTablecloth', 'Tablecloth',
             'WreckedTable_Body', 'WreckedTable_Pedestal', 'WreckedTable_Wing', 'WreckedTable_Cloth', 'WreckedTable_Tinsel'
         ]);
         if (keyName && tableFamily.has(keyName) && this.world.table) {
@@ -3329,7 +3332,12 @@ class MapEditor {
             });
             addObjPose('TableWingL', '5. Левая створка стола (Лок.)', 'Деталь');
             addObjPose('TableWingR', '6. Правая створка стола (Лок.)', 'Деталь');
-            addObjPose('Tablecloth', '7. Скатерть на столе (Лок.)', 'Деталь');
+            addObjPose('TableLegL', '7. Левая раскладная ножка (Лок.)', 'Ножка L');
+            addObjPose('TableLegR', '8. Правая раскладная ножка (Лок.)', 'Ножка R');
+            addObjPose('WardrobeTablecloth', '9. Скатерть в шкафу прихожей (Старт)', 'В шкафу', {
+                beforeSelect: () => { if (!this.openDoorsPreview) this.setOpenDoorsPreview(true); }
+            });
+            addObjPose('Tablecloth', '10. Скатерть на столе (Лок.)', 'На столе');
         }
 
         // 2. Stool family (Kitchen -> Hall -> Highlight Zone)

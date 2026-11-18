@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Component, RigidBody, BoxCollider } from '../../lumina/index.js';
 
-const TWO_HANDED_ITEMS = new Set(['table', 'stool', 'decorBox']);
+const TWO_HANDED_ITEMS = new Set(['table', 'stool', 'decorBox', 'tablecloth']);
 
 export class PlayerController extends Component {
     constructor(gameObject, world) {
@@ -58,6 +58,17 @@ export class PlayerController extends Component {
         this._cigWorldTip = new THREE.Vector3();
         this._exitSafePos = new THREE.Vector3();
         this._targetEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+
+        this._washAnim = null;
+        this._washHandsGroup = null;
+        this._washLeftHand = null;
+        this._washRightHand = null;
+        this._washDroplets = [];
+
+        this._treeDecorAnim = null;
+        this._treeDecorHandsGroup = null;
+        this._treeDecorLeftHand = null;
+        this._treeDecorRightHand = null;
     }
 
     start() {
@@ -121,18 +132,16 @@ export class PlayerController extends Component {
         const mats = this.world?.materials || {};
         const builder = this.world?.builder;
 
-        // 1. Crystal glasses (one-handed)
+        // 1. Crystal glasses (stemmed crystal goblet)
         const crystalGroup = new THREE.Group();
-        const crystalBody = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.042, 0.03, 0.13, 8),
-            mats.crystal || new THREE.MeshStandardMaterial({ color: 0xd8f0ff, transparent: true, opacity: 0.78 })
-        );
-        const crystalBase = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.032, 0.035, 0.018, 8),
-            mats.crystal || new THREE.MeshStandardMaterial({ color: 0xd8f0ff, transparent: true, opacity: 0.85 })
-        );
-        crystalBase.position.y = -0.065;
-        crystalGroup.add(crystalBody, crystalBase);
+        const crystalModel = builder?.createCrystalGobletModel
+            ? builder.createCrystalGobletModel(1.1, true)
+            : new THREE.Mesh(
+                new THREE.CylinderGeometry(0.042, 0.03, 0.13, 8),
+                mats.crystal || new THREE.MeshStandardMaterial({ color: 0xd8f0ff, transparent: true, opacity: 0.78 })
+            );
+        crystalModel.position.y = -0.05;
+        crystalGroup.add(crystalModel);
         this._attachOneHand(crystalGroup, 0.02, -0.04, 0.05);
         crystalGroup.position.set(0.24, -0.24, -0.44);
         make('crystal', crystalGroup);
@@ -177,43 +186,50 @@ export class PlayerController extends Component {
         chickenGroup.position.set(0.0, -0.26, -0.48);
         make('chicken', chickenGroup);
 
-        // 6. Champagne bottle
+        // 6. Wine / Champagne bottle (detailed translucent glass bottle with liquid & label)
         const champGroup = new THREE.Group();
-        const champBody = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.044, 0.048, 0.19, 10),
-            mats.champagne || new THREE.MeshStandardMaterial({ color: 0x1d4d27 })
-        );
-        champBody.position.y = -0.03;
-        const champNeck = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.017, 0.042, 0.10, 10),
-            mats.champagne || new THREE.MeshStandardMaterial({ color: 0x1d4d27 })
-        );
-        champNeck.position.y = 0.11;
-        const champFoil = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.018, 0.021, 0.055, 10),
-            new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.35, metalness: 0.55 })
-        );
-        champFoil.position.y = 0.155;
-        champGroup.add(champBody, champNeck, champFoil);
+        const champModel = builder?.createWineBottleModel
+            ? builder.createWineBottleModel(0.95)
+            : new THREE.Mesh(
+                new THREE.CylinderGeometry(0.044, 0.048, 0.19, 10),
+                mats.champagne || new THREE.MeshStandardMaterial({ color: 0x1d4d27 })
+            );
+        champGroup.add(champModel);
         this._attachOneHand(champGroup, 0.03, -0.04, 0.05);
         champGroup.position.set(0.25, -0.25, -0.45);
         make('champagne', champGroup);
 
-        // 7. Two-handed Folding Table (heavy)
+        // 7. Two-handed Folding Table (heavy, with folded gatelegs)
         const tableCarryGroup = new THREE.Group();
         const woodMat = mats.woodDark || new THREE.MeshStandardMaterial({ color: 0x4a2614 });
-        const tCenter = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.52, 0.58), woodMat);
+        const legFrameMat = mats.woodFrame || woodMat;
+        const tCenter = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.50, 0.58), woodMat);
         const tFlapL = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.48, 0.56), woodMat);
         tFlapL.position.set(-0.155, -0.01, 0);
         const tFlapR = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.48, 0.56), woodMat);
         tFlapR.position.set(0.155, -0.01, 0);
-        tableCarryGroup.add(tCenter, tFlapL, tFlapR);
+        const tFoldedLegL = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.46, 0.035), legFrameMat);
+        tFoldedLegL.position.set(-0.125, -0.02, -0.22);
+        const tFoldedLegR = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.46, 0.035), legFrameMat);
+        tFoldedLegR.position.set(0.125, -0.02, 0.22);
+        tableCarryGroup.add(tCenter, tFlapL, tFlapR, tFoldedLegL, tFoldedLegR);
         tableCarryGroup.rotation.y = Math.PI / 2;
         const tableWrapper = new THREE.Group();
         tableWrapper.add(tableCarryGroup);
         this._attachTwoHands(tableWrapper, 0.28, 0.02, 0.14);
         tableWrapper.position.set(0.0, -0.36, -0.56);
         make('table', tableWrapper);
+
+        // 7b. Two-handed Folded Festive Tablecloth from Wardrobe
+        const clothCarryGroup = new THREE.Group();
+        const clothModel = builder?.createFoldedTableclothModel
+            ? builder.createFoldedTableclothModel(1.05)
+            : new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.06, 0.22), mats.tablecloth || woodMat);
+        clothModel.position.y = -0.02;
+        clothCarryGroup.add(clothModel);
+        this._attachTwoHands(clothCarryGroup, 0.16, -0.03, 0.09);
+        clothCarryGroup.position.set(0.0, -0.26, -0.46);
+        make('tablecloth', clothCarryGroup);
 
         // 8. Two-handed Kitchen Stool
         const stoolCarryGroup = new THREE.Group();
@@ -308,6 +324,253 @@ export class PlayerController extends Component {
             };
             smokeGroup.add(puff);
             this._cigSmokePuffs.push(puff);
+        }
+
+        // 11. First-person face-washing hands & water droplets rig (attached to camera)
+        const washGroup = new THREE.Group();
+        washGroup.visible = false;
+        const wLeft = this._makeSleeveArm(true);
+        const wRight = this._makeSleeveArm(false);
+        washGroup.add(wLeft, wRight);
+        const dropGeo = new THREE.SphereGeometry(0.009, 6, 5);
+        const dropMat = new THREE.MeshBasicMaterial({
+            color: 0xa8dcff,
+            transparent: true,
+            opacity: 0.82,
+            depthWrite: false
+        });
+        this._washDroplets = [];
+        for (let i = 0; i < 12; i++) {
+            const drop = new THREE.Mesh(dropGeo, dropMat.clone());
+            drop.visible = false;
+            drop.userData = {
+                side: i < 6 ? -1 : 1,
+                vx: (i < 6 ? -1 : 1) * (0.18 + (i % 3) * 0.09) + (Math.random() - 0.5) * 0.08,
+                vy: 0.08 + (i % 4) * 0.05,
+                vz: -0.35 - (i % 3) * 0.12
+            };
+            washGroup.add(drop);
+            this._washDroplets.push(drop);
+        }
+        this.camera.add(washGroup);
+        this._washHandsGroup = washGroup;
+        this._washLeftHand = wLeft;
+        this._washRightHand = wRight;
+
+        // 12. First-person Christmas tree decorating hands rig (attached to camera)
+        const treeHandsGroup = new THREE.Group();
+        treeHandsGroup.visible = false;
+        const tLeft = this._makeSleeveArm(true);
+        const tBaubleL = new THREE.Mesh(
+            new THREE.SphereGeometry(0.036, 7, 6),
+            new THREE.MeshStandardMaterial({ color: 0xd92626, roughness: 0.25, metalness: 0.45 })
+        );
+        tBaubleL.position.set(0.0, 0.02, -0.09);
+        tLeft.add(tBaubleL);
+
+        const tRight = this._makeSleeveArm(false);
+        const tBaubleR = new THREE.Mesh(
+            new THREE.OctahedronGeometry(0.04, 0),
+            new THREE.MeshStandardMaterial({ color: 0xf2c94c, roughness: 0.25, metalness: 0.55 })
+        );
+        tBaubleR.position.set(0.0, 0.02, -0.09);
+        tRight.add(tBaubleR);
+
+        treeHandsGroup.add(tLeft, tRight);
+        this.camera.add(treeHandsGroup);
+        this._treeDecorHandsGroup = treeHandsGroup;
+        this._treeDecorLeftHand = tLeft;
+        this._treeDecorRightHand = tRight;
+    }
+
+    startWashFaceAnimation(onComplete) {
+        if (this._washAnim) return;
+        this.controlsLocked = true;
+        this.allowLookWhileLocked = false;
+        this._handAnchor.visible = false;
+        if (this._washHandsGroup) this._washHandsGroup.visible = true;
+        for (const d of this._washDroplets) d.visible = false;
+        this._washAnim = {
+            timer: 0,
+            duration: 3.35,
+            startPitch: this.pitch,
+            splashSoundPlayed: false,
+            flick1Played: false,
+            flick2Played: false,
+            onComplete
+        };
+    }
+
+    _updateWashFaceAnimation(deltaTime) {
+        if (!this._washAnim) return;
+        const anim = this._washAnim;
+        anim.timer += deltaTime;
+        const t = anim.timer;
+        const L = this._washLeftHand;
+        const R = this._washRightHand;
+
+        // Phase 1 (0.0 .. 0.85s): Lean down toward sink & scoop water with both hands
+        if (t < 0.85) {
+            const u = t / 0.85;
+            const e = u * u * (3 - 2 * u);
+            this.pitch = THREE.MathUtils.lerp(anim.startPitch, -0.45, e);
+            const scoopCycle = Math.sin(u * Math.PI * 2) * 0.03;
+            L.position.set(-0.11 + e * 0.03, -0.28 + scoopCycle, -0.42);
+            R.position.set(0.11 - e * 0.03, -0.28 + scoopCycle, -0.42);
+            L.rotation.set(-0.25, 0.22, 0.35);
+            R.rotation.set(-0.25, -0.22, -0.35);
+        }
+        // Phase 2 (0.85 .. 2.25s): Bring cupped hands to face & rub eyes -> eyelids close (wakeVignette -> 1.0, fade -> 0.08)
+        else if (t < 2.25) {
+            const u = (t - 0.85) / 1.40;
+            if (!anim.splashSoundPlayed && u > 0.15) {
+                anim.splashSoundPlayed = true;
+                this.engine.audioSystem.playSpatialOneShot('steam_hiss', this.transform.position, { volume: 0.45 });
+            }
+            // Eyelids close while hands wash the eyes, then begin opening at end of phase 2
+            let eyeClose = 0;
+            if (u < 0.25) {
+                eyeClose = u / 0.25;
+            } else if (u < 0.78) {
+                eyeClose = 1.0;
+            } else {
+                eyeClose = 1.0 - (u - 0.78) / 0.22;
+            }
+            eyeClose = Math.max(0, Math.min(1, eyeClose));
+            this.engine.renderer.setPostProcessParams({
+                wakeVignette: eyeClose,
+                fade: 1.0 - eyeClose * 0.92
+            });
+
+            this.pitch = THREE.MathUtils.lerp(-0.45, -0.18, Math.min(1, u * 1.4));
+            const rubY = Math.sin(u * Math.PI * 4.5) * 0.028;
+            const rubX = Math.cos(u * Math.PI * 4.5) * 0.018;
+            const approach = u < 0.25 ? (u / 0.25) : (u > 0.82 ? (1 - (u - 0.82) / 0.18) : 1.0);
+            const zDist = THREE.MathUtils.lerp(-0.36, -0.165, approach);
+            const yPos = THREE.MathUtils.lerp(-0.22, -0.03, approach) + rubY;
+            L.position.set(-0.068 + rubX, yPos, zDist);
+            R.position.set(0.068 - rubX, yPos, zDist);
+            L.rotation.set(0.55 * approach, 0.32, 0.25);
+            R.rotation.set(0.55 * approach, -0.32, -0.25);
+        }
+        // Phase 3 (2.25 .. 3.35s): Eyes open & hands flick downward/outward twice to shake off water droplets!
+        else {
+            const u = Math.min(1.0, (t - 2.25) / 1.10);
+            this.engine.renderer.setPostProcessParams({ wakeVignette: 0.0, fade: 1.0 });
+            this.pitch = THREE.MathUtils.lerp(-0.18, -0.05, u);
+
+            // Two sharp flick motions at u in [0.0..0.48] and [0.48..0.95]
+            const flickPhase = (u * 2.0) % 1.0;
+            const isSecondFlick = u >= 0.5;
+            if (!anim.flick1Played && u > 0.06) {
+                anim.flick1Played = true;
+                this.engine.audioSystem.playSpatialOneShot('pickup', this.transform.position, { volume: 0.35 });
+            }
+            if (!anim.flick2Played && u > 0.54) {
+                anim.flick2Played = true;
+                this.engine.audioSystem.playSpatialOneShot('pickup', this.transform.position, { volume: 0.32 });
+            }
+
+            const snap = flickPhase < 0.35
+                ? (flickPhase / 0.35)
+                : Math.max(0, 1.0 - (flickPhase - 0.35) / 0.65);
+            const lowerOut = u > 0.82 ? ((u - 0.82) / 0.18) * 0.22 : 0;
+
+            L.position.set(-0.13 - snap * 0.09, -0.11 - snap * 0.13 - lowerOut, -0.34 - snap * 0.06);
+            R.position.set(0.13 + snap * 0.09, -0.11 - snap * 0.13 - lowerOut, -0.34 - snap * 0.06);
+            L.rotation.set(0.15 - snap * 0.85, 0.25 + snap * 0.35, 0.15 - snap * 0.45);
+            R.rotation.set(0.15 - snap * 0.85, -0.25 - snap * 0.35, -0.15 + snap * 0.45);
+
+            // Animate flying water droplets flung from the hands on each flick
+            const dropT = flickPhase;
+            for (let i = 0; i < this._washDroplets.length; i++) {
+                const d = this._washDroplets[i];
+                const belongSecond = i >= 6;
+                if (belongSecond !== isSecondFlick && dropT > 0.4) {
+                    d.visible = false;
+                    continue;
+                }
+                d.visible = dropT > 0.08 && dropT < 0.92;
+                const originX = d.userData.side * 0.13;
+                const originY = -0.12;
+                const originZ = -0.33;
+                d.position.set(
+                    originX + d.userData.vx * dropT,
+                    originY + d.userData.vy * dropT - 0.65 * dropT * dropT,
+                    originZ + d.userData.vz * dropT
+                );
+                d.material.opacity = Math.max(0, 0.85 * (1.0 - dropT));
+            }
+        }
+
+        if (t >= anim.duration) {
+            this.engine.renderer.setPostProcessParams({ wakeVignette: 0.0, fade: 1.0 });
+            if (this._washHandsGroup) this._washHandsGroup.visible = false;
+            for (const d of this._washDroplets) d.visible = false;
+            this._handAnchor.visible = true;
+            this.controlsLocked = false;
+            const cb = anim.onComplete;
+            this._washAnim = null;
+            if (cb) cb();
+        }
+    }
+
+    startDecorateTreeAnimation(onProgress, onComplete) {
+        if (this._treeDecorAnim) return;
+        this.controlsLocked = true;
+        this.allowLookWhileLocked = false;
+        this._handAnchor.visible = false;
+        if (this._treeDecorHandsGroup) this._treeDecorHandsGroup.visible = true;
+        this._treeDecorAnim = {
+            timer: 0,
+            duration: 3.2,
+            lastChimeStep: -1,
+            onProgress,
+            onComplete
+        };
+    }
+
+    _updateDecorateTreeAnimation(deltaTime) {
+        if (!this._treeDecorAnim) return;
+        const anim = this._treeDecorAnim;
+        anim.timer += deltaTime;
+        const u = Math.min(1.0, anim.timer / anim.duration);
+        const L = this._treeDecorLeftHand;
+        const R = this._treeDecorRightHand;
+
+        // Alternating left/right hand reaching forward to hang ornaments & drape tinsel across the branches
+        const waveL = Math.sin(u * Math.PI * 4.0);
+        const waveR = Math.sin(u * Math.PI * 4.0 + Math.PI);
+        const tierRise = -0.22 + u * 0.24;
+
+        L.position.set(
+            -0.16 + Math.cos(u * Math.PI * 3.0) * 0.05,
+            tierRise + Math.max(0, waveL) * 0.08,
+            -0.36 - Math.max(0, waveL) * 0.14
+        );
+        R.position.set(
+            0.16 - Math.cos(u * Math.PI * 3.0) * 0.05,
+            tierRise + Math.max(0, waveR) * 0.08,
+            -0.36 - Math.max(0, waveR) * 0.14
+        );
+        L.rotation.set(0.25 + waveL * 0.25, 0.18, 0.12);
+        R.rotation.set(0.25 + waveR * 0.25, -0.18, -0.12);
+
+        const stepIdx = Math.floor(u * 4);
+        if (stepIdx > anim.lastChimeStep && stepIdx < 4) {
+            anim.lastChimeStep = stepIdx;
+            this.engine.audioSystem.playSpatialOneShot('pickup', this.transform.position, { volume: 0.42 });
+        }
+
+        if (anim.onProgress) anim.onProgress(u);
+
+        if (u >= 1.0) {
+            if (this._treeDecorHandsGroup) this._treeDecorHandsGroup.visible = false;
+            this._handAnchor.visible = true;
+            this.controlsLocked = false;
+            const cb = anim.onComplete;
+            this._treeDecorAnim = null;
+            if (cb) cb();
         }
     }
 
@@ -451,6 +714,9 @@ export class PlayerController extends Component {
     }
 
     update(deltaTime) {
+        this._updateWashFaceAnimation(deltaTime);
+        this._updateDecorateTreeAnimation(deltaTime);
+
         const input = this.engine.inputManager;
         const delta = input.getMouseDelta();
 

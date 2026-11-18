@@ -325,6 +325,108 @@ export class TextureManager {
         const tex = new THREE.CanvasTexture(canvas);
         return configurePS1Texture(tex, 1, 1);
     }
+
+    createMirrorTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+
+        // Silver-blue reflective mirror gradient
+        const grad = ctx.createLinearGradient(0, 0, 128, 128);
+        grad.addColorStop(0.0, '#72899e');
+        grad.addColorStop(0.28, '#a6bccf');
+        grad.addColorStop(0.48, '#dce9f5');
+        grad.addColorStop(0.68, '#95aec4');
+        grad.addColorStop(1.0, '#5e7387');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 128, 128);
+
+        // Diagonal specular reflection streaks
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.beginPath();
+        ctx.moveTo(18, 0);
+        ctx.lineTo(42, 0);
+        ctx.lineTo(0, 56);
+        ctx.lineTo(0, 26);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.48)';
+        ctx.beginPath();
+        ctx.moveTo(78, 0);
+        ctx.lineTo(106, 0);
+        ctx.lineTo(18, 128);
+        ctx.lineTo(0, 128);
+        ctx.lineTo(0, 114);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+        ctx.beginPath();
+        ctx.moveTo(118, 0);
+        ctx.lineTo(128, 0);
+        ctx.lineTo(128, 16);
+        ctx.lineTo(50, 128);
+        ctx.lineTo(36, 128);
+        ctx.closePath();
+        ctx.fill();
+
+        // Subtle inner bevel border
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(3, 3, 122, 122);
+        ctx.strokeStyle = 'rgba(35, 48, 62, 0.55)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(6, 6, 116, 116);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, 1, 1);
+    }
+
+    createWineLabelTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+
+        // Dark green bottle glass base around the label
+        ctx.fillStyle = '#14331b';
+        ctx.fillRect(0, 0, 128, 128);
+
+        // Vintage cream-and-gold wrap-around wine label
+        ctx.fillStyle = '#d4af37';
+        ctx.fillRect(10, 14, 108, 100);
+        ctx.fillStyle = '#f2ead7';
+        ctx.fillRect(14, 18, 100, 92);
+
+        // Inner crimson & gold border
+        ctx.strokeStyle = '#7a1c1c';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(18, 22, 92, 84);
+
+        // Crest / emblem at top of label
+        ctx.fillStyle = '#8b1e1e';
+        ctx.beginPath();
+        ctx.arc(64, 42, 11, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#e5c158';
+        ctx.beginPath();
+        ctx.arc(64, 42, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Decorative title bars
+        ctx.fillStyle = '#221a16';
+        ctx.fillRect(26, 60, 76, 7);
+        ctx.fillStyle = '#7a1c1c';
+        ctx.fillRect(34, 72, 60, 5);
+        ctx.fillStyle = '#5c4d3c';
+        ctx.fillRect(30, 83, 68, 3);
+        ctx.fillRect(40, 90, 48, 3);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, 1, 1);
+    }
 }
 
 export default TextureManager;

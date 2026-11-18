@@ -1,6 +1,6 @@
 export const MAP_OVERRIDES = {
     "version": 1,
-    "updatedAt": "2026-11-18T22:28:38.682Z",
+    "updatedAt": "2026-11-18T22:59:52.571Z",
     "modifiedObjects": {
         "StairS_WinR": {
             "position": [
@@ -154,11 +154,7 @@ export const MAP_OVERRIDES = {
             ]
         },
         "BalconyHandrailW": {
-            "position": [
-                -2.24,
-                1.03,
-                -4.15
-            ]
+            "deleted": true
         },
         "BalconySlab": {
             "position": [
@@ -186,8 +182,8 @@ export const MAP_OVERRIDES = {
         },
         "BalconyHandrailN": {
             "position": [
-                -0.147,
-                1.03,
+                -0.122,
+                1.023,
                 -4.76
             ],
             "boxSize": [
@@ -201,6 +197,11 @@ export const MAP_OVERRIDES = {
                 -2.189,
                 1.6,
                 -4.76
+            ],
+            "boxSize": [
+                0.06,
+                1.197,
+                0.07
             ]
         },
         "BalcFrameL_Top": {
@@ -217,22 +218,18 @@ export const MAP_OVERRIDES = {
         },
         "BalcFrameL_GlassL": {
             "position": [
-                -1.114,
+                -0.806,
                 1.6,
                 -4.76
             ],
             "boxSize": [
-                2.086,
-                1.07,
+                2.752,
+                1.083,
                 0.02
             ]
         },
         "BalconyHandrailE": {
-            "position": [
-                1.945,
-                1.03,
-                -4.157
-            ]
+            "deleted": true
         },
         "CourtyardGround": {
             "position": [
@@ -265,187 +262,239 @@ export const MAP_OVERRIDES = {
                 1.11
             ]
         },
-        "SofaCoverPivot": {
+        "BackdropHouse_SouthWest": {
             "position": [
-                -2.41,
-                0.576,
-                -1
+                -32.399,
+                2.15,
+                -3.174
             ],
-            "rotation": [
-                0,
-                0,
-                0.022
+            "scale": [
+                1.07,
+                1,
+                7.056
             ]
         },
-        "WardrobeEnter": {
+        "BackdropHouse_West": {
             "position": [
-                1.302,
-                0.856,
-                3.7
+                -32.536,
+                2.15,
+                -25.8
+            ],
+            "scale": [
+                1,
+                1,
+                7.03
+            ]
+        },
+        "BackdropHouse_East": {
+            "position": [
+                33.174,
+                2.15,
+                -25.8
+            ],
+            "scale": [
+                1,
+                1,
+                7.053
+            ]
+        },
+        "BackdropHouse_SouthEast": {
+            "position": [
+                32.534,
+                2.15,
+                -4.5
+            ],
+            "scale": [
+                1,
+                1,
+                5.844
+            ]
+        },
+        "BackdropHouse_FarRight": {
+            "position": [
+                23.333,
+                4.4,
+                -43.487
+            ],
+            "scale": [
+                1,
+                1,
+                6.76
+            ]
+        },
+        "BackdropHouse_FarCenter": {
+            "position": [
+                -0.064,
+                4.9,
+                -45.786
+            ],
+            "scale": [
+                1,
+                1,
+                7.761
+            ]
+        },
+        "BackdropHouse_FarLeft": {
+            "position": [
+                -23.014,
+                4.4,
+                -41.091
+            ],
+            "scale": [
+                1,
+                1,
+                6.915
             ]
         },
         "CourtyardCar_2": {
             "position": [
-                7.172,
+                6.083,
                 -6.5,
-                -13.043
+                -12.815
             ],
             "rotation": [
                 3.142,
-                -1.538,
+                -1.56,
                 3.142
             ]
         },
-        "CourtyardCar_1": {
+        "Snowdrift_3": {
+            "position": [
+                1.037,
+                -6.22,
+                -17.335
+            ],
             "rotation": [
                 0,
-                0.964,
+                0.476,
                 0
-            ]
-        },
-        "CourtyardRoad": {
-            "position": [
-                0,
-                -6.099,
-                -15.2
-            ]
-        },
-        "BackdropHouse_West": {
-            "scale": [
-                1,
-                1,
-                8.158
-            ]
-        },
-        "BackdropHouse_SouthWest": {
-            "scale": [
-                1,
-                1,
-                8.176
-            ]
-        },
-        "BackdropHouse_East": {
-            "scale": [
-                1,
-                1,
-                6.326
-            ]
-        },
-        "BackdropHouse_SouthEast": {
-            "scale": [
-                1,
-                1,
-                6.751
             ]
         },
         "Snowdrift_1": {
             "position": [
                 -5.8,
-                -6.271,
-                -17.438
+                -6.22,
+                -17.408
             ],
             "rotation": [
-                0,
-                0.306,
-                0
-            ],
-            "boxSize": [
-                2.8,
-                0.7,
-                2.109
-            ]
-        },
-        "Snowdrift_3": {
-            "position": [
-                1.38,
-                -6.31,
-                -17.62
-            ],
-            "rotation": [
-                0,
-                -0.405,
-                0
+                0.006,
+                0.145,
+                -0.033
             ]
         },
         "Snowdrift_5": {
             "position": [
                 11,
-                -6.293,
-                -17.009
+                -6.287,
+                -17.835
             ],
             "rotation": [
-                -0.005,
-                0.152,
-                0.036
+                0.032,
+                0.083,
+                0.037
             ]
         },
         "Snowdrift_4": {
             "position": [
                 6.8,
-                -6.22,
-                -8.719
+                -6.309,
+                -9.47
             ],
             "rotation": [
-                0.003,
-                -0.129,
-                0.025
+                0,
+                -0.558,
+                0
             ]
         },
-        "HallCurtain_Tulle": {
+        "BalcFrameL_StileM": {
             "position": [
-                0,
-                0.112,
-                -0.019
+                -0.806,
+                1.6,
+                -4.76
+            ]
+        },
+        "BalcFrameL_Bot": {
+            "position": [
+                -0.804,
+                1.04,
+                -4.76
             ],
             "boxSize": [
-                2.08,
-                1.737,
-                0.05
+                2.816,
+                0.06,
+                0.07
             ]
         },
-        "HallCurtain_DrapeR": {
-            "position": [
-                0.72,
-                -0.08,
-                0.037
-            ]
+        "BalcFrameL_GlassR": {
+            "deleted": true
         },
-        "HallCurtain_DrapeL": {
+        "FrozenBox2": {
             "position": [
-                -0.795,
-                -0.08,
-                0.031
+                -1.239,
+                0.58,
+                -4.386
+            ],
+            "rotation": [
+                0,
+                0.857,
+                0
             ]
         },
         "FrozenBox1": {
             "position": [
-                -1.917,
+                -1.236,
                 0.22,
-                -4.364
+                -4.344
             ],
             "rotation": [
                 0,
-                0.546,
+                0.857,
                 0
             ]
         },
-        "FrozenBox2": {
+        "BalcFrameL_StileR": {
+            "boxSize": [
+                0.06,
+                1.201,
+                0.07
+            ]
+        },
+        "FrontDoor": {
+            "materialKey": "dermantine",
+            "metalness": 0.75
+        },
+        "BalcFrameOpen": {
             "position": [
-                -2.013,
-                0.58,
-                -4.432
-            ],
-            "rotation": [
-                -3.142,
-                1.535,
-                -3.142
+                1.92,
+                1.61,
+                -4.756
             ]
         },
         "CRT_TV": {
+            "materialKey": "woodFrame",
+            "roughness": 1,
+            "metalness": 0.75,
+            "opacity": 1
+        },
+        "KitchenDoor": {
+            "castShadow": false
+        },
+        "NeighborDoor35Plate": {
+            "deleted": true
+        },
+        "DecorBox": {
+            "castShadow": true
+        },
+        "SofaCoverPivot": {
+            "position": [
+                -2.415,
+                0.584,
+                -1.01
+            ],
             "rotation": [
                 0,
-                1.571,
-                0
+                0,
+                0.074
             ]
         }
     },
@@ -648,7 +697,7 @@ export const MAP_OVERRIDES = {
             ],
             "position": [
                 -0.13,
-                2.243,
+                2.25,
                 -4.145
             ],
             "rotation": [
@@ -674,12 +723,12 @@ export const MAP_OVERRIDES = {
             "category": "custom",
             "boxSize": [
                 0.08,
-                1.175,
+                1.218,
                 1.3
             ],
             "position": [
                 1.959,
-                1.602,
+                1.596,
                 -4.119
             ],
             "rotation": [
@@ -705,7 +754,7 @@ export const MAP_OVERRIDES = {
             "category": "custom",
             "boxSize": [
                 0.08,
-                1.175,
+                1.202,
                 1.186
             ],
             "position": [
@@ -1196,8 +1245,8 @@ export const MAP_OVERRIDES = {
             "category": "custom",
             "position": [
                 3.288,
-                6.801,
-                9.857
+                7.013,
+                7.147
             ],
             "rotation": [
                 0,
@@ -1219,67 +1268,98 @@ export const MAP_OVERRIDES = {
             "boxSize": [
                 3.1,
                 0.25,
-                1.763
+                7.111
             ],
             "radialSegs": 10
         }
     ],
     "addedLights": [],
     "gameplay": {
+        "playerSpawn": {
+            "position": [
+                -1.47,
+                0.05,
+                -1
+            ],
+            "yaw": -1.571,
+            "pitch": -0.05
+        },
+        "hidingSpots": {
+            "sofa": {
+                "hidePos": [
+                    -2.78,
+                    0.16,
+                    -1
+                ],
+                "peekPos": [
+                    -2.35,
+                    0.18,
+                    -1
+                ],
+                "lookYaw": -1.571
+            }
+        },
         "patrolWaypoints": [
             [
                 3.1,
                 0,
-                -2.573
+                3.2
             ],
             [
-                3.102,
+                2.95,
                 0,
-                0.617
+                0.68
             ],
             [
-                0.4,
+                1.1,
                 0,
-                0.2
+                0.45
             ],
             [
-                -1.5,
+                0.45,
                 0,
-                0.591
+                -1.55
             ],
             [
-                -1.018,
+                -0.35,
                 0,
-                -2.8
+                -2.35
             ],
             [
-                0.787,
+                -0.35,
                 0,
-                -1.6
+                0.45
             ],
             [
-                1.352,
+                1.1,
                 0,
-                -0.084
+                0.45
             ],
             [
-                4.692,
+                2.9,
                 0,
-                2.5
+                -1.45
             ],
             [
                 3.1,
                 0,
-                3.723
+                2.5
+            ],
+            [
+                4.6,
+                0,
+                2.55
+            ],
+            [
+                3.1,
+                0,
+                3.55
             ]
-        ],
-        "doorOpenAngles": {
-            "BalconyDoor": -1.45
-        }
+        ]
     }
 };
 
-export const STORAGE_KEY = 'zarechnoe_map_overrides';
+export const STORAGE_KEY = 'zarechnoe_map_overrides_v2';
 
 function cloneData(data) {
     return JSON.parse(JSON.stringify(data || {}));
@@ -1347,7 +1427,7 @@ export function serializeMapOverridesToJS(data) {
     const lines = [
         `export const MAP_OVERRIDES = ${jsonBlock};`,
         '',
-        "export const STORAGE_KEY = 'zarechnoe_map_overrides';",
+        "export const STORAGE_KEY = 'zarechnoe_map_overrides_v2';",
         '',
         cloneData.toString(),
         '',

@@ -124,14 +124,11 @@ export class StoryDirector {
             ),
             onInteract: () => {
                 if (this.act === 1) {
+                    this._stopDoorKnockAndPlayStairRun();
                     this.player.enterPeephole();
                     if (!this.act1Tasks.peephole) {
                         this.act1Tasks.peephole = true;
-                        this.engine.audioSystem.playSpatialOneShot('footstep_concrete', new THREE.Vector3(2.5, -0.8, 6.8), {
-                            heavy: true,
-                            volume: 0.65
-                        });
-                        this.ui.showSubtitle('На лестнице никого... Только чьи-то шаги стихли этажом ниже. Ладно, пора готовить стол.', 4400);
+                        this.ui.showSubtitle('На лестнице уже никого... Кто-то только что убежал вниз по ступенькам. Ладно, пора готовить стол.', 4400);
                         this._refreshObjectives();
                     }
                 } else if (this.act === 4) {
@@ -142,15 +139,18 @@ export class StoryDirector {
 
         w.bathroomSink.addComponent(Interactable, {
             maxDistance: 1.65,
-            promptText: '[Удерживать E] Умыться холодной водой',
-            holdDuration: 1.6,
-            canInteract: () => this.act === 1 && !this.act1Tasks.wash && this.phase === 'act1',
+            promptText: '[E] Умыться холодной водой',
+            canInteract: () => this.act === 1 && !this.act1Tasks.wash && !this._washingInProgress && this.phase === 'act1',
             onInteract: () => {
-                this.act1Tasks.wash = true;
-                this._washFinishTime = this.phaseTimer;
-                this.engine.audioSystem.playSpatialOneShot('steam_hiss', w.bathroomSink.transform.position, { volume: 0.45 });
-                this.ui.showSubtitle('Ух, ледяная... Сон как рукой сняло.', 3200);
-                this._refreshObjectives();
+                this._washingInProgress = true;
+                this.engine.audioSystem.playSpatialOneShot('steam_hiss', w.bathroomSink.transform.position, { volume: 0.5 });
+                this.player.startWashFaceAnimation(() => {
+                    this._washingInProgress = false;
+                    this.act1Tasks.wash = true;
+                    this._washFinishTime = this.phaseTimer;
+                    this.ui.showSubtitle('Ух, ледяная... Сон как рукой сняло.', 3200);
+                    this._refreshObjectives();
+                });
             }
         });
 
@@ -181,25 +181,52 @@ export class StoryDirector {
         w.treeGO.transform.traverse(c => { if (c.isMesh) treeTargets.push(c); });
         w.fallenSantaHat.traverse(c => { if (c.isMesh) treeTargets.push(c); });
         w.treeGO.addComponent(Interactable, {
-            maxDistance: 1.75,
+            maxDistance: 1.85,
             targetMeshes: treeTargets,
             promptText: () => {
-                if (this.act === 1 && !this.act1Tasks.garland) return '[E] Включить гирлянду';
+                if (this.act === 1 && !this.act1Tasks.garland) {
+                    return this.act1Tasks.decorBox
+                        ? '[E] Нарядить ёлку игрушками и включить гирлянду'
+                        : '[E] Нарядить ёлку (нужна коробка с игрушками из прихожей)';
+                }
                 if (this.act === 4 && !this.act4Inspected.tree) return '[E] Осмотреть поваленную ёлку';
                 return '';
             },
             canInteract: () => (
-                (this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.garland) ||
+                (this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.garland && !this._treeDecoratingInProgress) ||
                 (this.act === 4 && !this.act4Inspected.tree)
             ),
             onInteract: () => {
                 if (this.act === 1) {
-                    this.act1Tasks.garland = true;
-                    w.garlandOn = true;
-                    this.engine.audioSystem.playSpatialOneShot('pickup', w.treeGO.transform.position);
-                    this.ui.showSubtitle('Так уютнее. Хоть какое-то новогоднее настроение.', 3200);
-                    this._refreshObjectives();
-                    this._checkAct1IndoorCompletion();
+                    if (!this.act1Tasks.decorBox) {
+                        this.ui.showSubtitle('Сначала нужно взять коробку с ёлочными игрушками и мишурой в прихожей.', 3400);
+                        return;
+                    }
+                    this._treeDecoratingInProgress = true;
+                    if (w.treeDecorHighlight) w.treeDecorHighlight.visible = false;
+                    this.ui.showSubtitle('Повешу шары, мишуру и включу гирлянду...', 3200);
+                    this.player.startDecorateTreeAnimation(
+                        (ratio) => {
+                            w.setTreeDecorProgress?.(ratio);
+                        },
+                        () => {
+                            this._treeDecoratingInProgress = false;
+                            this.act1Tasks.garland = true;
+                            w.setTreeDecorProgress?.(1.0);
+                            w.garlandOn = true;
+                            this.engine.audioSystem.playSpatialOneShot('pickup', w.treeGO.transform.position);
+                            const t = this.act1Tasks;
+                            if (t.decorHall && t.decorKitchen && t.decorHallway && t.garland) {
+                                t.decorate = true;
+                                if (this.player.heldItem === 'decorBox') {
+                                    this.player.setHeldItem(null);
+                                }
+                            }
+                            this.ui.showSubtitle('Ёлка наряжена и светится! Сразу другое дело.', 3400);
+                            this._refreshObjectives();
+                            this._checkAct1IndoorCompletion();
+                        }
+                    );
                 } else if (this.act === 4) {
                     this._inspectPoint('tree', 'Обычный дешёвый колпак... И зеркало с серванта вдребезги.');
                 }
@@ -279,7 +306,31 @@ export class StoryDirector {
             });
         }
 
-        // Folding Table interactions: pickup on balcony -> unfold half 1 (4s) -> unfold half 2 (4s) -> place food -> sit at table
+        // Festive Tablecloth pickup inside the Hallway Wardrobe
+        if (w.wardrobeTablecloth) {
+            const wardSpot = w.hidingSpots.find(s => s.id === 'wardrobe');
+            w.wardrobeTablecloth.addComponent(Interactable, {
+                maxDistance: 1.75,
+                promptText: '[E] Взять праздничную скатерть',
+                canInteract: () => (
+                    this.act === 1 &&
+                    this.act1Tasks.peephole &&
+                    !this.act1Tasks.tableclothPicked &&
+                    !this.player.heldItem &&
+                    (!wardSpot || !wardSpot.isDoorClosed())
+                ),
+                onInteract: () => {
+                    w.wardrobeTablecloth.transform.visible = false;
+                    this.act1Tasks.tableclothPicked = true;
+                    this.player.setHeldItem('tablecloth');
+                    this.engine.audioSystem.playSpatialOneShot('pickup', w.wardrobeTablecloth.transform.position);
+                    this.ui.showSubtitle('Чистая праздничная скатерть. Постелю её на разложенный стол в зале.', 3600);
+                    this._refreshObjectives();
+                }
+            });
+        }
+
+        // Folding Table interactions: pickup on balcony -> unfold half 1 (4s) -> unfold half 2 (4s) -> spread tablecloth from wardrobe -> place food -> sit at table
         w.table.go.addComponent(Interactable, {
             maxDistance: 1.8,
             promptText: () => {
@@ -291,6 +342,11 @@ export class StoryDirector {
                 }
                 if (this._tableStage === 'wing1_open') {
                     return '[Удерживать E] Разложить вторую половину стола (4 сек)';
+                }
+                if (this._tableStage === 'unfolded_bare') {
+                    return this.act1Tasks.tableclothPicked
+                        ? '[Удерживать E] Постелить праздничную скатерть на стол'
+                        : '[E] Постелить скатерть (нужно взять скатерть в шкафу в прихожей)';
                 }
                 if (this._tableStage === 'unfolded') {
                     if (this.player.heldItem && this._isFoodOrTableItem(this.player.heldItem)) {
@@ -306,6 +362,9 @@ export class StoryDirector {
                 if (this._tableStage === 'placed_folded' || this._tableStage === 'wing1_open') {
                     return 4.0;
                 }
+                if (this._tableStage === 'unfolded_bare' && this.act1Tasks.tableclothPicked) {
+                    return 1.8;
+                }
                 return 0;
             },
             canInteract: () => {
@@ -314,7 +373,10 @@ export class StoryDirector {
                     return this.act1Tasks.peephole && !this.player.heldItem;
                 }
                 if (this._tableStage === 'placed_folded' || this._tableStage === 'wing1_open') {
-                    return !this.player.heldItem;
+                    return !this.player.heldItem || this.player.heldItem === 'tablecloth';
+                }
+                if (this._tableStage === 'unfolded_bare') {
+                    return true;
                 }
                 if (this._tableStage === 'unfolded') {
                     if (this.player.heldItem && this._isFoodOrTableItem(this.player.heldItem)) return true;
@@ -339,19 +401,39 @@ export class StoryDirector {
                     w.table.setWingProgress(1, 1.0);
                     this._tableStage = 'wing1_open';
                     this.engine.audioSystem.playSpatialOneShot('door_open', w.table.go.transform.position);
-                    this.ui.showSubtitle('Первая половина разложена. Теперь вторую.', 3000);
+                    this.ui.showSubtitle('Первая половина и ножка разложены. Теперь вторую.', 3000);
                     this._refreshObjectives();
                     return;
                 }
                 if (this._tableStage === 'wing1_open') {
                     w.table.setWingProgress(2, 1.0);
-                    this._tableStage = 'unfolded';
-                    this.act1Tasks.table = true;
+                    this._tableStage = 'unfolded_bare';
+                    this.act1Tasks.tableWings = true;
                     if (!this.act1Tasks.stool && w.stoolPlacementZone) {
                         w.stoolPlacementZone.transform.visible = true;
                     }
                     this.engine.audioSystem.playSpatialOneShot('door_open', w.table.go.transform.position);
-                    this.ui.showSubtitle('Стол разложен и застелен скатертью! Теперь табуретку, посуду и угощения.', 3800);
+                    if (this.act1Tasks.tableclothPicked) {
+                        this.ui.showSubtitle('Стол полностью разложен. Теперь постелю на него скатерть.', 3500);
+                    } else {
+                        this.ui.showSubtitle('Стол разложен! Теперь нужно взять скатерть в шкафу в прихожей и застелить его.', 4000);
+                    }
+                    this._refreshObjectives();
+                    return;
+                }
+                if (this._tableStage === 'unfolded_bare') {
+                    if (!this.act1Tasks.tableclothPicked) {
+                        this.ui.showSubtitle('Сначала нужно взять праздничную скатерть в шкафу в прихожей.', 3400);
+                        return;
+                    }
+                    w.table.setTableclothProgress(1.0);
+                    this._tableStage = 'unfolded';
+                    this.act1Tasks.table = true;
+                    if (this.player.heldItem === 'tablecloth') {
+                        this.player.setHeldItem(null);
+                    }
+                    this.engine.audioSystem.playSpatialOneShot('pickup', w.table.go.transform.position, { volume: 0.55 });
+                    this.ui.showSubtitle('Скатерть постелена! Теперь можно ставить посуду и угощения.', 3800);
                     this._refreshObjectives();
                     this._checkAct1IndoorCompletion();
                     return;
@@ -552,14 +634,22 @@ export class StoryDirector {
                         }
                         this.act1Tasks[spec.taskKey] = true;
                         w.decorQuest.meshes[spec.key].visible = true;
+                        if (w.decorQuest.highlights?.[spec.key]) {
+                            w.decorQuest.highlights[spec.key].visible = false;
+                        }
                         this.engine.audioSystem.playSpatialOneShot('pickup', spotGO.transform.position, { volume: 0.45 });
                         const t = this.act1Tasks;
                         if (t.decorHall && t.decorKitchen && t.decorHallway) {
                             t.decorate = true;
-                            if (this.player.heldItem === 'decorBox') {
+                            if (t.garland && this.player.heldItem === 'decorBox') {
                                 this.player.setHeldItem(null);
                             }
-                            this.ui.showSubtitle('Вся квартира украшена к Новому году!', 3600);
+                            this.ui.showSubtitle(
+                                t.garland
+                                    ? 'Вся квартира и ёлка украшены к Новому году!'
+                                    : 'Комнаты украшены мишурой! Осталось нарядить ёлку в зале.',
+                                3600
+                            );
                         } else {
                             this.ui.showSubtitle(spec.quote, 3000);
                         }
@@ -755,7 +845,9 @@ export class StoryDirector {
             w.treeGO.transform.rotation.set(0, 0, 0);
         }
         w.fallenSantaHat.visible = false;
+        if (w.brokenBaubles) w.brokenBaubles.visible = false;
         w.fallenMirror.visible = false;
+        if (w.sideboardMirror) w.sideboardMirror.visible = true;
 
         w.table.go.transform.visible = true;
         w.table.wreckedGO.transform.visible = false;
@@ -782,6 +874,15 @@ export class StoryDirector {
         this._balconySniffQuote = false;
         this._balconyPoundQuote = false;
         this._endingTriggered = false;
+        this._washingInProgress = false;
+        this._treeDecoratingInProgress = false;
+        this._knockTurnedToRun = false;
+        this._knockRepeatTimer = 0;
+        if (this._stairRunTimers) {
+            this._stairRunTimers.forEach(id => clearTimeout(id));
+            this._stairRunTimers = [];
+        }
+        this.engine.audioSystem.stopOneShotsByType?.('door_knock');
         if (this.player.rb) this.player.rb.useGravity = true;
         if (this.player.collider) this.player.collider.enabled = true;
 
@@ -809,6 +910,7 @@ export class StoryDirector {
             w.fridgeMeat.transform.visible = true;
             w.ovenChicken.transform.visible = true;
             w.champagneBottle.transform.visible = true;
+            if (w.wardrobeTablecloth) w.wardrobeTablecloth.transform.visible = true;
             if (w.kitchenStool) w.kitchenStool.transform.visible = true;
             if (w.placedHallStool) w.placedHallStool.transform.visible = false;
             if (w.decorQuest) {
@@ -816,12 +918,18 @@ export class StoryDirector {
                 w.decorQuest.meshes.hall.visible = false;
                 w.decorQuest.meshes.kitchen.visible = false;
                 w.decorQuest.meshes.hallway.visible = false;
+                if (w.decorQuest.highlights) {
+                    w.decorQuest.highlights.hall.visible = false;
+                    w.decorQuest.highlights.kitchen.visible = false;
+                    w.decorQuest.highlights.hallway.visible = false;
+                }
             }
             if (w.mistletoe) {
                 w.mistletoe.hanging.visible = true;
                 w.mistletoe.trampled.visible = false;
             }
-            if (w.treeGarlandGroup) w.treeGarlandGroup.visible = true;
+            w.setTreeDecorProgress?.(0.0);
+            if (w.treeDecorHighlight) w.treeDecorHighlight.visible = false;
             if (w.tornGarland) w.tornGarland.visible = false;
             if (w.courtyardStroller) {
                 w.courtyardStroller.visible = false;
@@ -843,6 +951,7 @@ export class StoryDirector {
             w.fridgeMeat.transform.visible = false;
             w.ovenChicken.transform.visible = false;
             w.champagneBottle.transform.visible = false;
+            if (w.wardrobeTablecloth) w.wardrobeTablecloth.transform.visible = false;
             if (w.kitchenStool) w.kitchenStool.transform.visible = false;
             if (w.placedHallStool) w.placedHallStool.transform.visible = true;
             if (w.decorQuest) {
@@ -850,7 +959,14 @@ export class StoryDirector {
                 w.decorQuest.meshes.hall.visible = true;
                 w.decorQuest.meshes.kitchen.visible = true;
                 w.decorQuest.meshes.hallway.visible = true;
+                if (w.decorQuest.highlights) {
+                    w.decorQuest.highlights.hall.visible = false;
+                    w.decorQuest.highlights.kitchen.visible = false;
+                    w.decorQuest.highlights.hallway.visible = false;
+                }
             }
+            w.setTreeDecorProgress?.(1.0);
+            if (w.treeDecorHighlight) w.treeDecorHighlight.visible = false;
             w.table.unfold();
             this._tableStage = 'unfolded';
             Object.values(w.itemsOnTable).forEach(m => { m.visible = true; });
@@ -895,6 +1011,8 @@ export class StoryDirector {
             peephole: false,
             tablePicked: false,
             tablePlaced: false,
+            tableWings: false,
+            tableclothPicked: false,
             table: false,
             stoolPicked: false,
             stool: false,
@@ -1175,6 +1293,10 @@ export class StoryDirector {
             tableTaskText = 'Разложить первую половину стола (удерживать [E] 4 сек)';
         } else if (this._tableStage === 'wing1_open') {
             tableTaskText = 'Разложить вторую половину стола (удерживать [E] 4 сек)';
+        } else if (this._tableStage === 'unfolded_bare') {
+            tableTaskText = t.tableclothPicked
+                ? 'Постелить праздничную скатерть на разложенный стол [E]'
+                : 'Взять скатерть в шкафу в прихожей и постелить на стол';
         }
 
         const list = [
@@ -1185,14 +1307,19 @@ export class StoryDirector {
                     : 'Принести табуретку с кухни в зал к столу',
                 done: !!t.stool
             },
-            { text: 'Включить гирлянду на ёлке', done: !!t.garland },
             {
                 text: t.decorBox
-                    ? `Украсить квартиру мишурой: зал, кухню и прихожую (${decorDoneCount}/3)`
+                    ? 'Нарядить ёлку игрушками и включить гирлянду'
+                    : 'Взять коробку с игрушками в прихожей и нарядить ёлку',
+                done: !!t.garland
+            },
+            {
+                text: t.decorBox
+                    ? `Украсить квартиру мишурой в подсвеченных местах (${decorDoneCount}/3)`
                     : `Взять коробку с мишурой в прихожей и украсить квартиру (${decorDoneCount}/3)`,
                 done: !!t.decorate
             },
-            { text: 'Принести хрусталь из серванта на стол', done: !!t.crystal },
+            { text: 'Принести хрустальный сервиз из серванта на стол', done: !!t.crystal },
             { text: 'Принести банку солений из кладовки на стол', done: !!t.pickles },
             { text: 'Принести оливье и мясную нарезку из холодильника', done: !!(t.olivier && t.meat) },
             { text: 'Достать запечённую курицу из духовки на стол', done: !!t.chicken }
@@ -1279,13 +1406,71 @@ export class StoryDirector {
             w.tablePlacementZone.fillMat.opacity = 0.12 + pulse * 0.18;
             w.tablePlacementZone.borderMat.opacity = 0.45 + pulse * 0.45;
         }
-        // Animate wing unfolding in real time while the player holds KeyE on the table
-        if (this.act === 1 && w.table && (this._tableStage === 'placed_folded' || this._tableStage === 'wing1_open')) {
+
+        // Pulsing golden highlights for apartment decoration spots & Christmas tree
+        const showDecorHighlights = this.act === 1 && this.act1Tasks?.decorBox;
+        const updateDecorFrame = (frame, shouldShow) => {
+            if (!frame) return;
+            frame.visible = !!shouldShow;
+            if (!shouldShow) return;
+            const ud = frame.userData;
+            if (ud?.fillMat) ud.fillMat.opacity = 0.10 + pulse * 0.16;
+            if (ud?.borderMat) ud.borderMat.opacity = 0.45 + pulse * 0.45;
+            if (ud?.diamond) {
+                ud.diamond.rotation.y += deltaTime * 2.2;
+                const s = 0.85 + pulse * 0.3;
+                ud.diamond.scale.set(s, s, s);
+            }
+        };
+        if (w.decorQuest?.highlights) {
+            updateDecorFrame(w.decorQuest.highlights.hall, showDecorHighlights && !this.act1Tasks.decorHall);
+            updateDecorFrame(w.decorQuest.highlights.kitchen, showDecorHighlights && !this.act1Tasks.decorKitchen);
+            updateDecorFrame(w.decorQuest.highlights.hallway, showDecorHighlights && !this.act1Tasks.decorHallway);
+        }
+        updateDecorFrame(
+            w.treeDecorHighlight,
+            showDecorHighlights && !this.act1Tasks.garland && !this._treeDecoratingInProgress
+        );
+
+        // Animate wing unfolding or tablecloth spreading in real time while the player holds KeyE on the table
+        if (this.act === 1 && w.table) {
             const inter = this.engine.interactionSystem;
             const isTargetingTable = inter.currentTarget && inter.currentTarget.gameObject === w.table.go;
             const ratio = isTargetingTable ? (inter.getHoldRatio() || 0) : 0;
-            const wingIdx = this._tableStage === 'placed_folded' ? 1 : 2;
-            w.table.setWingProgress(wingIdx, ratio);
+            if (this._tableStage === 'placed_folded' || this._tableStage === 'wing1_open') {
+                const wingIdx = this._tableStage === 'placed_folded' ? 1 : 2;
+                w.table.setWingProgress(wingIdx, ratio);
+            } else if (this._tableStage === 'unfolded_bare' && this.act1Tasks.tableclothPicked) {
+                w.table.setTableclothProgress(ratio);
+            }
+        }
+    }
+
+    _stopDoorKnockAndPlayStairRun() {
+        if (this._knockTurnedToRun) return;
+        this._knockTurnedToRun = true;
+        this.engine.audioSystem.stopOneShotsByType?.('door_knock');
+
+        // Rapid receding running footsteps down the concrete stairs outside the front door
+        this._stairRunTimers = [];
+        const stepCount = 9;
+        for (let i = 0; i < stepCount; i++) {
+            const delayMs = i * 135;
+            const timerId = setTimeout(() => {
+                if (this.act !== 1) return;
+                const u = i / (stepCount - 1);
+                const pos = new THREE.Vector3(
+                    THREE.MathUtils.lerp(3.05, 2.48, u),
+                    THREE.MathUtils.lerp(0.0, -1.75, u),
+                    THREE.MathUtils.lerp(4.78, 8.15, u)
+                );
+                this.engine.audioSystem.playSpatialOneShot('footstep_concrete', pos, {
+                    heavy: true,
+                    volume: Math.max(0.18, 0.95 * (1.0 - u * 0.72)),
+                    checkOcclusion: false
+                });
+            }, delayMs);
+            this._stairRunTimers.push(timerId);
         }
     }
 
@@ -1452,18 +1637,35 @@ export class StoryDirector {
             return;
         }
 
-        // 5. Trigger loud neighbor door knock after washing face and stepping out of the bathroom
+        // 5. Trigger loud neighbor door knock after washing face and stepping out of the bathroom,
+        // and immediately switch knocking to rapid receding footsteps when the player aims at the front door!
         if (this.act1Tasks.wash && !this.act1Tasks.knockTriggered) {
             const p = this.player.transform.position;
             const elapsedSinceWash = this.phaseTimer - this._washFinishTime;
             if (p.x < 4.35 || elapsedSinceWash > 2.4) {
                 this.act1Tasks.knockTriggered = true;
+                this._knockRepeatTimer = 0;
                 this.engine.audioSystem.playSpatialOneShot('door_knock', new THREE.Vector3(3.075, 1.45, 4.55), {
                     bufferKey: 'door_knock',
                     volume: 1.2
                 });
-                this.ui.showSubtitle('В дверь кто-то громко постучал!.. Кого там принесло на ночь глядя?', 4200);
+                this.ui.showSubtitle('В дверь кто-то громко стучит!.. Кого там принесло на ночь глядя?', 4200);
                 this._refreshObjectives();
+            }
+        } else if (this.act1Tasks.knockTriggered && !this._knockTurnedToRun && !this.act1Tasks.peephole) {
+            const focusedGO = this.engine.interactionSystem?.currentTarget?.gameObject;
+            if (focusedGO && focusedGO === this.world.frontDoor?.go) {
+                this._stopDoorKnockAndPlayStairRun();
+                this.ui.showSubtitle('Стук резко оборвался — за дверью кто-то бросился бежать вниз по лестнице!', 3800);
+            } else {
+                this._knockRepeatTimer = (this._knockRepeatTimer || 0) + deltaTime;
+                if (this._knockRepeatTimer >= 2.2) {
+                    this._knockRepeatTimer = 0;
+                    this.engine.audioSystem.playSpatialOneShot('door_knock', new THREE.Vector3(3.075, 1.45, 4.55), {
+                        bufferKey: 'door_knock',
+                        volume: 1.15
+                    });
+                }
             }
         }
 

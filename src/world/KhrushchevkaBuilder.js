@@ -197,7 +197,7 @@ export class KhrushchevkaBuilder {
 
     _applyWorldSpaceBoxUVs(geo, w, h, d, ox = 0, oy = 0, oz = 0, mat = null) {
         const matKey = mat?.userData?.materialKey || '';
-        if (matKey === 'carpet' || matKey === 'clockDial' || matKey === 'bloodClaw' || matKey === 'glass') {
+        if (matKey === 'carpet' || matKey === 'clockDial' || matKey === 'bloodClaw' || matKey === 'glass' || matKey === 'mirror' || matKey === 'wineLabel') {
             return;
         }
         const tileScaleMap = {
@@ -418,6 +418,8 @@ export class KhrushchevkaBuilder {
         const tStairwell = this.tex.createStairwellWallTexture(1, 1);
         const tMeat = this.tex.createMeatPlatterTexture();
         const tCrystal = this.tex.createCrystalTexture();
+        const tMirror = this.tex.createMirrorTexture();
+        const tWineLabel = this.tex.createWineLabelTexture();
 
         this.materials = {
             parquet: this._ps1Mat({ map: tParquet, roughness: 0.85 }),
@@ -441,6 +443,8 @@ export class KhrushchevkaBuilder {
             metal: this._ps1Mat({ color: 0x5c6066, roughness: 0.5, metalness: 0.4 }),
             curtain: this._ps1Mat({ color: 0xb8c8c6, roughness: 0.9, doubleSided: true }),
             glass: this._ps1Mat({ color: 0x8fb0c7, transparent: true, opacity: 0.28, roughness: 0.15, depthWrite: false, snap: false }),
+            mirror: this._ps1Mat({ map: tMirror, color: 0xf0f8ff, emissive: 0x3b4f63, emissiveIntensity: 0.52, roughness: 0.08, metalness: 0.82, snap: false }),
+            wineLabel: this._ps1Mat({ map: tWineLabel, roughness: 0.5 }),
             crystal: this._ps1Mat({ map: tCrystal, color: 0xdff2ff, transparent: true, opacity: 0.78, roughness: 0.12, depthWrite: false }),
             water: this._ps1Mat({ color: 0x6ea8c9, transparent: true, opacity: 0.7, roughness: 0.12, depthWrite: false }),
             olivier: this._ps1Mat({ map: tOlivier }),
@@ -637,6 +641,233 @@ export class KhrushchevkaBuilder {
         const rung4 = new THREE.Mesh(new THREE.BoxGeometry(0.022 * scale, 0.022 * scale, 0.24 * scale), legMat);
         rung4.position.set(0.125 * scale, 0.15 * scale, 0);
         group.add(rung1, rung2, rung3, rung4);
+        return group;
+    }
+
+    createWineBottleModel(scale = 1.0) {
+        const group = new THREE.Group();
+        const bottleGlassMat = this._ps1Mat({
+            color: 0x1a4722,
+            transparent: true,
+            opacity: 0.62,
+            roughness: 0.16,
+            metalness: 0.15,
+            depthWrite: false
+        });
+        const wineLiquidMat = this._ps1Mat({
+            color: 0x5c1118,
+            emissive: 0x1c0306,
+            transparent: true,
+            opacity: 0.85,
+            roughness: 0.25,
+            depthWrite: false
+        });
+        const labelMat = this.materials.wineLabel || this.materials.champagne;
+        const foilMat = this._ps1Mat({
+            color: 0xd8b243,
+            emissive: 0x3b2c08,
+            emissiveIntensity: 0.35,
+            roughness: 0.28,
+            metalness: 0.65
+        });
+        const crimsonBandMat = this._ps1Mat({ color: 0x7c181d, roughness: 0.4 });
+
+        // Inner wine liquid visible through the translucent green bottle glass
+        const liquidBody = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.036 * scale, 0.037 * scale, 0.145 * scale, 10),
+            wineLiquidMat
+        );
+        liquidBody.position.y = -0.042 * scale;
+        const liquidMeniscus = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.026 * scale, 0.035 * scale, 0.028 * scale, 10),
+            wineLiquidMat
+        );
+        liquidMeniscus.position.y = 0.042 * scale;
+
+        // Indented punt at bottom of bottle
+        const punt = new THREE.Mesh(
+            new THREE.ConeGeometry(0.030 * scale, 0.032 * scale, 8),
+            bottleGlassMat
+        );
+        punt.position.y = -0.105 * scale;
+
+        // Outer translucent emerald glass lower & upper body + vintage wrap label band in middle
+        const bodyLower = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.042 * scale, 0.043 * scale, 0.042 * scale, 10),
+            bottleGlassMat
+        );
+        bodyLower.position.y = -0.100 * scale;
+
+        const labelBand = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.0428 * scale, 0.0428 * scale, 0.088 * scale, 12),
+            labelMat
+        );
+        labelBand.position.y = -0.035 * scale;
+
+        const bodyUpper = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.041 * scale, 0.0425 * scale, 0.032 * scale, 10),
+            bottleGlassMat
+        );
+        bodyUpper.position.y = 0.025 * scale;
+
+        // Curved shoulder tapering into the neck
+        const shoulder1 = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.028 * scale, 0.041 * scale, 0.038 * scale, 10),
+            bottleGlassMat
+        );
+        shoulder1.position.y = 0.060 * scale;
+
+        const shoulder2 = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.0165 * scale, 0.028 * scale, 0.032 * scale, 10),
+            bottleGlassMat
+        );
+        shoulder2.position.y = 0.095 * scale;
+
+        // Neck & decorative collar ribbon
+        const neck = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.015 * scale, 0.0165 * scale, 0.046 * scale, 10),
+            bottleGlassMat
+        );
+        neck.position.y = 0.134 * scale;
+
+        const neckCollar = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.0178 * scale, 0.0195 * scale, 0.016 * scale, 10),
+            crimsonBandMat
+        );
+        neckCollar.position.y = 0.108 * scale;
+
+        // Gold foil capsule, lip ring, and cork top
+        const foilCapsule = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.0162 * scale, 0.0168 * scale, 0.036 * scale, 10),
+            foilMat
+        );
+        foilCapsule.position.y = 0.156 * scale;
+
+        const lipRing = new THREE.Mesh(
+            new THREE.TorusGeometry(0.0162 * scale, 0.0028 * scale, 5, 10),
+            foilMat
+        );
+        lipRing.rotation.x = Math.PI / 2;
+        lipRing.position.y = 0.165 * scale;
+
+        const corkTop = new THREE.Mesh(
+            new THREE.SphereGeometry(0.0172 * scale, 8, 6),
+            foilMat
+        );
+        corkTop.scale.set(1.0, 0.45, 1.0);
+        corkTop.position.y = 0.174 * scale;
+
+        group.add(
+            liquidBody, liquidMeniscus, punt,
+            bodyLower, labelBand, bodyUpper,
+            shoulder1, shoulder2, neck, neckCollar,
+            foilCapsule, lipRing, corkTop
+        );
+        return group;
+    }
+
+    createCrystalGobletModel(scale = 1.0, withWine = false) {
+        const group = new THREE.Group();
+        const crystalMat = this.materials.crystal;
+        const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.022 * scale, 0.028 * scale, 0.008 * scale, 8), crystalMat);
+        foot.position.y = 0.004 * scale;
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.0045 * scale, 0.0055 * scale, 0.056 * scale, 6), crystalMat);
+        stem.position.y = 0.036 * scale;
+        const knop = new THREE.Mesh(new THREE.OctahedronGeometry(0.009 * scale, 0), crystalMat);
+        knop.position.y = 0.044 * scale;
+        const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.030 * scale, 0.016 * scale, 0.068 * scale, 8), crystalMat);
+        bowl.position.y = 0.098 * scale;
+        group.add(foot, stem, knop, bowl);
+        if (withWine) {
+            const wine = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.024 * scale, 0.015 * scale, 0.036 * scale, 8),
+                this._ps1Mat({ color: 0xd4a438, transparent: true, opacity: 0.75, depthWrite: false })
+            );
+            wine.position.y = 0.088 * scale;
+            group.add(wine);
+        }
+        return group;
+    }
+
+    createCrystalDecanterModel(scale = 1.0) {
+        const group = new THREE.Group();
+        const crystalMat = this.materials.crystal;
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.046 * scale, 0.052 * scale, 0.022 * scale, 8), crystalMat);
+        base.position.y = 0.011 * scale;
+        const belly = new THREE.Mesh(new THREE.OctahedronGeometry(0.068 * scale, 0), crystalMat);
+        belly.scale.set(1.0, 1.15, 1.0);
+        belly.position.y = 0.082 * scale;
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.016 * scale, 0.024 * scale, 0.055 * scale, 8), crystalMat);
+        neck.position.y = 0.165 * scale;
+        const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.022 * scale, 0.016 * scale, 0.012 * scale, 8), crystalMat);
+        rim.position.y = 0.196 * scale;
+        const stopper = new THREE.Mesh(new THREE.OctahedronGeometry(0.024 * scale, 0), crystalMat);
+        stopper.scale.set(0.9, 1.35, 0.9);
+        stopper.position.y = 0.222 * scale;
+        group.add(base, belly, neck, rim, stopper);
+        return group;
+    }
+
+    createFoldedTableclothModel(scale = 1.0) {
+        const group = new THREE.Group();
+        const clothMat = this.materials.tablecloth;
+        const laceMat = this._ps1Mat({ color: 0xf4efe4, roughness: 0.85 });
+        const bottomFold = new THREE.Mesh(new THREE.BoxGeometry(0.28 * scale, 0.024 * scale, 0.22 * scale), clothMat);
+        bottomFold.position.y = 0.012 * scale;
+        const midFold = new THREE.Mesh(new THREE.BoxGeometry(0.26 * scale, 0.022 * scale, 0.20 * scale), laceMat);
+        midFold.position.set(0.004 * scale, 0.034 * scale, 0.004 * scale);
+        const topFold = new THREE.Mesh(new THREE.BoxGeometry(0.25 * scale, 0.022 * scale, 0.19 * scale), clothMat);
+        topFold.position.set(-0.003 * scale, 0.055 * scale, -0.002 * scale);
+        group.add(bottomFold, midFold, topFold);
+        return group;
+    }
+
+    createDecorHighlightFrame(w, h, plane = 'xy') {
+        const group = new THREE.Group();
+        const fillMat = new THREE.MeshBasicMaterial({
+            color: 0xffd166,
+            transparent: true,
+            opacity: 0.14,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        const borderMat = new THREE.MeshBasicMaterial({
+            color: 0xffe484,
+            transparent: true,
+            opacity: 0.82,
+            depthWrite: false
+        });
+        const fill = new THREE.Mesh(new THREE.PlaneGeometry(w, h), fillMat);
+        if (plane === 'yz') fill.rotation.y = Math.PI / 2;
+        else if (plane === 'xz') fill.rotation.x = -Math.PI / 2;
+        group.add(fill);
+
+        const t = 0.028;
+        const topBar = new THREE.Mesh(
+            plane === 'yz' ? new THREE.BoxGeometry(t, t, w) : new THREE.BoxGeometry(w, t, t),
+            borderMat
+        );
+        const botBar = topBar.clone();
+        const leftBar = new THREE.Mesh(
+            plane === 'yz' ? new THREE.BoxGeometry(t, h, t) : new THREE.BoxGeometry(t, h, t),
+            borderMat
+        );
+        const rightBar = leftBar.clone();
+
+        if (plane === 'yz') {
+            topBar.position.set(0, h * 0.5, 0);
+            botBar.position.set(0, -h * 0.5, 0);
+            leftBar.position.set(0, 0, -w * 0.5);
+            rightBar.position.set(0, 0, w * 0.5);
+        } else {
+            topBar.position.set(0, h * 0.5, 0);
+            botBar.position.set(0, -h * 0.5, 0);
+            leftBar.position.set(-w * 0.5, 0, 0);
+            rightBar.position.set(w * 0.5, 0, 0);
+        }
+        const diamond = new THREE.Mesh(new THREE.OctahedronGeometry(0.065, 0), borderMat);
+        group.add(topBar, botBar, leftBar, rightBar, diamond);
+        group.userData = { fillMat, borderMat, diamond };
         return group;
     }
 
@@ -1429,7 +1660,8 @@ export class KhrushchevkaBuilder {
             enterObject: this._addStaticBox('SofaHideTrigger', -2.42, 0.24, -1.0, 0.2, 0.42, 1.8, this.materials.sofaFabric, { collide: false, blocker: false }).go,
             enterPrompt: '[E] Залезть под диван',
             doorPromptClose: '[E] Опустить покрывало дивана',
-            doorPromptOpen: '[E] Приподнять покрывало'
+            doorPromptOpen: '[E] Приподнять покрывало',
+            defaultClosed: true
         });
         this._currentGroupId = null;
 
@@ -1448,29 +1680,163 @@ export class KhrushchevkaBuilder {
         });
         this._currentGroupId = null;
 
-        // Swapped: Sideboard now stands along the South wall of the Hall (facing North -Z)
+        // Swapped: Detailed Soviet Sideboard ("Сервант") along the South wall of the Hall (facing North -Z)
         this._currentGroupId = 'group_sideboard';
-        this._addStaticBox('SideboardLower', -0.35, 0.42, 1.18, 1.5, 0.84, 0.52, this.materials.woodDark, { castShadow: true });
-        this._addStaticBox('SideboardUpperL', -0.85, 1.38, 1.25, 0.48, 1.05, 0.36, this.materials.woodDark);
-        this._addStaticBox('SideboardUpperR', 0.15, 1.38, 1.25, 0.48, 1.05, 0.36, this.materials.woodDark);
-        this._addStaticBox('SideboardMirror', -0.35, 1.35, 1.38, 0.52, 0.88, 0.02, this.materials.glass, { collide: false });
+        this._addStaticBox('SideboardLower', -0.35, 0.43, 1.18, 1.54, 0.78, 0.52, this.materials.woodDark, { castShadow: true });
+        this._addStaticBox('SideboardCountertop', -0.35, 0.835, 1.16, 1.58, 0.035, 0.56, this.materials.woodFrame, { collide: false });
+        this._addStaticBox('SideboardBackPanel', -0.35, 1.38, 1.41, 1.54, 1.08, 0.03, this.materials.woodDark, { collide: false });
+        this._addStaticBox('SideboardTopCornice', -0.35, 1.92, 1.24, 1.56, 0.05, 0.40, this.materials.woodDark, { collide: false });
+        this._addStaticBox('SideboardUpperL', -0.87, 1.38, 1.25, 0.48, 1.05, 0.36, this.materials.woodDark);
+        this._addStaticBox('SideboardUpperR', 0.17, 1.38, 1.25, 0.48, 1.05, 0.36, this.materials.woodDark);
 
+        // Reflective mirror in the central niche of the sideboard with wooden frame trim
+        const sbMirrorObj = this._addStaticBox('SideboardMirror', -0.35, 1.36, 1.385, 0.52, 0.90, 0.02, this.materials.mirror, {
+            collide: false,
+            worldUV: false,
+            materialKey: 'mirror'
+        });
+        this.world.sideboardMirror = sbMirrorObj.mesh;
+
+        // Detailed sideboard doors, vitrine glass panes, shelves, porcelain dishes & Soviet decor
+        const sbDetailsGroup = new THREE.Group();
+        sbDetailsGroup.position.set(-0.35, 0, 1.18);
+        const brassMat = this._ps1Mat({ color: 0xd4af37, roughness: 0.35, metalness: 0.65 });
+        const porcelainWhite = this._ps1Mat({ color: 0xf4f0e6, roughness: 0.32 });
+        const porcelainRed = this._ps1Mat({ color: 0xb82424, roughness: 0.35 });
+        const porcelainCobalt = this._ps1Mat({ color: 0x24427a, roughness: 0.35 });
+
+        // 4 short wooden feet under the sideboard
+        for (const [fx, fz] of [[-0.70, -0.20], [0.70, -0.20], [-0.70, 0.20], [0.70, 0.20]]) {
+            const foot = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.06), this.materials.woodFrame);
+            foot.position.set(fx, 0.03, fz);
+            sbDetailsGroup.add(foot);
+        }
+        // 3 Lower cabinet door panels + brass handles
+        [-0.49, 0, 0.49].forEach((dx, idx) => {
+            const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.66, 0.022), this.materials.woodFrame);
+            doorPanel.position.set(dx, 0.44, -0.265);
+            const handle = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.11, 0.025), brassMat);
+            handle.position.set(dx + (idx === 0 ? 0.17 : -0.17), 0.48, -0.282);
+            sbDetailsGroup.add(doorPanel, handle);
+        });
+        // Mirror frame moldings
+        const mFrameT = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.025, 0.03), this.materials.woodFrame);
+        mFrameT.position.set(0, 1.82, 0.20);
+        const mFrameB = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.025, 0.03), this.materials.woodFrame);
+        mFrameB.position.set(0, 0.90, 0.20);
+        // Middle glass shelf in front of the mirror
+        const mirrorShelf = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.016, 0.22), this.materials.glass);
+        mirrorShelf.position.set(0, 1.36, 0.08);
+        // Front glass vitrine doors on Left & Right upper cabinets
+        const vitL = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.96, 0.015), this.materials.glass);
+        vitL.position.set(-0.52, 1.38, -0.115);
+        const vitR = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.96, 0.015), this.materials.glass);
+        vitR.position.set(0.52, 1.38, -0.115);
+        sbDetailsGroup.add(mFrameT, mFrameB, mirrorShelf, vitL, vitR);
+
+        // Porcelain Tea Service & Collector Plates on Left Shelves & Mirror Shelf
+        // 1. Upright decorative collector plates on the upper mirror shelf
+        for (const [px, pCol, rimCol] of [[-0.14, porcelainCobalt, brassMat], [0.14, porcelainWhite, porcelainRed]]) {
+            const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.014, 12), pCol);
+            plate.rotation.x = Math.PI / 2 - 0.18;
+            plate.position.set(px, 1.48, 0.12);
+            const rim = new THREE.Mesh(new THREE.TorusGeometry(0.095, 0.008, 5, 12), rimCol);
+            rim.rotation.y = 0;
+            rim.position.set(px, 1.48, 0.112);
+            sbDetailsGroup.add(plate, rim);
+        }
+        // 2. Soviet red porcelain teapot + sugar bowl + teacups on saucers on the mirror shelf & side ledges
+        const teapot = new THREE.Group();
+        teapot.position.set(0.0, 1.37, 0.05);
+        const tpBody = new THREE.Mesh(new THREE.SphereGeometry(0.062, 8, 6), porcelainRed);
+        tpBody.position.y = 0.055;
+        const tpLid = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.038, 0.016, 8), porcelainWhite);
+        tpLid.position.y = 0.112;
+        const tpKnob = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 5), brassMat);
+        tpKnob.position.y = 0.126;
+        const tpSpout = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.016, 0.065, 6), porcelainRed);
+        tpSpout.position.set(0.062, 0.068, 0);
+        tpSpout.rotation.z = -0.65;
+        const tpHandle = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.007, 5, 8), porcelainWhite);
+        tpHandle.position.set(-0.055, 0.062, 0);
+        teapot.add(tpBody, tpLid, tpKnob, tpSpout, tpHandle);
+        sbDetailsGroup.add(teapot);
+
+        // 4 Porcelain teacups on saucers + stack of dinner plates + crystal candy bowl + Matryoshka/figurine
+        const cupPositions = [
+            [-0.17, 1.37, 0.04],
+            [0.17, 1.37, 0.04],
+            [-0.58, 0.855, -0.14],
+            [-0.44, 0.855, -0.14]
+        ];
+        for (const [cx, cy, cz] of cupPositions) {
+            const saucer = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.026, 0.008, 8), porcelainWhite);
+            saucer.position.set(cx, cy + 0.004, cz);
+            const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.018, 0.036, 8), porcelainRed);
+            cup.position.set(cx, cy + 0.024, cz);
+            sbDetailsGroup.add(saucer, cup);
+        }
+        // Stack of porcelain dinner plates & crystal candy vase on the right side of the counter
+        for (let p = 0; p < 5; p++) {
+            const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.088, 0.068, 0.012, 10), p % 2 === 0 ? porcelainWhite : porcelainCobalt);
+            pl.position.set(0.46, 0.86 + p * 0.013, -0.14);
+            sbDetailsGroup.add(pl);
+        }
+        const candyVase = new THREE.Group();
+        candyVase.position.set(0.62, 0.855, -0.13);
+        const cvFoot = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.035, 8), this.materials.crystal);
+        cvFoot.position.y = 0.018;
+        const cvBowl = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.028, 0.065, 8), this.materials.crystal);
+        cvBowl.position.y = 0.068;
+        candyVase.add(cvFoot, cvBowl);
+        sbDetailsGroup.add(candyVase);
+
+        // Small vintage photo frame & wooden Matryoshka figurine on the left counter
+        const photoFrame = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.015), brassMat);
+        photoFrame.position.set(-0.66, 0.91, -0.10);
+        photoFrame.rotation.y = 0.28;
+        photoFrame.rotation.x = -0.15;
+        const matryoshka = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.026, 0.075, 8), porcelainRed);
+        matryoshka.position.set(-0.32, 0.89, -0.14);
+        const matHead = new THREE.Mesh(new THREE.SphereGeometry(0.019, 7, 6), porcelainWhite);
+        matHead.position.set(-0.32, 0.938, -0.14);
+        sbDetailsGroup.add(photoFrame, matryoshka, matHead);
+
+        this.scene.add(sbDetailsGroup);
+        this._registerEditable(sbDetailsGroup, 'SideboardDishes', {
+            category: 'furniture',
+            groupId: 'group_sideboard',
+            extra: { isSceneProp: true, primaryMesh: tpBody, materialKey: 'woodFrame' }
+        });
+
+        // Interactive Crystal Set on a silver tray: Crystal Decanter + 6 Stemmed Crystal Goblets
         const crystalGO = new GameObject('SideboardCrystal');
-        crystalGO.transform.position.set(-0.35, 0.86, 1.12);
-        for (let i = 0; i < 3; i++) {
-            const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 0.15, 8), this.materials.crystal);
-            glass.position.set((i - 1) * 0.14, 0.08, 0);
-            crystalGO.transform.add(glass);
+        crystalGO.transform.position.set(-0.35, 0.855, 1.12);
+        const crystalTray = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.012, 0.22), this.materials.metal);
+        crystalTray.position.y = 0.006;
+        crystalGO.transform.add(crystalTray);
+        const sbDecanter = this.createCrystalDecanterModel(0.95);
+        sbDecanter.position.set(0, 0.012, -0.02);
+        crystalGO.transform.add(sbDecanter);
+        const sbGobletOffsets = [
+            [-0.16, -0.04], [-0.09, 0.05], [-0.16, 0.05],
+            [0.09, 0.05], [0.16, 0.05], [0.16, -0.04]
+        ];
+        for (const [gx, gz] of sbGobletOffsets) {
+            const gob = this.createCrystalGobletModel(0.95, false);
+            gob.position.set(gx, 0.012, gz);
+            crystalGO.transform.add(gob);
         }
         this.engine.addGameObject(crystalGO);
         this._registerEditable(crystalGO.transform, 'SideboardCrystal', {
+            groupId: 'group_sideboard',
             activatedGroup: 'pickup',
             extra: { gameObject: crystalGO, materialKey: 'crystal' }
         });
         this.world.sideboardCrystal = crystalGO;
         this._currentGroupId = null;
 
-        const fallenMirror = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.03, 0.85), this.materials.crystal);
+        const fallenMirror = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.03, 0.85), this.materials.mirror);
         fallenMirror.position.set(-0.45, 0.03, 0.55);
         fallenMirror.rotation.y = 0.4;
         fallenMirror.visible = false;
@@ -1479,7 +1845,7 @@ export class KhrushchevkaBuilder {
             category: 'activated',
             activatedGroup: 'act4',
             defaultHidden: true,
-            extra: { isSceneProp: true, primaryMesh: fallenMirror, materialKey: 'crystal' }
+            extra: { isSceneProp: true, primaryMesh: fallenMirror, materialKey: 'mirror' }
         });
         this.world.fallenMirror = fallenMirror;
 
@@ -1511,10 +1877,62 @@ export class KhrushchevkaBuilder {
         };
         this.world.setClockTime(0);
 
-        // Swapped: TV & TVStand now stand along the East wall of the Hall, directly opposite the Sofa!
+        // Swapped: TV & Detailed Soviet TV Cabinet ("Тумба под телевизор") along the East wall of the Hall
         this._currentGroupId = 'group_tv';
         this.world.crtTV = new CRTTelevision(this.world.lights.tvLight);
-        this._addStaticBox('TVStand', 1.60, 0.34, -1.0, 0.54, 0.68, 0.90, this.materials.woodDark, { castShadow: true });
+        this._addStaticBox('TVStand', 1.60, 0.38, -1.0, 0.54, 0.52, 0.90, this.materials.woodDark, { castShadow: true });
+
+        // Detailed TV Cabinet elements: 4 angled mid-century legs, top overhang board, open shelf with TV guide, 2 cabinet doors with handles, and lace doily
+        const tvStandDetails = new THREE.Group();
+        tvStandDetails.position.set(1.60, 0, -1.0);
+        const tvTopBoard = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.035, 0.96), this.materials.woodFrame);
+        tvTopBoard.position.set(0, 0.66, 0);
+        const tvDoily = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.006, 8), porcelainWhite);
+        tvDoily.position.set(-0.02, 0.681, 0);
+        // Open upper shelf trim & vintage TV guide magazine
+        const tvShelfInsert = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.14, 0.84), this.materials.darkSilhouette);
+        tvShelfInsert.position.set(-0.265, 0.54, 0);
+        const tvShelfBoard = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.022, 0.86), this.materials.woodFrame);
+        tvShelfBoard.position.set(-0.25, 0.46, 0);
+        const tvMagazine = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.022, 0.26), this._ps1Mat({ color: 0xd8cdb8, roughness: 0.85 }));
+        tvMagazine.position.set(-0.21, 0.485, -0.18);
+        tvMagazine.rotation.y = 0.14;
+        const tvCassetteBox = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.035, 0.22), this._ps1Mat({ color: 0x263242, roughness: 0.7 }));
+        tvCassetteBox.position.set(-0.21, 0.49, 0.20);
+        // Two lower cabinet doors facing West (-X) with handles
+        const tvDoorL = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.30, 0.41), this.materials.woodFrame);
+        tvDoorL.position.set(-0.275, 0.29, -0.215);
+        const tvDoorR = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.30, 0.41), this.materials.woodFrame);
+        tvDoorR.position.set(-0.275, 0.29, 0.215);
+        const tvHandleL = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.08, 0.018), brassMat);
+        tvHandleL.position.set(-0.292, 0.31, -0.05);
+        const tvHandleR = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.08, 0.018), brassMat);
+        tvHandleR.position.set(-0.292, 0.31, 0.05);
+        tvStandDetails.add(
+            tvTopBoard, tvDoily, tvShelfInsert, tvShelfBoard,
+            tvMagazine, tvCassetteBox, tvDoorL, tvDoorR, tvHandleL, tvHandleR
+        );
+        // 4 angled mid-century legs
+        [
+            [-0.21, -0.39, -0.12, -0.12],
+            [0.21, -0.39, 0.12, -0.12],
+            [-0.21, 0.39, -0.12, 0.12],
+            [0.21, 0.39, 0.12, 0.12]
+        ].forEach(([lx, lz, rx, rz]) => {
+            const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.016, 0.16, 6), this.materials.woodFrame);
+            leg.position.set(lx, 0.075, lz);
+            leg.rotation.set(rx, 0, rz);
+            const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.015, 0.035, 6), brassMat);
+            tip.position.set(lx, 0.018, lz);
+            tvStandDetails.add(leg, tip);
+        });
+        this.scene.add(tvStandDetails);
+        this._registerEditable(tvStandDetails, 'TVStandDetails', {
+            category: 'furniture',
+            groupId: 'group_tv',
+            extra: { isSceneProp: true, primaryMesh: tvTopBoard, materialKey: 'woodFrame' }
+        });
+
         const tvGO = new GameObject('CRT_TV');
         tvGO.transform.position.set(1.58, 0.94, -1.0);
         tvGO.transform.rotation.y = -Math.PI / 2;
@@ -1537,7 +1955,7 @@ export class KhrushchevkaBuilder {
         this.world.tvGameObject = tvGO;
         this._currentGroupId = null;
 
-        // Folding Table: starts on the Balcony at (-0.55, 0, -4.25), then player carries it to (-1.35, 0, -1.0) in front of the Sofa
+        // Folding Table ("Стол-книжка"): starts on Balcony at (-0.55, 0, -4.25), carried to (-1.35, 0, -1.0) in Hall
         const tableBalconyPos = new THREE.Vector3(-0.55, 0, -4.25);
         const tableBalconyRot = new THREE.Euler(0, 0, 0);
         const tableHallPos = new THREE.Vector3(-1.35, 0, -1.0);
@@ -1545,10 +1963,19 @@ export class KhrushchevkaBuilder {
         const tableGO = new GameObject('FoldingTable');
         tableGO.transform.position.copy(tableBalconyPos);
         tableGO.transform.rotation.copy(tableBalconyRot);
-        const tableCol = tableGO.addComponent(BoxCollider, new THREE.Vector3(0.45, 0.76, 0.90), new THREE.Vector3(0, 0.38, 0));
+        const tableCol = tableGO.addComponent(BoxCollider, new THREE.Vector3(0.44, 0.76, 0.88), new THREE.Vector3(0, 0.38, 0));
         const tableRB = tableGO.addComponent(RigidBody, { bodyType: 'static' });
-        const tableCenter = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.74, 0.88), this.materials.woodDark);
-        tableCenter.position.set(0, 0.37, 0);
+        const tableCenter = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.70, 0.86), this.materials.woodDark);
+        tableCenter.position.set(0, 0.39, 0);
+        const tableCenterTop = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.04, 0.88), this.materials.woodDark);
+        tableCenterTop.position.set(0, 0.73, 0);
+        tableCenter.add(tableCenterTop);
+        // 4 short base feet under the central pedestal
+        for (const [px, pz] of [[-0.15, -0.38], [0.15, -0.38], [-0.15, 0.38], [0.15, 0.38]]) {
+            const pFoot = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.06), this.materials.woodFrame);
+            pFoot.position.set(px, -0.37, pz);
+            tableCenter.add(pFoot);
+        }
 
         // Hinged pivots for the two folding wings so each half animates smoothly over 4 seconds
         const wingLPivot = new THREE.Group();
@@ -1565,10 +1992,43 @@ export class KhrushchevkaBuilder {
         wingRPivot.add(tableWingR);
         wingRPivot.rotation.z = -Math.PI / 2; // folded down initially
 
-        const tableclothMesh = new THREE.Mesh(new THREE.BoxGeometry(1.54, 0.02, 0.92), this.materials.tablecloth);
+        // Folding / swinging gateleg support frames ("ножки стола-книжки") for Left and Right wings
+        const buildGatelegFrame = (dirX) => {
+            const legPivot = new THREE.Group();
+            legPivot.position.set(dirX * 0.19, 0.0, dirX * -0.26);
+            const outerPost = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.71, 0.046), this.materials.woodFrame);
+            outerPost.position.set(dirX * 0.46, 0.355, 0);
+            const innerPost = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.68, 0.042), this.materials.woodFrame);
+            innerPost.position.set(dirX * 0.03, 0.355, 0);
+            const topBar = new THREE.Mesh(new THREE.BoxGeometry(0.47, 0.042, 0.04), this.materials.woodFrame);
+            topBar.position.set(dirX * 0.245, 0.68, 0);
+            const botBar = new THREE.Mesh(new THREE.BoxGeometry(0.47, 0.042, 0.04), this.materials.woodFrame);
+            botBar.position.set(dirX * 0.245, 0.12, 0);
+            const crossFoot = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.036, 0.36), this.materials.woodDark);
+            crossFoot.position.set(dirX * 0.46, 0.018, 0);
+            legPivot.add(outerPost, innerPost, topBar, botBar, crossFoot);
+            return { legPivot, outerPost };
+        };
+        const { legPivot: legLPivot, outerPost: legLPost } = buildGatelegFrame(-1);
+        legLPivot.rotation.y = Math.PI / 2; // folded flat against pedestal initially
+        const { legPivot: legRPivot, outerPost: legRPost } = buildGatelegFrame(1);
+        legRPivot.rotation.y = -Math.PI / 2; // folded flat against pedestal initially
+
+        const tableclothMesh = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.022, 0.92), this.materials.tablecloth);
         tableclothMesh.position.set(0, 0.755, 0);
+        // Hanging tablecloth skirt flaps on all 4 sides
+        const tcHangL = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.18, 0.92), this.materials.tablecloth);
+        tcHangL.position.set(-0.77, -0.09, 0);
+        const tcHangR = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.18, 0.92), this.materials.tablecloth);
+        tcHangR.position.set(0.77, -0.09, 0);
+        const tcHangN = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.18, 0.02), this.materials.tablecloth);
+        tcHangN.position.set(0, -0.09, -0.45);
+        const tcHangS = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.18, 0.02), this.materials.tablecloth);
+        tcHangS.position.set(0, -0.09, 0.45);
+        tableclothMesh.add(tcHangL, tcHangR, tcHangN, tcHangS);
         tableclothMesh.visible = false;
-        tableGO.transform.add(tableCenter, wingLPivot, wingRPivot, tableclothMesh);
+
+        tableGO.transform.add(tableCenter, wingLPivot, wingRPivot, legLPivot, legRPivot, tableclothMesh);
         this.engine.addGameObject(tableGO);
         this._registerEditable(tableGO.transform, 'FoldingTable', {
             groupId: 'group_table_set',
@@ -1585,6 +2045,18 @@ export class KhrushchevkaBuilder {
             groupId: 'group_table_set',
             activatedGroup: 'table',
             extra: { isSceneProp: true, primaryMesh: tableWingR, materialKey: 'woodDark' }
+        });
+        this._registerEditable(legLPivot, 'TableLegL', {
+            category: 'activated',
+            groupId: 'group_table_set',
+            activatedGroup: 'table',
+            extra: { isSceneProp: true, primaryMesh: legLPost, materialKey: 'woodFrame' }
+        });
+        this._registerEditable(legRPivot, 'TableLegR', {
+            category: 'activated',
+            groupId: 'group_table_set',
+            activatedGroup: 'table',
+            extra: { isSceneProp: true, primaryMesh: legRPost, materialKey: 'woodFrame' }
         });
         this._registerEditable(tableclothMesh, 'Tablecloth', {
             category: 'activated',
@@ -1685,12 +2157,24 @@ export class KhrushchevkaBuilder {
         };
         const crystalGroup = new THREE.Group();
         const crystalGlasses = [];
-        for (let i = 0; i < 3; i++) {
-            const g = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.025, 0.14, 8), this.materials.crystal);
-            g.position.set(-0.4 + i * 0.25, 0.83, -0.22);
+        const tableGobletPositions = [
+            [-0.42, -0.22],
+            [-0.17, -0.24],
+            [0.08, -0.22],
+            [-0.36, -0.06],
+            [-0.18, -0.08],
+            [-0.02, -0.06]
+        ];
+        for (let i = 0; i < tableGobletPositions.length; i++) {
+            const g = this.createCrystalGobletModel(1.0, true);
+            g.position.set(tableGobletPositions[i][0], 0.765, tableGobletPositions[i][1]);
             crystalGroup.add(g);
-            crystalGlasses.push(g);
+            if (i < 3) crystalGlasses.push(g);
         }
+        const tableDecanter = this.createCrystalDecanterModel(0.95);
+        tableDecanter.position.set(-0.24, 0.765, 0.14);
+        crystalGroup.add(tableDecanter);
+
         const picklesTable = this.createPicklesJarModel(1.0);
         picklesTable.position.set(-0.48, 0.85, 0.15);
         const olivierTable = this.createOlivierBowlModel(1.0);
@@ -1699,8 +2183,8 @@ export class KhrushchevkaBuilder {
         meatTable.position.set(0.24, 0.775, -0.18);
         const chickenTable = this.createRoastedChickenModel(1.0);
         chickenTable.position.set(0.26, 0.82, 0.14);
-        const champTable = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.28, 8), this.materials.champagne);
-        champTable.position.set(0.55, 0.9, -0.02);
+        const champTable = this.createWineBottleModel(1.0);
+        champTable.position.set(0.55, 0.90, -0.02);
 
         this.world.itemsOnTable = {
             crystal: makeTableProp(crystalGroup),
@@ -1718,7 +2202,7 @@ export class KhrushchevkaBuilder {
         crystalGlasses.forEach((g, idx) => {
             this._registerEditable(g, `TableItem_Crystal_${idx}`, {
                 category: 'activated', groupId: 'group_table_set', activatedGroup: 'table', defaultHidden: true,
-                extra: { isSceneProp: true, primaryMesh: g, materialKey: 'crystal', parentActivatedObj: crystalGroup }
+                extra: { isSceneProp: true, materialKey: 'crystal', parentActivatedObj: crystalGroup }
             });
         });
         this._registerEditable(picklesTable, 'TableItem_Pickles', {
@@ -1739,7 +2223,7 @@ export class KhrushchevkaBuilder {
         });
         this._registerEditable(champTable, 'TableItem_Champagne', {
             category: 'activated', groupId: 'group_table_set', activatedGroup: 'table', defaultHidden: true,
-            extra: { isSceneProp: true, primaryMesh: champTable, materialKey: 'champagne' }
+            extra: { isSceneProp: true, materialKey: 'champagne' }
         });
 
         const wreckedTable = new GameObject('WreckedTable');
@@ -1764,7 +2248,7 @@ export class KhrushchevkaBuilder {
         const spilledChicken = this.createRoastedChickenModel(0.95);
         spilledChicken.position.set(0.12, 0.07, -0.18);
         spilledChicken.rotation.set(0.1, 0.7, 2.9);
-        const fallenChampagne = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.28, 7), this.materials.champagne);
+        const fallenChampagne = this.createWineBottleModel(0.95);
         fallenChampagne.position.set(0.28, 0.05, -0.42);
         fallenChampagne.rotation.set(0, 0.4, Math.PI / 2);
         const shardGroup = new THREE.Group();
@@ -1837,19 +2321,15 @@ export class KhrushchevkaBuilder {
             }
         };
 
+        // Fixed table collider: wings unfold along local X (-X and +X) while depth along local Z is 0.88;
+        // BoxCollider.getBox() automatically rotates the local box by tableGO.transform.rotation.y!
         const updateTableColliderForState = (w1, w2) => {
-            const inHall = tableGO.transform.position.distanceTo(tableHallPos) < 0.5;
-            if (!inHall) {
-                tableCol.setSize(new THREE.Vector3(0.45, 0.76, 0.90));
-                tableCol.offset.set(0, 0.38, 0);
-            } else {
-                const lenL = w1 > 0.5 ? 0.56 : 0;
-                const lenR = w2 > 0.5 ? 0.56 : 0;
-                const totalZ = 0.42 + lenL + lenR;
-                const shiftZ = (lenL - lenR) * 0.5;
-                tableCol.setSize(new THREE.Vector3(0.90, 0.76, totalZ));
-                tableCol.offset.set(0, 0.38, shiftZ);
-            }
+            const lenL = w1 > 0.5 ? 0.56 : 0;
+            const lenR = w2 > 0.5 ? 0.56 : 0;
+            const totalX = 0.44 + lenL + lenR;
+            const shiftX = (lenR - lenL) * 0.5;
+            tableCol.setSize(new THREE.Vector3(totalX, 0.76, 0.88));
+            tableCol.offset.set(shiftX, 0.38, 0);
             if (tableRB) tableRB.position.copy(tableGO.transform.position);
             pushPlayerOutOfTable();
         };
@@ -1864,6 +2344,8 @@ export class KhrushchevkaBuilder {
             hallRot: tableHallRot,
             wingLPivot,
             wingRPivot,
+            legLPivot,
+            legRPivot,
             tableclothMesh,
             placeOnBalcony: () => {
                 tableGO.transform.visible = true;
@@ -1873,7 +2355,10 @@ export class KhrushchevkaBuilder {
                 tableCol.enabled = true;
                 wingLPivot.rotation.z = Math.PI / 2;
                 wingRPivot.rotation.z = -Math.PI / 2;
+                legLPivot.rotation.y = Math.PI / 2;
+                legRPivot.rotation.y = -Math.PI / 2;
                 tableclothMesh.visible = false;
+                tableclothMesh.scale.set(1, 1, 1);
                 updateTableColliderForState(0, 0);
             },
             placeInHallFolded: () => {
@@ -1884,21 +2369,53 @@ export class KhrushchevkaBuilder {
                 tableCol.enabled = true;
                 wingLPivot.rotation.z = Math.PI / 2;
                 wingRPivot.rotation.z = -Math.PI / 2;
+                legLPivot.rotation.y = Math.PI / 2;
+                legRPivot.rotation.y = -Math.PI / 2;
                 tableclothMesh.visible = false;
+                tableclothMesh.scale.set(1, 1, 1);
                 updateTableColliderForState(0, 0);
             },
             setWingProgress: (wingIndex, ratio) => {
                 const r = Math.max(0, Math.min(1, ratio));
                 if (wingIndex === 1) {
                     wingLPivot.rotation.z = THREE.MathUtils.lerp(Math.PI / 2, 0, r);
+                    legLPivot.rotation.y = THREE.MathUtils.lerp(Math.PI / 2, 0, r);
                     if (r >= 0.99) updateTableColliderForState(1, wingRPivot.rotation.z > -0.1 ? 1 : 0);
                 } else if (wingIndex === 2) {
                     wingRPivot.rotation.z = THREE.MathUtils.lerp(-Math.PI / 2, 0, r);
+                    legRPivot.rotation.y = THREE.MathUtils.lerp(-Math.PI / 2, 0, r);
                     if (r >= 0.99) {
-                        tableclothMesh.visible = true;
                         updateTableColliderForState(1, 1);
                     }
                 }
+            },
+            setTableclothProgress: (ratio) => {
+                const r = Math.max(0, Math.min(1, ratio));
+                if (r <= 0.01) {
+                    tableclothMesh.visible = false;
+                    return;
+                }
+                tableclothMesh.visible = true;
+                const ease = r * r * (3 - 2 * r);
+                tableclothMesh.scale.set(0.25 + 0.75 * ease, 1.0, 0.35 + 0.65 * ease);
+                tableclothMesh.position.y = 0.755 + Math.sin(r * Math.PI) * 0.06;
+                if (r >= 0.99) {
+                    tableclothMesh.scale.set(1, 1, 1);
+                    tableclothMesh.position.y = 0.755;
+                }
+            },
+            unfoldWingsOnly: () => {
+                tableGO.transform.visible = true;
+                tableGO.transform.position.copy(tableHallPos);
+                tableGO.transform.rotation.copy(tableHallRot);
+                if (tableRB) tableRB.position.copy(tableHallPos);
+                tableCol.enabled = true;
+                wingLPivot.rotation.z = 0;
+                wingRPivot.rotation.z = 0;
+                legLPivot.rotation.y = 0;
+                legRPivot.rotation.y = 0;
+                tableclothMesh.visible = false;
+                updateTableColliderForState(1, 1);
             },
             unfold: () => {
                 tableGO.transform.visible = true;
@@ -1908,18 +2425,24 @@ export class KhrushchevkaBuilder {
                 tableCol.enabled = true;
                 wingLPivot.rotation.z = 0;
                 wingRPivot.rotation.z = 0;
+                legLPivot.rotation.y = 0;
+                legRPivot.rotation.y = 0;
                 tableclothMesh.visible = true;
+                tableclothMesh.scale.set(1, 1, 1);
+                tableclothMesh.position.y = 0.755;
                 updateTableColliderForState(1, 1);
             },
             fold: () => {
                 wingLPivot.rotation.z = Math.PI / 2;
                 wingRPivot.rotation.z = -Math.PI / 2;
+                legLPivot.rotation.y = Math.PI / 2;
+                legRPivot.rotation.y = -Math.PI / 2;
                 tableclothMesh.visible = false;
                 updateTableColliderForState(0, 0);
             }
         };
 
-        // Redesigned Christmas Tree: 6 flattened, wide overlapping tiers without sharp ugly spikes
+        // Redesigned Christmas Tree: 6 flattened, wide overlapping tiers + dressable ornaments & garland
         const treeGO = new GameObject('ChristmasTree');
         treeGO.transform.position.set(-2.75, 0, 0.85);
         const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.09, 0.42, 7), this.materials.woodDark);
@@ -1939,12 +2462,53 @@ export class KhrushchevkaBuilder {
             tierMesh.castShadow = true;
             treeGO.transform.add(tierMesh);
         }
+
+        // Ornaments, tinsel & top star group (hidden until the player dresses the Christmas tree!)
+        const treeOrnamentsGroup = new THREE.Group();
+        treeOrnamentsGroup.name = 'TreeOrnamentsGroup';
+        const treeOrnamentItems = [];
+
         const star = new THREE.Mesh(
-            new THREE.OctahedronGeometry(0.10, 0),
-            this._ps1Mat({ color: 0xff2222, emissive: 0x550000 })
+            new THREE.OctahedronGeometry(0.11, 0),
+            this._ps1Mat({ color: 0xff2222, emissive: 0x770000 })
         );
         star.position.y = 1.92;
-        treeGO.transform.add(star);
+        treeOrnamentsGroup.add(star);
+        treeOrnamentItems.push({ mesh: star, threshold: 0.88 });
+
+        const ornamentPalette = [
+            this._ps1Mat({ color: 0xd92626, emissive: 0x380505, roughness: 0.25, metalness: 0.45 }),
+            this._ps1Mat({ color: 0xf2c94c, emissive: 0x453208, roughness: 0.25, metalness: 0.55 }),
+            this._ps1Mat({ color: 0x2d8cf0, emissive: 0x082245, roughness: 0.25, metalness: 0.45 }),
+            this._ps1Mat({ color: 0x2ecc71, emissive: 0x083818, roughness: 0.28, metalness: 0.4 })
+        ];
+        const silverTinselMat = this._ps1Mat({ color: 0xe8eef5, emissive: 0x4a5568, emissiveIntensity: 0.35, roughness: 0.3 });
+        for (let i = 0; i < 18; i++) {
+            const u = i / 18;
+            const ang = i * 1.68 + 0.4;
+            const oy = 0.38 + u * 1.32;
+            const orad = 0.64 - u * 0.45;
+            const oMat = ornamentPalette[i % ornamentPalette.length];
+            const bauble = new THREE.Mesh(
+                i % 3 === 0 ? new THREE.OctahedronGeometry(0.052, 0) : new THREE.SphereGeometry(0.046, 7, 6),
+                oMat
+            );
+            bauble.position.set(Math.cos(ang) * orad, oy, Math.sin(ang) * orad);
+            treeOrnamentsGroup.add(bauble);
+            treeOrnamentItems.push({ mesh: bauble, threshold: u * 0.85 });
+        }
+        for (let t = 0; t < 22; t++) {
+            const u = t / 21;
+            const ang = u * Math.PI * 5.5;
+            const ty = 0.42 + u * 1.28;
+            const trad = 0.63 - u * 0.44;
+            const tinselBead = new THREE.Mesh(new THREE.SphereGeometry(0.028, 5, 4), t % 2 === 0 ? brassMat : silverTinselMat);
+            tinselBead.position.set(Math.cos(ang) * trad, ty, Math.sin(ang) * trad);
+            treeOrnamentsGroup.add(tinselBead);
+            treeOrnamentItems.push({ mesh: tinselBead, threshold: u * 0.85 });
+        }
+        treeGO.transform.add(treeOrnamentsGroup);
+        this.world.treeOrnamentsGroup = treeOrnamentsGroup;
 
         const treeGarlandGroup = new THREE.Group();
         treeGarlandGroup.name = 'TreeGarlandGroup';
@@ -1962,6 +2526,32 @@ export class KhrushchevkaBuilder {
         }
         treeGO.transform.add(treeGarlandGroup);
         this.world.treeGarlandGroup = treeGarlandGroup;
+
+        // Pulsing golden ring around the Christmas tree when the player needs to decorate it
+        const treeHighlight = this.createDecorHighlightFrame(1.25, 1.25, 'xz');
+        treeHighlight.position.set(0, 0.02, 0);
+        treeHighlight.userData.diamond.position.set(0.45, 1.05, -0.35);
+        treeHighlight.visible = false;
+        treeGO.transform.add(treeHighlight);
+        this.world.treeDecorHighlight = treeHighlight;
+
+        this.world.setTreeDecorProgress = (ratio) => {
+            const r = Math.max(0, Math.min(1, ratio));
+            if (r <= 0.001) {
+                treeOrnamentsGroup.visible = false;
+                treeGarlandGroup.visible = false;
+                this.world.garlandOn = false;
+                return;
+            }
+            treeOrnamentsGroup.visible = true;
+            for (const item of treeOrnamentItems) {
+                item.mesh.visible = r >= item.threshold;
+            }
+            treeGarlandGroup.visible = r >= 0.55;
+            if (r >= 0.99) {
+                this.world.garlandOn = true;
+            }
+        };
 
         const tornGarland = new THREE.Group();
         const tornPts = [];
@@ -2394,6 +2984,20 @@ export class KhrushchevkaBuilder {
             extra: { isSceneProp: true, primaryMesh: shelfMesh, materialKey: 'woodDark' }
         });
 
+        // Side linen shelf inside the hallway wardrobe with the pickupable Festive Tablecloth ("Праздничная скатерть")
+        this._addStaticBox('WardrobeLinenShelf', 1.40, 1.08, 3.95, 0.42, 0.03, 0.38, this.materials.woodDark, { collide: false, blocker: false });
+        const wardTableclothGO = new GameObject('WardrobeTablecloth');
+        wardTableclothGO.transform.position.set(1.44, 1.10, 3.95);
+        const foldedClothModel = this.createFoldedTableclothModel(1.0);
+        wardTableclothGO.transform.add(foldedClothModel);
+        this.engine.addGameObject(wardTableclothGO);
+        this._registerEditable(wardTableclothGO.transform, 'WardrobeTablecloth', {
+            category: 'props',
+            activatedGroup: 'pickup',
+            extra: { gameObject: wardTableclothGO, materialKey: 'tablecloth' }
+        });
+        this.world.wardrobeTablecloth = wardTableclothGO;
+
         const pantryPivot = new GameObject('PantryDoor');
         pantryPivot.transform.position.set(2.0, 1.05, 2.0);
         const pantryLeaf = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.08, 0.8), this.materials.woodFrame);
@@ -2534,6 +3138,41 @@ export class KhrushchevkaBuilder {
             extra: { gameObject: sinkGO, primaryMesh: sBot, materialKey: 'fridgeWhite', collide: true }
         });
         this.world.bathroomSink = sinkGO;
+
+        // Bathroom Mirror ("Зеркало в ванной") + toiletry shelf with cup, toothbrushes & soap above the sink
+        const bathMirrorGroup = new THREE.Group();
+        bathMirrorGroup.position.set(4.75, 1.48, 1.71);
+        const bmFrame = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.68, 0.024), this.materials.fridgeWhite);
+        const bmGlass = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.62, 0.028), this.materials.mirror);
+        bmGlass.position.z = 0.004;
+        const bmShelf = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.022, 0.12), this.materials.fridgeWhite);
+        bmShelf.position.set(0, -0.36, 0.055);
+        const tbCup = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.026, 0.022, 0.075, 8),
+            this._ps1Mat({ color: 0x5b8bb8, roughness: 0.35 })
+        );
+        tbCup.position.set(-0.15, -0.312, 0.065);
+        const tb1 = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.11, 0.008), this._ps1Mat({ color: 0xd93838 }));
+        tb1.position.set(-0.158, -0.285, 0.065);
+        tb1.rotation.z = 0.18;
+        const tb2 = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.11, 0.008), this._ps1Mat({ color: 0x38a862 }));
+        tb2.position.set(-0.142, -0.285, 0.065);
+        tb2.rotation.z = -0.16;
+        const soapDish = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.014, 0.058), this.materials.fridgeWhite);
+        soapDish.position.set(0.14, -0.342, 0.065);
+        const soapBar = new THREE.Mesh(
+            new THREE.BoxGeometry(0.065, 0.022, 0.042),
+            this._ps1Mat({ color: 0xe6b89c, roughness: 0.55 })
+        );
+        soapBar.position.set(0.14, -0.328, 0.065);
+        bathMirrorGroup.add(bmFrame, bmGlass, bmShelf, tbCup, tb1, tb2, soapDish, soapBar);
+        this.scene.add(bathMirrorGroup);
+        this._registerEditable(bathMirrorGroup, 'BathroomMirror', {
+            category: 'fixtures',
+            groupId: 'group_sink',
+            extra: { isSceneProp: true, primaryMesh: bmGlass, materialKey: 'mirror' }
+        });
+        this.world.bathroomMirror = bathMirrorGroup;
         this._currentGroupId = null;
 
         const toiletGO = new GameObject('BathroomToilet');
@@ -2609,7 +3248,8 @@ export class KhrushchevkaBuilder {
             enterPrompt: '[E] Спрятаться за шторкой в ванной',
             doorPromptClose: '[E] Задёрнуть шторку',
             doorPromptOpen: '[E] Отодвинуть шторку',
-            isCurtain: true
+            isCurtain: true,
+            defaultClosed: true
         });
         this._currentGroupId = null;
     }
@@ -2991,16 +3631,17 @@ export class KhrushchevkaBuilder {
 
         const champGO = new GameObject('BalconyChampagne');
         champGO.transform.position.set(1.45, 0.24, -4.42);
-        const bottle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.3, 8), this.materials.champagne);
+        const bottle = this.createWineBottleModel(1.0);
         bottle.rotation.z = 0.35;
-        const bag = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), this._ps1Mat({ color: 0x8f8877, transparent: true, opacity: 0.65 }));
-        bag.position.y = -0.05;
+        const bag = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), this._ps1Mat({ color: 0xd6e1ee, transparent: true, opacity: 0.55 }));
+        bag.scale.set(1.15, 0.55, 1.15);
+        bag.position.y = -0.08;
         champGO.transform.add(bottle, bag);
         this.engine.addGameObject(champGO);
         this._registerEditable(champGO.transform, 'BalconyChampagne', {
             category: 'furniture',
             activatedGroup: 'pickup',
-            extra: { gameObject: champGO, primaryMesh: bottle, materialKey: 'champagne' }
+            extra: { gameObject: champGO, materialKey: 'champagne' }
         });
         this.world.champagneBottle = champGO;
     }
@@ -3695,12 +4336,33 @@ export class KhrushchevkaBuilder {
             collide: false, blocker: false, category: 'gameplay'
         }).go;
 
+        // Pulsing golden target highlights on the walls/windows where the player should aim to decorate the apartment
+        const hlHall = this.createDecorHighlightFrame(1.25, 0.85, 'xy');
+        hlHall.position.set(0, 0.15, -0.12);
+        hlHall.visible = false;
+        spotHall.transform.add(hlHall);
+
+        const hlKitchen = this.createDecorHighlightFrame(1.10, 0.82, 'xy');
+        hlKitchen.position.set(0, 0.15, -0.12);
+        hlKitchen.visible = false;
+        spotKitchen.transform.add(hlKitchen);
+
+        const hlHallway = this.createDecorHighlightFrame(0.82, 0.82, 'yz');
+        hlHallway.position.set(0.02, 0.06, 0);
+        hlHallway.visible = false;
+        spotHallway.transform.add(hlHallway);
+
         this.world.decorQuest = {
             box: boxGO,
             spots: {
                 hall: spotHall,
                 kitchen: spotKitchen,
                 hallway: spotHallway
+            },
+            highlights: {
+                hall: hlHall,
+                kitchen: hlKitchen,
+                hallway: hlHallway
             },
             meshes: {
                 hall: decorHall,
@@ -4244,7 +4906,9 @@ export class KhrushchevkaBuilder {
             this.world.mistletoe.trampled.visible = true;
         }
         if (this.world.fallenSantaHat) this.world.fallenSantaHat.visible = true;
+        if (this.world.brokenBaubles) this.world.brokenBaubles.visible = true;
         if (this.world.fallenMirror) this.world.fallenMirror.visible = true;
+        if (this.world.sideboardMirror) this.world.sideboardMirror.visible = false;
 
         if (this.world.crtTV) {
             this.world.crtTV.setMode('news', true);
