@@ -375,7 +375,7 @@ export class KhrushchevkaBuilder {
 
     _enableAllObjectShadows() {
         const isOpaqueMesh = (mesh) => {
-            if (!mesh.isMesh) return false;
+            if (!mesh.isMesh || mesh.userData?.isPlanarMirror) return false;
             const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
             return !(mat && mat.transparent && (mat.opacity ?? 1) < 0.99);
         };
@@ -391,6 +391,163 @@ export class KhrushchevkaBuilder {
                 if (hasOpaque) obj.userData.castShadow = true;
             }
         });
+    }
+
+    _createPlanarReflector(width, height, options = {}) {
+        const renderTarget = new THREE.WebGLRenderTarget(512, 512, {
+            minFilter: THREE.LinearFilter,
+            magFilter: THREE.LinearFilter,
+            type: THREE.UnsignedByteType
+        });
+        renderTarget.texture.generateMipmaps = false;
+        const virtualCamera = new THREE.PerspectiveCamera();
+        virtualCamera.userData.isMirrorCamera = true;
+        const textureMatrix = new THREE.Matrix4();
+
+        const mirrorMat = new THREE.ShaderMaterial({
+            polygonOffset: true,
+            polygonOffsetFactor: -4,
+            polygonOffsetUnits: -4,
+            uniforms: {
+                tDiffuse: { value: renderTarget.texture },
+                textureMatrix: { value: textureMatrix },
+                tintColor: { value: new THREE.Color(options.tintColor ?? 0xe8f0f6) },
+                reflectivity: { value: options.reflectivity ?? 0.94 }
+            },
+            vertexShader: `
+                uniform mat4 textureMatrix;
+                varying vec4 vUv;
+                varying vec2 vLocalUv;
+                void main() {
+                    vLocalUv = uv;
+                    vUv = textureMatrix * vec4(position, 1.0);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform vec3 tintColor;
+                uniform float reflectivity;
+                varying vec4 vUv;
+                varying vec2 vLocalUv;
+                void main() {
+                    vec4 refl = texture2DProj(tDiffuse, vUv);
+                    vec3 col = mix(vec3(0.07, 0.09, 0.12), refl.rgb * tintColor, reflectivity);
+                    float edge = min(min(vLocalUv.x, 1.0 - vLocalUv.x), min(vLocalUv.y, 1.0 - vLocalUv.y));
+                    float bevel = smoothstep(0.0, 0.032, edge);
+                    col = mix(col + vec3(0.14, 0.18, 0.22), col, bevel);
+                    gl_FragColor = vec4(col, 1.0);
+                }
+            `
+        });
+        mirrorMat.userData = { materialKey: 'mirror' };
+
+        const mirrorMesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mirrorMat);
+        mirrorMesh.castShadow = false;
+        mirrorMesh.receiveShadow = false;
+        mirrorMesh.userData.isPlanarMirror = true;
+
+        const reflectorPlane = new THREE.Plane();
+        const normal = new THREE.Vector3();
+        const reflectorWorldPosition = new THREE.Vector3();
+        const cameraWorldPosition = new THREE.Vector3();
+        const rotationMatrix = new THREE.Matrix4();
+        const lookAtPosition = new THREE.Vector3(0, 0, -1);
+        const clipPlane = new THREE.Vector4();
+        const view = new THREE.Vector3();
+        const target = new THREE.Vector3();
+        const q = new THREE.Vector4();
+
+        mirrorMesh.onBeforeRender = (renderer, scene, camera) => {
+            if (!camera || camera.userData?.isMirrorCamera) return;
+            if (this.engine?.renderer?.camera && camera !== this.engine.renderer.camera) return;
+
+            reflectorWorldPosition.setFromMatrixPosition(mirrorMesh.matrixWorld);
+            cameraWorldPosition.setFromMatrixPosition(camera.matrixWorld);
+            rotationMatrix.extractRotation(mirrorMesh.matrixWorld);
+            normal.set(0, 0, 1).applyMatrix4(rotationMatrix);
+
+            view.subVectors(reflectorWorldPosition, cameraWorldPosition);
+            if (view.dot(normal) > 0) return; // Camera is behind the mirror plane
+            if (view.lengthSq() > 95) return; // Skip when far away
+
+            view.reflect(normal).negate();
+            view.add(reflectorWorldPosition);
+
+            rotationMatrix.extractRotation(camera.matrixWorld);
+            lookAtPosition.set(0, 0, -1).applyMatrix4(rotationMatrix).add(cameraWorldPosition);
+            target.subVectors(reflectorWorldPosition, lookAtPosition);
+            target.reflect(normal).negate();
+            target.add(reflectorWorldPosition);
+
+            virtualCamera.position.copy(view);
+            virtualCamera.up.set(0, 1, 0).applyMatrix4(rotationMatrix);
+            virtualCamera.up.reflect(normal);
+            virtualCamera.lookAt(target);
+
+            virtualCamera.far = camera.far;
+            virtualCamera.near = camera.near;
+            virtualCamera.updateMatrixWorld();
+            virtualCamera.projectionMatrix.copy(camera.projectionMatrix);
+
+            textureMatrix.set(
+                0.5, 0.0, 0.0, 0.5,
+                0.0, 0.5, 0.0, 0.5,
+                0.0, 0.0, 0.5, 0.5,
+                0.0, 0.0, 0.0, 1.0
+            );
+            textureMatrix.multiply(virtualCamera.projectionMatrix);
+            textureMatrix.multiply(virtualCamera.matrixWorldInverse);
+            textureMatrix.multiply(mirrorMesh.matrixWorld);
+
+            reflectorPlane.setFromNormalAndCoplanarPoint(normal, reflectorWorldPosition);
+            reflectorPlane.applyMatrix4(virtualCamera.matrixWorldInverse);
+            clipPlane.set(
+                reflectorPlane.normal.x,
+                reflectorPlane.normal.y,
+                reflectorPlane.normal.z,
+                reflectorPlane.constant
+            );
+
+            const projectionMatrix = virtualCamera.projectionMatrix;
+            q.x = (Math.sign(clipPlane.x) + projectionMatrix.elements[8]) / projectionMatrix.elements[0];
+            q.y = (Math.sign(clipPlane.y) + projectionMatrix.elements[9]) / projectionMatrix.elements[5];
+            q.z = -1.0;
+            q.w = (1.0 + projectionMatrix.elements[10]) / projectionMatrix.elements[14];
+            clipPlane.multiplyScalar(2.0 / clipPlane.dot(q));
+            projectionMatrix.elements[2] = clipPlane.x;
+            projectionMatrix.elements[6] = clipPlane.y;
+            projectionMatrix.elements[10] = clipPlane.z + 1.0 - 0.005;
+            projectionMatrix.elements[14] = clipPlane.w;
+
+            const playerAvatar = this.engine?.player?._mirrorBodyGroup;
+            if (playerAvatar) playerAvatar.visible = true;
+            mirrorMesh.visible = false;
+
+            const currentRenderTarget = renderer.getRenderTarget();
+            const currentXrEnabled = renderer.xr.enabled;
+            const currentShadowAutoUpdate = renderer.shadowMap.autoUpdate;
+            renderer.xr.enabled = false;
+            renderer.shadowMap.autoUpdate = false;
+
+            renderer.setRenderTarget(renderTarget);
+            renderer.state.buffers.depth.setMask(true);
+            if (renderer.autoClear === false) renderer.clear();
+            renderer.render(scene, virtualCamera);
+
+            renderer.xr.enabled = currentXrEnabled;
+            renderer.shadowMap.autoUpdate = currentShadowAutoUpdate;
+            renderer.setRenderTarget(currentRenderTarget);
+            const viewport = camera.viewport;
+            if (viewport !== undefined) {
+                renderer.state.viewport(viewport);
+            }
+
+            mirrorMesh.visible = true;
+            if (playerAvatar) playerAvatar.visible = false;
+        };
+
+        return mirrorMesh;
     }
 
     _initMaterials() {
@@ -1686,18 +1843,59 @@ export class KhrushchevkaBuilder {
         this._addStaticBox('SideboardCountertop', -0.35, 0.835, 1.16, 1.58, 0.035, 0.56, this.materials.woodFrame, { collide: false });
         this._addStaticBox('SideboardBackPanel', -0.35, 1.38, 1.41, 1.54, 1.08, 0.03, this.materials.woodDark, { collide: false });
         this._addStaticBox('SideboardTopCornice', -0.35, 1.92, 1.24, 1.56, 0.05, 0.40, this.materials.woodDark, { collide: false });
-        this._addStaticBox('SideboardUpperL', -0.87, 1.38, 1.25, 0.48, 1.05, 0.36, this.materials.woodDark);
-        this._addStaticBox('SideboardUpperR', 0.17, 1.38, 1.25, 0.48, 1.05, 0.36, this.materials.woodDark);
 
-        // Reflective mirror in the central niche of the sideboard with wooden frame trim
-        const sbMirrorObj = this._addStaticBox('SideboardMirror', -0.35, 1.36, 1.385, 0.52, 0.90, 0.02, this.materials.mirror, {
-            collide: false,
-            worldUV: false,
-            materialKey: 'mirror'
+        // Hollow upper vitrine cabinets ("вырез в верхних шкафчиках серванта за стеклом") instead of solid wood blocks
+        const buildHollowUpperVitrine = (name, cx, cy, cz) => {
+            const vitGO = new GameObject(name);
+            vitGO.transform.position.set(cx, cy, cz);
+            const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.032, 1.05, 0.36), this.materials.woodDark);
+            wallL.position.set(-0.224, 0, 0);
+            const wallR = new THREE.Mesh(new THREE.BoxGeometry(0.032, 1.05, 0.36), this.materials.woodDark);
+            wallR.position.set(0.224, 0, 0);
+            const wallTop = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.035, 0.36), this.materials.woodDark);
+            wallTop.position.set(0, 0.5075, 0);
+            const wallBot = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.032, 0.36), this.materials.woodDark);
+            wallBot.position.set(0, -0.509, 0);
+            const wallBack = new THREE.Mesh(new THREE.BoxGeometry(0.416, 0.985, 0.022), this.materials.woodFrame);
+            wallBack.position.set(0, 0, 0.168);
+            const midShelf = new THREE.Mesh(new THREE.BoxGeometry(0.416, 0.022, 0.31), this.materials.woodFrame);
+            midShelf.position.set(0, -0.02, 0.005);
+            const glassFront = new THREE.Mesh(new THREE.BoxGeometry(0.416, 0.98, 0.014), this.materials.glass);
+            glassFront.position.set(0, 0, -0.172);
+            vitGO.transform.add(wallL, wallR, wallTop, wallBot, wallBack, midShelf, glassFront);
+            vitGO.addComponent(BoxCollider, new THREE.Vector3(0.48, 1.05, 0.36));
+            vitGO.addComponent(RigidBody, { bodyType: 'static' });
+            this.blockerMeshes.push(wallL, wallR, wallTop, wallBot, wallBack);
+            this.engine.addGameObject(vitGO);
+            this._registerEditable(vitGO.transform, name, {
+                category: 'furniture',
+                groupId: 'group_sideboard',
+                extra: { gameObject: vitGO, primaryMesh: wallL, materialKey: 'woodDark', collide: true, blocker: true }
+            });
+            return vitGO;
+        };
+        buildHollowUpperVitrine('SideboardUpperL', -0.87, 1.38, 1.25);
+        buildHollowUpperVitrine('SideboardUpperR', 0.17, 1.38, 1.25);
+
+        // Real-time planar reflective mirror in the central niche of the sideboard (faces North -Z, well in front of back panel)
+        const sbMirrorGO = new GameObject('SideboardMirror');
+        sbMirrorGO.transform.position.set(-0.35, 1.36, 1.365);
+        sbMirrorGO.transform.rotation.y = Math.PI;
+        const sbMirrorReflector = this._createPlanarReflector(0.50, 0.88, {
+            tintColor: 0xe6eff5,
+            reflectivity: 0.94
         });
-        this.world.sideboardMirror = sbMirrorObj.mesh;
+        sbMirrorReflector.position.z = 0.0;
+        sbMirrorGO.transform.add(sbMirrorReflector);
+        this.engine.addGameObject(sbMirrorGO);
+        this._registerEditable(sbMirrorGO.transform, 'SideboardMirror', {
+            category: 'furniture',
+            groupId: 'group_sideboard',
+            extra: { gameObject: sbMirrorGO, primaryMesh: sbMirrorReflector, materialKey: 'mirror', collide: false }
+        });
+        this.world.sideboardMirror = sbMirrorGO.transform;
 
-        // Detailed sideboard doors, vitrine glass panes, shelves, porcelain dishes & Soviet decor
+        // Detailed sideboard doors, shelves, porcelain dishes & Soviet decor sitting cleanly inside the hollow vitrine cavities
         const sbDetailsGroup = new THREE.Group();
         sbDetailsGroup.position.set(-0.35, 0, 1.18);
         const brassMat = this._ps1Mat({ color: 0xd4af37, roughness: 0.35, metalness: 0.65 });
@@ -1719,35 +1917,29 @@ export class KhrushchevkaBuilder {
             handle.position.set(dx + (idx === 0 ? 0.17 : -0.17), 0.48, -0.282);
             sbDetailsGroup.add(doorPanel, handle);
         });
-        // Mirror frame moldings
+        // Mirror frame moldings & middle glass shelf in the central niche
         const mFrameT = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.025, 0.03), this.materials.woodFrame);
         mFrameT.position.set(0, 1.82, 0.20);
         const mFrameB = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.025, 0.03), this.materials.woodFrame);
         mFrameB.position.set(0, 0.90, 0.20);
-        // Middle glass shelf in front of the mirror
         const mirrorShelf = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.016, 0.22), this.materials.glass);
         mirrorShelf.position.set(0, 1.36, 0.08);
-        // Front glass vitrine doors on Left & Right upper cabinets
-        const vitL = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.96, 0.015), this.materials.glass);
-        vitL.position.set(-0.52, 1.38, -0.115);
-        const vitR = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.96, 0.015), this.materials.glass);
-        vitR.position.set(0.52, 1.38, -0.115);
-        sbDetailsGroup.add(mFrameT, mFrameB, mirrorShelf, vitL, vitR);
+        sbDetailsGroup.add(mFrameT, mFrameB, mirrorShelf);
 
-        // Porcelain Tea Service & Collector Plates on Left Shelves & Mirror Shelf
-        // 1. Upright decorative collector plates on the upper mirror shelf
-        for (const [px, pCol, rimCol] of [[-0.14, porcelainCobalt, brassMat], [0.14, porcelainWhite, porcelainRed]]) {
+        // Porcelain Tea Service & Collector Plates placed INSIDE the left & right vitrine shelves (z = +0.06 in sbDetailsGroup -> world z = 1.24)
+        // 1. Upright decorative collector plates inside Left & Right upper vitrine shelves
+        for (const [px, pCol, rimCol] of [[-0.52, porcelainCobalt, brassMat], [0.52, porcelainWhite, porcelainRed]]) {
             const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.014, 12), pCol);
             plate.rotation.x = Math.PI / 2 - 0.18;
-            plate.position.set(px, 1.48, 0.12);
+            plate.position.set(px, 1.50, 0.12);
             const rim = new THREE.Mesh(new THREE.TorusGeometry(0.095, 0.008, 5, 12), rimCol);
             rim.rotation.y = 0;
-            rim.position.set(px, 1.48, 0.112);
+            rim.position.set(px, 1.50, 0.112);
             sbDetailsGroup.add(plate, rim);
         }
-        // 2. Soviet red porcelain teapot + sugar bowl + teacups on saucers on the mirror shelf & side ledges
+        // 2. Soviet red porcelain teapot on the central mirror glass shelf
         const teapot = new THREE.Group();
-        teapot.position.set(0.0, 1.37, 0.05);
+        teapot.position.set(0.0, 1.37, 0.06);
         const tpBody = new THREE.Mesh(new THREE.SphereGeometry(0.062, 8, 6), porcelainRed);
         tpBody.position.y = 0.055;
         const tpLid = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.038, 0.016, 8), porcelainWhite);
@@ -1762,12 +1954,12 @@ export class KhrushchevkaBuilder {
         teapot.add(tpBody, tpLid, tpKnob, tpSpout, tpHandle);
         sbDetailsGroup.add(teapot);
 
-        // 4 Porcelain teacups on saucers + stack of dinner plates + crystal candy bowl + Matryoshka/figurine
+        // 3. 4 Porcelain teacups on saucers inside the central shelf & left vitrine bottom shelf
         const cupPositions = [
-            [-0.17, 1.37, 0.04],
-            [0.17, 1.37, 0.04],
-            [-0.58, 0.855, -0.14],
-            [-0.44, 0.855, -0.14]
+            [-0.17, 1.37, 0.05],
+            [0.17, 1.37, 0.05],
+            [-0.59, 0.892, 0.05],
+            [-0.45, 0.892, 0.05]
         ];
         for (const [cx, cy, cz] of cupPositions) {
             const saucer = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.026, 0.008, 8), porcelainWhite);
@@ -1776,14 +1968,14 @@ export class KhrushchevkaBuilder {
             cup.position.set(cx, cy + 0.024, cz);
             sbDetailsGroup.add(saucer, cup);
         }
-        // Stack of porcelain dinner plates & crystal candy vase on the right side of the counter
+        // 4. Stack of porcelain dinner plates & crystal candy vase inside the Right Vitrine bottom shelf (x = 0.44..0.60, z = +0.06)
         for (let p = 0; p < 5; p++) {
             const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.088, 0.068, 0.012, 10), p % 2 === 0 ? porcelainWhite : porcelainCobalt);
-            pl.position.set(0.46, 0.86 + p * 0.013, -0.14);
+            pl.position.set(0.45, 0.898 + p * 0.013, 0.06);
             sbDetailsGroup.add(pl);
         }
         const candyVase = new THREE.Group();
-        candyVase.position.set(0.62, 0.855, -0.13);
+        candyVase.position.set(0.60, 0.892, 0.06);
         const cvFoot = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.035, 8), this.materials.crystal);
         cvFoot.position.y = 0.018;
         const cvBowl = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.028, 0.065, 8), this.materials.crystal);
@@ -1791,15 +1983,15 @@ export class KhrushchevkaBuilder {
         candyVase.add(cvFoot, cvBowl);
         sbDetailsGroup.add(candyVase);
 
-        // Small vintage photo frame & wooden Matryoshka figurine on the left counter
+        // 5. Small vintage photo frame & wooden Matryoshka figurine inside the Left Vitrine shelves
         const photoFrame = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.015), brassMat);
-        photoFrame.position.set(-0.66, 0.91, -0.10);
-        photoFrame.rotation.y = 0.28;
-        photoFrame.rotation.x = -0.15;
+        photoFrame.position.set(-0.62, 1.44, 0.03);
+        photoFrame.rotation.y = 0.25;
+        photoFrame.rotation.x = -0.12;
         const matryoshka = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.026, 0.075, 8), porcelainRed);
-        matryoshka.position.set(-0.32, 0.89, -0.14);
+        matryoshka.position.set(-0.52, 0.93, 0.13);
         const matHead = new THREE.Mesh(new THREE.SphereGeometry(0.019, 7, 6), porcelainWhite);
-        matHead.position.set(-0.32, 0.938, -0.14);
+        matHead.position.set(-0.52, 0.978, 0.13);
         sbDetailsGroup.add(photoFrame, matryoshka, matHead);
 
         this.scene.add(sbDetailsGroup);
@@ -1935,19 +2127,41 @@ export class KhrushchevkaBuilder {
 
         const tvGO = new GameObject('CRT_TV');
         tvGO.transform.position.set(1.58, 0.94, -1.0);
-        tvGO.transform.rotation.y = -Math.PI / 2;
+        // Rotated +Math.PI / 2 so local -Z (tvScreen) faces West (-X) directly toward the table and sofa
+        tvGO.transform.rotation.y = Math.PI / 2;
         const tvBody = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.52, 0.44), this.materials.woodDark);
-        const tvScreenMat = new THREE.MeshBasicMaterial({ map: this.world.crtTV.texture });
-        const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.54, 0.4), tvScreenMat);
-        tvScreen.position.set(0, 0.02, -0.225);
+        // Hollow 4-bar bezel around the screen so no solid surface sits coplanar behind tvScreen
+        const bezelMat = this._ps1Mat({ color: 0x22201e, roughness: 0.7 });
+        const tvBezelT = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.045, 0.018), bezelMat);
+        tvBezelT.position.set(0, 0.225, -0.222);
+        const tvBezelB = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.055, 0.018), bezelMat);
+        tvBezelB.position.set(0, -0.22, -0.222);
+        const tvBezelL = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.40, 0.018), bezelMat);
+        tvBezelL.position.set(-0.30, 0.01, -0.222);
+        const tvBezelR = new THREE.Mesh(new THREE.BoxGeometry(0.135, 0.40, 0.018), bezelMat);
+        tvBezelR.position.set(0.26, 0.01, -0.222);
+        const tvScreenMat = new THREE.MeshBasicMaterial({
+            map: this.world.crtTV.texture,
+            polygonOffset: true,
+            polygonOffsetFactor: -4,
+            polygonOffsetUnits: -4
+        });
+        const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.49, 0.39), tvScreenMat);
+        tvScreen.position.set(-0.035, 0.01, -0.232);
         tvScreen.rotation.y = Math.PI;
+        const tvDial1 = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.024, 8), brassMat);
+        tvDial1.rotation.x = Math.PI / 2;
+        tvDial1.position.set(0.265, 0.11, -0.236);
+        const tvDial2 = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.020, 0.024, 8), brassMat);
+        tvDial2.rotation.x = Math.PI / 2;
+        tvDial2.position.set(0.265, 0.02, -0.236);
         const antenna1 = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.35, 4), this.materials.metal);
         antenna1.position.set(-0.1, 0.38, 0);
         antenna1.rotation.z = 0.4;
         const antenna2 = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.35, 4), this.materials.metal);
         antenna2.position.set(0.1, 0.38, 0);
         antenna2.rotation.z = -0.4;
-        tvGO.transform.add(tvBody, tvScreen, antenna1, antenna2);
+        tvGO.transform.add(tvBody, tvBezelT, tvBezelB, tvBezelL, tvBezelR, tvScreen, tvDial1, tvDial2, antenna1, antenna2);
         this.engine.addGameObject(tvGO);
         this._registerEditable(tvGO.transform, 'CRT_TV', {
             extra: { gameObject: tvGO, primaryMesh: tvBody, materialKey: 'woodDark' }
@@ -1955,7 +2169,7 @@ export class KhrushchevkaBuilder {
         this.world.tvGameObject = tvGO;
         this._currentGroupId = null;
 
-        // Folding Table ("Стол-книжка"): starts on Balcony at (-0.55, 0, -4.25), carried to (-1.35, 0, -1.0) in Hall
+        // Clean Folding Table ("Стол-книжка"): center tabletop + 2 drop-leaf wings + 4 swinging leg-doors under the middle tabletop
         const tableBalconyPos = new THREE.Vector3(-0.55, 0, -4.25);
         const tableBalconyRot = new THREE.Euler(0, 0, 0);
         const tableHallPos = new THREE.Vector3(-1.35, 0, -1.0);
@@ -1963,68 +2177,86 @@ export class KhrushchevkaBuilder {
         const tableGO = new GameObject('FoldingTable');
         tableGO.transform.position.copy(tableBalconyPos);
         tableGO.transform.rotation.copy(tableBalconyRot);
-        const tableCol = tableGO.addComponent(BoxCollider, new THREE.Vector3(0.44, 0.76, 0.88), new THREE.Vector3(0, 0.38, 0));
+        const tableCol = tableGO.addComponent(BoxCollider, new THREE.Vector3(0.42, 0.76, 0.88), new THREE.Vector3(0, 0.38, 0));
         const tableRB = tableGO.addComponent(RigidBody, { bodyType: 'static' });
-        const tableCenter = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.70, 0.86), this.materials.woodDark);
-        tableCenter.position.set(0, 0.39, 0);
-        const tableCenterTop = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.04, 0.88), this.materials.woodDark);
-        tableCenterTop.position.set(0, 0.73, 0);
-        tableCenter.add(tableCenterTop);
-        // 4 short base feet under the central pedestal
-        for (const [px, pz] of [[-0.15, -0.38], [0.15, -0.38], [-0.15, 0.38], [0.15, 0.38]]) {
-            const pFoot = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.06), this.materials.woodFrame);
-            pFoot.position.set(px, -0.37, pz);
-            tableCenter.add(pFoot);
+
+        // Center tabletop board + 4 corner posts under the middle tabletop
+        const tableCenter = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.036, 0.88), this.materials.woodDark);
+        tableCenter.position.set(0, 0.73, 0);
+        const centerApron = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.05, 0.82), this.materials.woodFrame);
+        centerApron.position.set(0, -0.04, 0);
+        tableCenter.add(centerApron);
+        for (const [lx, lz] of [[-0.145, -0.41], [0.145, -0.41], [-0.145, 0.41], [0.145, 0.41]]) {
+            const cLeg = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.71, 0.042), this.materials.woodFrame);
+            cLeg.position.set(lx, -0.37, lz);
+            tableCenter.add(cLeg);
+        }
+        for (const sz of [-0.41, 0.41]) {
+            const tieBar = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.032, 0.032), this.materials.woodFrame);
+            tieBar.position.set(0, -0.60, sz);
+            tableCenter.add(tieBar);
         }
 
-        // Hinged pivots for the two folding wings so each half animates smoothly over 4 seconds
+        // Swinging double-door leg frames ("ножки как дверцы под средней столешницей") on both sides:
+        // When closed (folded), each pair is folded inward under the middle tabletop behind the closed left/right wings.
+        // When opening a wing, the two leg-doors on that side swing outward from inside like double doors (one left, one right).
+        const buildSwingingLegDoor = (dirX, sideZ) => {
+            const doorPivot = new THREE.Group();
+            doorPivot.position.set(dirX * 0.135, 0, sideZ * 0.38);
+            const outerLeg = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.70, 0.042), this.materials.woodFrame);
+            outerLeg.position.set(dirX * 0.35, 0.35, 0);
+            const innerHingePost = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.56, 0.034), this.materials.woodFrame);
+            innerHingePost.position.set(dirX * 0.02, 0.39, 0);
+            const topBar = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.038, 0.032), this.materials.woodFrame);
+            topBar.position.set(dirX * 0.185, 0.65, 0);
+            const botBar = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.038, 0.032), this.materials.woodFrame);
+            botBar.position.set(dirX * 0.185, 0.13, 0);
+            doorPivot.add(outerLeg, innerHingePost, topBar, botBar);
+            const closedYaw = dirX * sideZ * (Math.PI / 2);
+            doorPivot.rotation.y = closedYaw;
+            return { doorPivot, outerLeg, closedYaw };
+        };
+
+        const legLFront = buildSwingingLegDoor(-1, -1); // closedYaw = +PI/2, opens outward to 0 (right)
+        const legLBack = buildSwingingLegDoor(-1, 1);   // closedYaw = -PI/2, opens outward to 0 (left)
+        const legRFront = buildSwingingLegDoor(1, -1);  // closedYaw = -PI/2, opens outward to 0 (left)
+        const legRBack = buildSwingingLegDoor(1, 1);    // closedYaw = +PI/2, opens outward to 0 (right)
+
+        const legLPivot = new THREE.Group();
+        legLPivot.add(legLFront.doorPivot, legLBack.doorPivot);
+        const legLPost = legLFront.outerLeg;
+
+        const legRPivot = new THREE.Group();
+        legRPivot.add(legRFront.doorPivot, legRBack.doorPivot);
+        const legRPost = legRFront.outerLeg;
+
+        // Hinged pivots for the two folding wings (0.62m long so when folded down they cover the leg-doors inside)
         const wingLPivot = new THREE.Group();
-        wingLPivot.position.set(-0.21, 0.73, 0);
-        const tableWingL = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.04, 0.88), this.materials.woodDark);
-        tableWingL.position.set(-0.28, 0, 0);
+        wingLPivot.position.set(-0.18, 0.73, 0);
+        const tableWingL = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.036, 0.88), this.materials.woodDark);
+        tableWingL.position.set(-0.31, 0, 0);
         wingLPivot.add(tableWingL);
-        wingLPivot.rotation.z = Math.PI / 2; // folded down initially
+        wingLPivot.rotation.z = Math.PI / 2; // folded down initially, closing over the left leg-doors
 
         const wingRPivot = new THREE.Group();
-        wingRPivot.position.set(0.21, 0.73, 0);
-        const tableWingR = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.04, 0.88), this.materials.woodDark);
-        tableWingR.position.set(0.28, 0, 0);
+        wingRPivot.position.set(0.18, 0.73, 0);
+        const tableWingR = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.036, 0.88), this.materials.woodDark);
+        tableWingR.position.set(0.31, 0, 0);
         wingRPivot.add(tableWingR);
-        wingRPivot.rotation.z = -Math.PI / 2; // folded down initially
+        wingRPivot.rotation.z = -Math.PI / 2; // folded down initially, closing over the right leg-doors
 
-        // Folding / swinging gateleg support frames ("ножки стола-книжки") for Left and Right wings
-        const buildGatelegFrame = (dirX) => {
-            const legPivot = new THREE.Group();
-            legPivot.position.set(dirX * 0.19, 0.0, dirX * -0.26);
-            const outerPost = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.71, 0.046), this.materials.woodFrame);
-            outerPost.position.set(dirX * 0.46, 0.355, 0);
-            const innerPost = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.68, 0.042), this.materials.woodFrame);
-            innerPost.position.set(dirX * 0.03, 0.355, 0);
-            const topBar = new THREE.Mesh(new THREE.BoxGeometry(0.47, 0.042, 0.04), this.materials.woodFrame);
-            topBar.position.set(dirX * 0.245, 0.68, 0);
-            const botBar = new THREE.Mesh(new THREE.BoxGeometry(0.47, 0.042, 0.04), this.materials.woodFrame);
-            botBar.position.set(dirX * 0.245, 0.12, 0);
-            const crossFoot = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.036, 0.36), this.materials.woodDark);
-            crossFoot.position.set(dirX * 0.46, 0.018, 0);
-            legPivot.add(outerPost, innerPost, topBar, botBar, crossFoot);
-            return { legPivot, outerPost };
-        };
-        const { legPivot: legLPivot, outerPost: legLPost } = buildGatelegFrame(-1);
-        legLPivot.rotation.y = Math.PI / 2; // folded flat against pedestal initially
-        const { legPivot: legRPivot, outerPost: legRPost } = buildGatelegFrame(1);
-        legRPivot.rotation.y = -Math.PI / 2; // folded flat against pedestal initially
-
-        const tableclothMesh = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.022, 0.92), this.materials.tablecloth);
+        // Stretched slightly longer along X (1.66m) so the tablecloth completely covers both unfolded wings with overhang
+        const tableclothMesh = new THREE.Mesh(new THREE.BoxGeometry(1.66, 0.024, 0.94), this.materials.tablecloth);
         tableclothMesh.position.set(0, 0.755, 0);
         // Hanging tablecloth skirt flaps on all 4 sides
-        const tcHangL = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.18, 0.92), this.materials.tablecloth);
-        tcHangL.position.set(-0.77, -0.09, 0);
-        const tcHangR = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.18, 0.92), this.materials.tablecloth);
-        tcHangR.position.set(0.77, -0.09, 0);
-        const tcHangN = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.18, 0.02), this.materials.tablecloth);
-        tcHangN.position.set(0, -0.09, -0.45);
-        const tcHangS = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.18, 0.02), this.materials.tablecloth);
-        tcHangS.position.set(0, -0.09, 0.45);
+        const tcHangL = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.20, 0.94), this.materials.tablecloth);
+        tcHangL.position.set(-0.82, -0.10, 0);
+        const tcHangR = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.20, 0.94), this.materials.tablecloth);
+        tcHangR.position.set(0.82, -0.10, 0);
+        const tcHangN = new THREE.Mesh(new THREE.BoxGeometry(1.66, 0.20, 0.024), this.materials.tablecloth);
+        tcHangN.position.set(0, -0.10, -0.46);
+        const tcHangS = new THREE.Mesh(new THREE.BoxGeometry(1.66, 0.20, 0.024), this.materials.tablecloth);
+        tcHangS.position.set(0, -0.10, 0.46);
         tableclothMesh.add(tcHangL, tcHangR, tcHangN, tcHangS);
         tableclothMesh.visible = false;
 
@@ -2324,9 +2556,9 @@ export class KhrushchevkaBuilder {
         // Fixed table collider: wings unfold along local X (-X and +X) while depth along local Z is 0.88;
         // BoxCollider.getBox() automatically rotates the local box by tableGO.transform.rotation.y!
         const updateTableColliderForState = (w1, w2) => {
-            const lenL = w1 > 0.5 ? 0.56 : 0;
-            const lenR = w2 > 0.5 ? 0.56 : 0;
-            const totalX = 0.44 + lenL + lenR;
+            const lenL = w1 > 0.5 ? 0.58 : 0;
+            const lenR = w2 > 0.5 ? 0.58 : 0;
+            const totalX = 0.38 + lenL + lenR;
             const shiftX = (lenR - lenL) * 0.5;
             tableCol.setSize(new THREE.Vector3(totalX, 0.76, 0.88));
             tableCol.offset.set(shiftX, 0.38, 0);
@@ -2355,8 +2587,10 @@ export class KhrushchevkaBuilder {
                 tableCol.enabled = true;
                 wingLPivot.rotation.z = Math.PI / 2;
                 wingRPivot.rotation.z = -Math.PI / 2;
-                legLPivot.rotation.y = Math.PI / 2;
-                legRPivot.rotation.y = -Math.PI / 2;
+                legLFront.doorPivot.rotation.y = legLFront.closedYaw;
+                legLBack.doorPivot.rotation.y = legLBack.closedYaw;
+                legRFront.doorPivot.rotation.y = legRFront.closedYaw;
+                legRBack.doorPivot.rotation.y = legRBack.closedYaw;
                 tableclothMesh.visible = false;
                 tableclothMesh.scale.set(1, 1, 1);
                 updateTableColliderForState(0, 0);
@@ -2369,21 +2603,31 @@ export class KhrushchevkaBuilder {
                 tableCol.enabled = true;
                 wingLPivot.rotation.z = Math.PI / 2;
                 wingRPivot.rotation.z = -Math.PI / 2;
-                legLPivot.rotation.y = Math.PI / 2;
-                legRPivot.rotation.y = -Math.PI / 2;
+                legLFront.doorPivot.rotation.y = legLFront.closedYaw;
+                legLBack.doorPivot.rotation.y = legLBack.closedYaw;
+                legRFront.doorPivot.rotation.y = legRFront.closedYaw;
+                legRBack.doorPivot.rotation.y = legRBack.closedYaw;
                 tableclothMesh.visible = false;
                 tableclothMesh.scale.set(1, 1, 1);
                 updateTableColliderForState(0, 0);
             },
             setWingProgress: (wingIndex, ratio) => {
                 const r = Math.max(0, Math.min(1, ratio));
+                // Phase 1 (r in 0..0.52): First completely lift the tabletop wing to horizontal (0 rad)
+                // Phase 2 (r in 0.52..1.0): Then swing the two leg-doors outward from inside so they never clip through the wing
+                const wingT = Math.min(1, r / 0.52);
+                const wingEase = wingT * wingT * (3 - 2 * wingT);
+                const legT = r <= 0.52 ? 0 : Math.min(1, (r - 0.52) / 0.48);
+                const legEase = legT * legT * (3 - 2 * legT);
                 if (wingIndex === 1) {
-                    wingLPivot.rotation.z = THREE.MathUtils.lerp(Math.PI / 2, 0, r);
-                    legLPivot.rotation.y = THREE.MathUtils.lerp(Math.PI / 2, 0, r);
+                    wingLPivot.rotation.z = THREE.MathUtils.lerp(Math.PI / 2, 0, wingEase);
+                    legLFront.doorPivot.rotation.y = THREE.MathUtils.lerp(legLFront.closedYaw, 0, legEase);
+                    legLBack.doorPivot.rotation.y = THREE.MathUtils.lerp(legLBack.closedYaw, 0, legEase);
                     if (r >= 0.99) updateTableColliderForState(1, wingRPivot.rotation.z > -0.1 ? 1 : 0);
                 } else if (wingIndex === 2) {
-                    wingRPivot.rotation.z = THREE.MathUtils.lerp(-Math.PI / 2, 0, r);
-                    legRPivot.rotation.y = THREE.MathUtils.lerp(-Math.PI / 2, 0, r);
+                    wingRPivot.rotation.z = THREE.MathUtils.lerp(-Math.PI / 2, 0, wingEase);
+                    legRFront.doorPivot.rotation.y = THREE.MathUtils.lerp(legRFront.closedYaw, 0, legEase);
+                    legRBack.doorPivot.rotation.y = THREE.MathUtils.lerp(legRBack.closedYaw, 0, legEase);
                     if (r >= 0.99) {
                         updateTableColliderForState(1, 1);
                     }
@@ -2412,8 +2656,10 @@ export class KhrushchevkaBuilder {
                 tableCol.enabled = true;
                 wingLPivot.rotation.z = 0;
                 wingRPivot.rotation.z = 0;
-                legLPivot.rotation.y = 0;
-                legRPivot.rotation.y = 0;
+                legLFront.doorPivot.rotation.y = 0;
+                legLBack.doorPivot.rotation.y = 0;
+                legRFront.doorPivot.rotation.y = 0;
+                legRBack.doorPivot.rotation.y = 0;
                 tableclothMesh.visible = false;
                 updateTableColliderForState(1, 1);
             },
@@ -2425,8 +2671,10 @@ export class KhrushchevkaBuilder {
                 tableCol.enabled = true;
                 wingLPivot.rotation.z = 0;
                 wingRPivot.rotation.z = 0;
-                legLPivot.rotation.y = 0;
-                legRPivot.rotation.y = 0;
+                legLFront.doorPivot.rotation.y = 0;
+                legLBack.doorPivot.rotation.y = 0;
+                legRFront.doorPivot.rotation.y = 0;
+                legRBack.doorPivot.rotation.y = 0;
                 tableclothMesh.visible = true;
                 tableclothMesh.scale.set(1, 1, 1);
                 tableclothMesh.position.y = 0.755;
@@ -2435,8 +2683,10 @@ export class KhrushchevkaBuilder {
             fold: () => {
                 wingLPivot.rotation.z = Math.PI / 2;
                 wingRPivot.rotation.z = -Math.PI / 2;
-                legLPivot.rotation.y = Math.PI / 2;
-                legRPivot.rotation.y = -Math.PI / 2;
+                legLFront.doorPivot.rotation.y = legLFront.closedYaw;
+                legLBack.doorPivot.rotation.y = legLBack.closedYaw;
+                legRFront.doorPivot.rotation.y = legRFront.closedYaw;
+                legRBack.doorPivot.rotation.y = legRBack.closedYaw;
                 tableclothMesh.visible = false;
                 updateTableColliderForState(0, 0);
             }
@@ -2899,11 +3149,11 @@ export class KhrushchevkaBuilder {
 
         const wardContents = new THREE.Group();
         const railMesh = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.014, 0.014, 0.94, 8),
+            new THREE.CylinderGeometry(0.014, 0.014, 0.56, 8),
             this.materials.metal
         );
         railMesh.rotation.x = Math.PI / 2;
-        railMesh.position.set(1.36, 1.82, 3.70);
+        railMesh.position.set(1.36, 1.82, 3.88);
         wardContents.add(railMesh);
 
         const shelfMesh = new THREE.Mesh(
@@ -2913,23 +3163,28 @@ export class KhrushchevkaBuilder {
         shelfMesh.position.set(1.34, 1.96, 3.70);
         wardContents.add(shelfMesh);
 
+        // Vertical partition divider between North linen shelf compartment (z = 3.32..3.66) and South coat compartment (z = 3.68..4.08)
+        const wardDivider = new THREE.Mesh(
+            new THREE.BoxGeometry(0.46, 1.94, 0.025),
+            this.materials.woodDark
+        );
+        wardDivider.position.set(1.48, 0.97, 3.67);
+        wardContents.add(wardDivider);
+
         const boxMat = this._ps1Mat({ color: 0x9b8262, roughness: 0.9 });
         const shelfBox = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.14, 0.32), boxMat);
-        shelfBox.position.set(1.34, 2.05, 3.42);
+        shelfBox.position.set(1.34, 2.05, 3.44);
         shelfBox.rotation.y = 0.08;
-        const folded1 = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, 0.28), this._ps1Mat({ color: 0x3b4d5e, roughness: 0.92 }));
-        folded1.position.set(1.34, 2.01, 3.92);
-        const folded2 = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.055, 0.26), this._ps1Mat({ color: 0x7d3238, roughness: 0.92 }));
-        folded2.position.set(1.34, 2.068, 3.91);
-        folded2.rotation.y = -0.1;
-        wardContents.add(shelfBox, folded1, folded2);
+        const shelfBox2 = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.12, 0.28), boxMat);
+        shelfBox2.position.set(1.34, 2.04, 3.90);
+        shelfBox2.rotation.y = -0.06;
+        wardContents.add(shelfBox, shelfBox2);
 
+        // Hanging coats only in the South compartment (z = 3.75..4.03) so the North linen shelf is 100% unobstructed
         const garments = [
-            { z: 3.33, len: 0.92, w: 0.10, col: 0x2a2f38, rot: 0.04 },
-            { z: 3.47, len: 0.72, w: 0.09, col: 0x5c3c26, rot: -0.05 },
-            { z: 3.66, len: 0.54, w: 0.08, col: 0x6b262e, rot: 0.02 },
-            { z: 3.84, len: 0.68, w: 0.09, col: 0x3d4d3a, rot: -0.03 },
-            { z: 4.02, len: 0.96, w: 0.10, col: 0x87765e, rot: 0.05 }
+            { z: 3.75, len: 0.58, w: 0.08, col: 0x6b262e, rot: 0.02 },
+            { z: 3.89, len: 0.68, w: 0.09, col: 0x3d4d3a, rot: -0.03 },
+            { z: 4.03, len: 0.92, w: 0.10, col: 0x87765e, rot: 0.05 }
         ];
         for (const g of garments) {
             const gMat = this._ps1Mat({ color: g.col, roughness: 0.9 });
@@ -2984,12 +3239,20 @@ export class KhrushchevkaBuilder {
             extra: { isSceneProp: true, primaryMesh: shelfMesh, materialKey: 'woodDark' }
         });
 
-        // Side linen shelf inside the hallway wardrobe with the pickupable Festive Tablecloth ("Праздничная скатерть")
-        this._addStaticBox('WardrobeLinenShelf', 1.40, 1.08, 3.95, 0.42, 0.03, 0.38, this.materials.woodDark, { collide: false, blocker: false });
+        // Open front linen shelf in the North half of the hallway wardrobe with the pickupable Festive Tablecloth ("Праздничная скатерть")
+        this._addStaticBox('WardrobeLinenShelf', 1.54, 1.06, 3.48, 0.52, 0.03, 0.36, this.materials.woodDark, { collide: false, blocker: false });
         const wardTableclothGO = new GameObject('WardrobeTablecloth');
-        wardTableclothGO.transform.position.set(1.44, 1.10, 3.95);
-        const foldedClothModel = this.createFoldedTableclothModel(1.0);
-        wardTableclothGO.transform.add(foldedClothModel);
+        wardTableclothGO.transform.position.set(1.66, 1.08, 3.48);
+        const foldedClothModel = this.createFoldedTableclothModel(1.1);
+        const clothHitBox = new THREE.Mesh(
+            new THREE.BoxGeometry(0.44, 0.28, 0.38),
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false })
+        );
+        clothHitBox.position.set(0.04, 0.06, 0);
+        const tableclothHighlight = this.createDecorHighlightFrame(0.36, 0.24, 'yz');
+        tableclothHighlight.position.set(0.16, 0.06, 0);
+        tableclothHighlight.visible = false;
+        wardTableclothGO.transform.add(foldedClothModel, clothHitBox, tableclothHighlight);
         this.engine.addGameObject(wardTableclothGO);
         this._registerEditable(wardTableclothGO.transform, 'WardrobeTablecloth', {
             category: 'props',
@@ -2997,6 +3260,7 @@ export class KhrushchevkaBuilder {
             extra: { gameObject: wardTableclothGO, materialKey: 'tablecloth' }
         });
         this.world.wardrobeTablecloth = wardTableclothGO;
+        this.world.tableclothHighlight = tableclothHighlight;
 
         const pantryPivot = new GameObject('PantryDoor');
         pantryPivot.transform.position.set(2.0, 1.05, 2.0);
@@ -3139,12 +3403,22 @@ export class KhrushchevkaBuilder {
         });
         this.world.bathroomSink = sinkGO;
 
-        // Bathroom Mirror ("Зеркало в ванной") + toiletry shelf with cup, toothbrushes & soap above the sink
+        // Bathroom Mirror ("Зеркало в ванной") with 4-bar hollow perimeter frame + real-time 3D planar reflection
         const bathMirrorGroup = new THREE.Group();
         bathMirrorGroup.position.set(4.75, 1.48, 1.71);
-        const bmFrame = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.68, 0.024), this.materials.fridgeWhite);
-        const bmGlass = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.62, 0.028), this.materials.mirror);
-        bmGlass.position.z = 0.004;
+        const bmFrameT = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.032, 0.026), this.materials.fridgeWhite);
+        bmFrameT.position.set(0, 0.324, 0.012);
+        const bmFrameB = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.032, 0.026), this.materials.fridgeWhite);
+        bmFrameB.position.set(0, -0.324, 0.012);
+        const bmFrameL = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.616, 0.026), this.materials.fridgeWhite);
+        bmFrameL.position.set(-0.254, 0, 0.012);
+        const bmFrameR = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.616, 0.026), this.materials.fridgeWhite);
+        bmFrameR.position.set(0.254, 0, 0.012);
+        const bmGlass = this._createPlanarReflector(0.48, 0.62, {
+            tintColor: 0xe6f2fa,
+            reflectivity: 0.95
+        });
+        bmGlass.position.z = 0.024;
         const bmShelf = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.022, 0.12), this.materials.fridgeWhite);
         bmShelf.position.set(0, -0.36, 0.055);
         const tbCup = new THREE.Mesh(
@@ -3165,7 +3439,7 @@ export class KhrushchevkaBuilder {
             this._ps1Mat({ color: 0xe6b89c, roughness: 0.55 })
         );
         soapBar.position.set(0.14, -0.328, 0.065);
-        bathMirrorGroup.add(bmFrame, bmGlass, bmShelf, tbCup, tb1, tb2, soapDish, soapBar);
+        bathMirrorGroup.add(bmFrameT, bmFrameB, bmFrameL, bmFrameR, bmGlass, bmShelf, tbCup, tb1, tb2, soapDish, soapBar);
         this.scene.add(bathMirrorGroup);
         this._registerEditable(bathMirrorGroup, 'BathroomMirror', {
             category: 'fixtures',
@@ -3249,8 +3523,14 @@ export class KhrushchevkaBuilder {
             doorPromptClose: '[E] Задёрнуть шторку',
             doorPromptOpen: '[E] Отодвинуть шторку',
             isCurtain: true,
-            defaultClosed: true
+            defaultClosed: false
         });
+        if (curtainPivot.transform.userData?.initialTransform) {
+            const p = curtainPivot.transform.position;
+            const s = curtainPivot.transform.scale;
+            curtainPivot.transform.userData.initialTransform.position = [p.x, p.y, p.z];
+            curtainPivot.transform.userData.initialTransform.scale = [s.x, s.y, s.z];
+        }
         this._currentGroupId = null;
     }
 
@@ -3700,9 +3980,14 @@ export class KhrushchevkaBuilder {
                 let wColor = 0x090c14;
                 if (litWarm.has(key)) wColor = 0xd9a84e;
                 if (litTV.has(key)) wColor = 0x5c85c7;
-                const winMat = new THREE.MeshBasicMaterial({ color: wColor });
+                const winMat = new THREE.MeshBasicMaterial({
+                    color: wColor,
+                    polygonOffset: true,
+                    polygonOffsetFactor: -3,
+                    polygonOffsetUnits: -3
+                });
                 const winMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.75, 1.45), winMat);
-                winMesh.position.set(colXs[c], floorYs[f], H14_Z + 0.02);
+                winMesh.position.set(colXs[c], floorYs[f], H14_Z + 0.14);
                 this.scene.add(winMesh);
                 this._registerEditable(winMesh, `House14_Win_${f}_${c}`, {
                     category: 'courtyard',
@@ -3717,7 +4002,7 @@ export class KhrushchevkaBuilder {
 
         const neighborWinCanvas = new NeighborWindowCanvas();
         neighborWinCanvas.mesh.scale.set(1.75 / 1.42, 1.45 / 1.38, 1);
-        neighborWinCanvas.mesh.position.set(roomX, roomY, roomZ + 0.03);
+        neighborWinCanvas.mesh.position.set(roomX, roomY, roomZ + 0.15);
         this.scene.add(neighborWinCanvas.mesh);
         this._registerEditable(neighborWinCanvas.mesh, 'NeighborWindowCanvas', {
             category: 'courtyard',
@@ -3726,7 +4011,7 @@ export class KhrushchevkaBuilder {
         this.world.neighborWindowCanvas = neighborWinCanvas;
 
         const targetWinFrame = new THREE.Group();
-        targetWinFrame.position.set(roomX, roomY, roomZ + 0.05);
+        targetWinFrame.position.set(roomX, roomY, roomZ + 0.19);
         const topBar = new THREE.Mesh(new THREE.BoxGeometry(1.88, 0.09, 0.09), this.materials.woodFrame);
         topBar.position.y = 0.74;
         const botBar = new THREE.Mesh(new THREE.BoxGeometry(1.88, 0.09, 0.09), this.materials.woodFrame);
@@ -4075,9 +4360,9 @@ export class KhrushchevkaBuilder {
         group.add(roof);
 
         const winGeo = new THREE.PlaneGeometry(1.45, 1.35);
-        const darkMat = new THREE.MeshBasicMaterial({ color: 0x090d14 });
-        const warmMat = new THREE.MeshBasicMaterial({ color: 0xd19c45 });
-        const tvMat = new THREE.MeshBasicMaterial({ color: 0x557ab5 });
+        const darkMat = new THREE.MeshBasicMaterial({ color: 0x090d14, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+        const warmMat = new THREE.MeshBasicMaterial({ color: 0xd19c45, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+        const tvMat = new THREE.MeshBasicMaterial({ color: 0x557ab5, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
 
         let seed = 17;
         for (let i = 0; i < name.length; i++) seed = (seed * 31 + name.charCodeAt(i)) & 0xffff;
@@ -4092,7 +4377,7 @@ export class KhrushchevkaBuilder {
                 const win = new THREE.Mesh(winGeo, mat);
                 const wx = cols > 1 ? -xSpan * 0.5 + (c / (cols - 1)) * xSpan : 0;
                 const wy = floors > 1 ? -ySpan * 0.5 + (f / (floors - 1)) * ySpan : 0;
-                win.position.set(wx, wy, depth * 0.5 + 0.04);
+                win.position.set(wx, wy, depth * 0.5 + 0.18);
                 group.add(win);
             }
         }
@@ -4688,12 +4973,12 @@ export class KhrushchevkaBuilder {
             if (hasMatOverride) {
                 const mKey = patch.materialKey ?? obj.userData.materialKey ?? 'concrete';
                 const mat = this.createCustomMaterial(mKey, patch);
-                if (obj.userData.primaryMesh) {
+                if (obj.userData.primaryMesh && !obj.userData.primaryMesh.userData?.isPlanarMirror) {
                     obj.userData.primaryMesh.material = mat;
-                } else if (obj.isMesh) {
+                } else if (obj.isMesh && !obj.userData?.isPlanarMirror) {
                     obj.material = mat;
                 } else {
-                    obj.traverse(c => { if (c.isMesh) c.material = mat; });
+                    obj.traverse(c => { if (c.isMesh && !c.userData?.isPlanarMirror) c.material = mat; });
                 }
                 obj.userData.materialKey = mKey;
                 obj.userData.materialPatch = {

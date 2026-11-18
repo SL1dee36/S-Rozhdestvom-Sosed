@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 
 export const ps1GlobalUniforms = {
-    uPs1Jitter: { value: 1.0 },
-    uPs1SnapRes: { value: 160.0 }
+    uPs1Jitter: { value: 0.0 },
+    uPs1SnapRes: { value: 320.0 }
 };
 
-export function setPS1JitterEnabled(enabled, snapRes = 160.0) {
+export function setPS1JitterEnabled(enabled, snapRes = 320.0) {
     ps1GlobalUniforms.uPs1Jitter.value = enabled ? 1.0 : 0.0;
     ps1GlobalUniforms.uPs1SnapRes.value = snapRes;
 }

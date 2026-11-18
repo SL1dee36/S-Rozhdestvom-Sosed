@@ -199,20 +199,22 @@ export class PlayerController extends Component {
         champGroup.position.set(0.25, -0.25, -0.45);
         make('champagne', champGroup);
 
-        // 7. Two-handed Folding Table (heavy, with folded gatelegs)
+        // 7. Two-handed Folding Table (clean 4-legged center frame + folded drop-leaf wings)
         const tableCarryGroup = new THREE.Group();
         const woodMat = mats.woodDark || new THREE.MeshStandardMaterial({ color: 0x4a2614 });
         const legFrameMat = mats.woodFrame || woodMat;
-        const tCenter = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.50, 0.58), woodMat);
-        const tFlapL = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.48, 0.56), woodMat);
-        tFlapL.position.set(-0.155, -0.01, 0);
-        const tFlapR = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.48, 0.56), woodMat);
-        tFlapR.position.set(0.155, -0.01, 0);
-        const tFoldedLegL = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.46, 0.035), legFrameMat);
-        tFoldedLegL.position.set(-0.125, -0.02, -0.22);
-        const tFoldedLegR = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.46, 0.035), legFrameMat);
-        tFoldedLegR.position.set(0.125, -0.02, 0.22);
-        tableCarryGroup.add(tCenter, tFlapL, tFlapR, tFoldedLegL, tFoldedLegR);
+        const tTop = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.026, 0.56), woodMat);
+        tTop.position.y = 0.24;
+        const tFlapL = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.42, 0.56), woodMat);
+        tFlapL.position.set(-0.122, 0.03, 0);
+        const tFlapR = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.42, 0.56), woodMat);
+        tFlapR.position.set(0.122, 0.03, 0);
+        tableCarryGroup.add(tTop, tFlapL, tFlapR);
+        for (const [lx, lz] of [[-0.085, -0.24], [0.085, -0.24], [-0.085, 0.24], [0.085, 0.24]]) {
+            const cLeg = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.48, 0.028), legFrameMat);
+            cLeg.position.set(lx, 0.0, lz);
+            tableCarryGroup.add(cLeg);
+        }
         tableCarryGroup.rotation.y = Math.PI / 2;
         const tableWrapper = new THREE.Group();
         tableWrapper.add(tableCarryGroup);
@@ -381,6 +383,149 @@ export class PlayerController extends Component {
         this._treeDecorHandsGroup = treeHandsGroup;
         this._treeDecorLeftHand = tLeft;
         this._treeDecorRightHand = tRight;
+
+        // 13. Full Articulated 3D Player Reflection Avatar (visible in real-time planar mirrors)
+        const mirrorBody = new THREE.Group();
+        mirrorBody.visible = false;
+        const sweaterMat = new THREE.MeshStandardMaterial({ color: 0x3b4d5e, roughness: 0.88 });
+        const collarMat = new THREE.MeshStandardMaterial({ color: 0x2c3a47, roughness: 0.9 });
+        const pantsMat = new THREE.MeshStandardMaterial({ color: 0x22262e, roughness: 0.92 });
+        const shoeMat = new THREE.MeshStandardMaterial({ color: 0x1a1715, roughness: 0.85 });
+        const skinMat = new THREE.MeshStandardMaterial({ color: 0xd8b094, roughness: 0.76 });
+        const hairMat = new THREE.MeshStandardMaterial({ color: 0x2b1e16, roughness: 0.9 });
+        const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xf0eee9 });
+        const pupilMat = new THREE.MeshBasicMaterial({ color: 0x181c22 });
+        const lipMat = new THREE.MeshStandardMaterial({ color: 0xb07c6a, roughness: 0.8 });
+
+        const pelvisGroup = new THREE.Group();
+        pelvisGroup.position.set(0, 0.78, 0);
+        const hipMesh = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.14, 0.21), pantsMat);
+        pelvisGroup.add(hipMesh);
+
+        const buildMirrorLeg = (sideX) => {
+            const legPivot = new THREE.Group();
+            legPivot.position.set(sideX * 0.10, -0.03, 0);
+            const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.145, 0.38, 0.155), pantsMat);
+            thigh.position.set(0, -0.19, 0);
+            const kneePivot = new THREE.Group();
+            kneePivot.position.set(0, -0.38, 0);
+            const shin = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.35, 0.135), pantsMat);
+            shin.position.set(0, -0.175, 0);
+            const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.135, 0.068, 0.23), shoeMat);
+            shoe.position.set(0, -0.345, -0.04);
+            kneePivot.add(shin, shoe);
+            legPivot.add(thigh, kneePivot);
+            pelvisGroup.add(legPivot);
+            return { legPivot, kneePivot };
+        };
+        const mLegL = buildMirrorLeg(-1);
+        const mLegR = buildMirrorLeg(1);
+
+        const torsoPivot = new THREE.Group();
+        torsoPivot.position.set(0, 0.04, 0);
+        const torsoLower = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.26, 0.21), sweaterMat);
+        torsoLower.position.set(0, 0.13, 0);
+        const torsoChest = new THREE.Mesh(new THREE.BoxGeometry(0.39, 0.34, 0.23), sweaterMat);
+        torsoChest.position.set(0, 0.42, 0);
+        const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.086, 0.105, 0.065, 8), collarMat);
+        collar.position.set(0, 0.60, 0);
+        torsoPivot.add(torsoLower, torsoChest, collar);
+
+        const buildMirrorArm = (sideX) => {
+            const shoulderPivot = new THREE.Group();
+            shoulderPivot.position.set(sideX * 0.235, 0.54, 0);
+            const shoulderCap = new THREE.Mesh(new THREE.SphereGeometry(0.064, 7, 6), sweaterMat);
+            const upperArm = new THREE.Mesh(new THREE.BoxGeometry(0.115, 0.27, 0.115), sweaterMat);
+            upperArm.position.set(0, -0.135, 0);
+            const elbowPivot = new THREE.Group();
+            elbowPivot.position.set(0, -0.26, 0);
+            const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.23, 0.10), sweaterMat);
+            forearm.position.set(0, -0.115, 0);
+            const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.036, 0.105), collarMat);
+            cuff.position.set(0, -0.22, 0);
+            const palm = new THREE.Mesh(new THREE.BoxGeometry(0.078, 0.095, 0.042), skinMat);
+            palm.position.set(0, -0.28, 0);
+            const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.045, 0.026), skinMat);
+            thumb.position.set(-sideX * 0.042, -0.265, -0.015);
+            thumb.rotation.z = sideX * 0.35;
+            elbowPivot.add(forearm, cuff, palm, thumb);
+            shoulderPivot.add(shoulderCap, upperArm, elbowPivot);
+            torsoPivot.add(shoulderPivot);
+            return { shoulderPivot, elbowPivot };
+        };
+        const mArmL = buildMirrorArm(-1);
+        const mArmR = buildMirrorArm(1);
+
+        const headPivot = new THREE.Group();
+        headPivot.position.set(0, 0.63, 0);
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.064, 0.09, 8), skinMat);
+        neck.position.y = 0.01;
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.23, 0.21), skinMat);
+        head.position.y = 0.13;
+        const nose = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.052, 0.034), skinMat);
+        nose.position.set(0, 0.125, -0.112);
+        const earL = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.055, 0.038), skinMat);
+        earL.position.set(-0.106, 0.13, -0.005);
+        const earR = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.055, 0.038), skinMat);
+        earR.position.set(0.106, 0.13, -0.005);
+        const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.014, 0.014), lipMat);
+        mouth.position.set(0, 0.068, -0.104);
+        const hairTop = new THREE.Mesh(new THREE.BoxGeometry(0.216, 0.075, 0.226), hairMat);
+        hairTop.position.set(0, 0.225, 0.004);
+        const hairBack = new THREE.Mesh(new THREE.BoxGeometry(0.214, 0.17, 0.065), hairMat);
+        hairBack.position.set(0, 0.145, 0.086);
+        const hairSideL = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.11, 0.15), hairMat);
+        hairSideL.position.set(-0.102, 0.17, 0.02);
+        const hairSideR = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.11, 0.15), hairMat);
+        hairSideR.position.set(0.102, 0.17, 0.02);
+        const browL = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.012, 0.016), hairMat);
+        browL.position.set(-0.048, 0.168, -0.105);
+        const browR = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.012, 0.016), hairMat);
+        browR.position.set(0.048, 0.168, -0.105);
+        const eyeWhiteL = new THREE.Mesh(new THREE.BoxGeometry(0.040, 0.022, 0.014), eyeWhiteMat);
+        eyeWhiteL.position.set(-0.048, 0.145, -0.104);
+        const eyeWhiteR = new THREE.Mesh(new THREE.BoxGeometry(0.040, 0.022, 0.014), eyeWhiteMat);
+        eyeWhiteR.position.set(0.048, 0.145, -0.104);
+        const pupilL = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.020, 0.016), pupilMat);
+        pupilL.position.set(-0.048, 0.145, -0.106);
+        const pupilR = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.020, 0.016), pupilMat);
+        pupilR.position.set(0.048, 0.145, -0.106);
+        // 3D eyelids that smoothly close over the eyes during face-washing & blinking
+        const eyelidL = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.026, 0.018), skinMat);
+        eyelidL.position.set(-0.048, 0.146, -0.107);
+        eyelidL.scale.y = 0.08;
+        const eyelidR = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.026, 0.018), skinMat);
+        eyelidR.position.set(0.048, 0.146, -0.107);
+        eyelidR.scale.y = 0.08;
+
+        headPivot.add(
+            neck, head, nose, earL, earR, mouth,
+            hairTop, hairBack, hairSideL, hairSideR,
+            browL, browR, eyeWhiteL, eyeWhiteR, pupilL, pupilR, eyelidL, eyelidR
+        );
+        torsoPivot.add(headPivot);
+        pelvisGroup.add(torsoPivot);
+        mirrorBody.add(pelvisGroup);
+        this.transform.add(mirrorBody);
+
+        this._mirrorBodyGroup = mirrorBody;
+        this._mirrorPelvis = pelvisGroup;
+        this._mirrorTorsoPivot = torsoPivot;
+        this._mirrorHeadPivot = headPivot;
+        this._mirrorLegL = mLegL.legPivot;
+        this._mirrorKneeL = mLegL.kneePivot;
+        this._mirrorLegR = mLegR.legPivot;
+        this._mirrorKneeR = mLegR.kneePivot;
+        this._mirrorShoulderL = mArmL.shoulderPivot;
+        this._mirrorElbowL = mArmL.elbowPivot;
+        this._mirrorShoulderR = mArmR.shoulderPivot;
+        this._mirrorElbowR = mArmR.elbowPivot;
+        this._mirrorEyelidL = eyelidL;
+        this._mirrorEyelidR = eyelidR;
+        this._mirrorBodyYaw = this.yaw;
+        this._mirrorWalkPhase = 0;
+        this._mirrorMoveBlend = 0;
+        this._mirrorEyeClose = 0;
     }
 
     startWashFaceAnimation(onComplete) {
@@ -388,15 +533,30 @@ export class PlayerController extends Component {
         this.controlsLocked = true;
         this.allowLookWhileLocked = false;
         this._handAnchor.visible = false;
-        if (this._washHandsGroup) this._washHandsGroup.visible = true;
+        if (this._washHandsGroup) {
+            this._washHandsGroup.visible = true;
+            // Start hands from a low resting pose so they smoothly rise into Phase 1
+            this._washLeftHand.position.set(-0.14, -0.44, -0.36);
+            this._washRightHand.position.set(0.14, -0.44, -0.36);
+            this._washLeftHand.rotation.set(-0.10, 0.15, 0.20);
+            this._washRightHand.rotation.set(-0.10, -0.15, -0.20);
+        }
         for (const d of this._washDroplets) d.visible = false;
         this._washAnim = {
             timer: 0,
-            duration: 3.35,
+            duration: 3.45,
             startPitch: this.pitch,
             splashSoundPlayed: false,
             flick1Played: false,
             flick2Played: false,
+            mirrorPose: {
+                torsoLean: 0,
+                shRotX: 0,
+                shRotY: 0,
+                shRotZ: 0,
+                elbRotX: 0,
+                eyeClose: 0
+            },
             onComplete
         };
     }
@@ -408,58 +568,94 @@ export class PlayerController extends Component {
         const t = anim.timer;
         const L = this._washLeftHand;
         const R = this._washRightHand;
+        const damp = Math.min(1, 1 - Math.exp(-deltaTime * 15));
 
-        // Phase 1 (0.0 .. 0.85s): Lean down toward sink & scoop water with both hands
-        if (t < 0.85) {
-            const u = t / 0.85;
+        let goalLX = -0.14, goalLY = -0.44, goalLZ = -0.36;
+        let goalRX = 0.14, goalRY = -0.44, goalRZ = -0.36;
+        let goalRotX = -0.10, goalRotY = 0.18, goalRotZ = 0.22;
+        let goalPitch = anim.startPitch;
+        let eyeClose = 0;
+        // Mirror reflection arm/torso target pose during face washing
+        let mTorsoLean = 0;
+        let mShRotX = 0, mShRotY = 0, mShRotZ = 0, mElbRotX = 0;
+
+        // Phase 1 (0.0 .. 0.90s): Lean down toward sink & scoop water with both hands
+        if (t < 0.90) {
+            const u = t / 0.90;
             const e = u * u * (3 - 2 * u);
-            this.pitch = THREE.MathUtils.lerp(anim.startPitch, -0.45, e);
-            const scoopCycle = Math.sin(u * Math.PI * 2) * 0.03;
-            L.position.set(-0.11 + e * 0.03, -0.28 + scoopCycle, -0.42);
-            R.position.set(0.11 - e * 0.03, -0.28 + scoopCycle, -0.42);
-            L.rotation.set(-0.25, 0.22, 0.35);
-            R.rotation.set(-0.25, -0.22, -0.35);
+            goalPitch = THREE.MathUtils.lerp(anim.startPitch, -0.44, e);
+            const scoopCycle = Math.sin(u * Math.PI * 2) * 0.028 * e;
+            goalLX = THREE.MathUtils.lerp(-0.14, -0.075, e);
+            goalRX = THREE.MathUtils.lerp(0.14, 0.075, e);
+            goalLY = THREE.MathUtils.lerp(-0.44, -0.25, e) + scoopCycle;
+            goalRY = goalLY;
+            goalLZ = THREE.MathUtils.lerp(-0.36, -0.42, e);
+            goalRZ = goalLZ;
+            goalRotX = THREE.MathUtils.lerp(-0.10, -0.22, e);
+            goalRotY = THREE.MathUtils.lerp(0.15, 0.26, e);
+            goalRotZ = THREE.MathUtils.lerp(0.20, 0.34, e);
+
+            mTorsoLean = 0.32 * e;
+            mShRotX = 0.85 * e;
+            mShRotY = 0.28 * e;
+            mShRotZ = 0.12 * e;
+            mElbRotX = 0.95 * e + scoopCycle * 3.5;
         }
-        // Phase 2 (0.85 .. 2.25s): Bring cupped hands to face & rub eyes -> eyelids close (wakeVignette -> 1.0, fade -> 0.08)
-        else if (t < 2.25) {
-            const u = (t - 0.85) / 1.40;
-            if (!anim.splashSoundPlayed && u > 0.15) {
+        // Phase 2 (0.90 .. 2.30s): Smoothly bring cupped hands from sink up to face & wash eyes -> eyelids close
+        else if (t < 2.30) {
+            const u = (t - 0.90) / 1.40;
+            if (!anim.splashSoundPlayed && u > 0.14) {
                 anim.splashSoundPlayed = true;
                 this.engine.audioSystem.playSpatialOneShot('steam_hiss', this.transform.position, { volume: 0.45 });
             }
-            // Eyelids close while hands wash the eyes, then begin opening at end of phase 2
-            let eyeClose = 0;
-            if (u < 0.25) {
-                eyeClose = u / 0.25;
-            } else if (u < 0.78) {
-                eyeClose = 1.0;
+            // Smooth bell-shaped envelope (0 -> 1 -> 0) for hand approach and eye closing
+            let approach = 0;
+            if (u < 0.28) {
+                const k = u / 0.28;
+                approach = k * k * (3 - 2 * k);
+            } else if (u < 0.76) {
+                approach = 1.0;
             } else {
-                eyeClose = 1.0 - (u - 0.78) / 0.22;
+                const k = (u - 0.76) / 0.24;
+                const s = k * k * (3 - 2 * k);
+                approach = 1.0 - s;
             }
-            eyeClose = Math.max(0, Math.min(1, eyeClose));
-            this.engine.renderer.setPostProcessParams({
-                wakeVignette: eyeClose,
-                fade: 1.0 - eyeClose * 0.92
-            });
+            eyeClose = approach;
 
-            this.pitch = THREE.MathUtils.lerp(-0.45, -0.18, Math.min(1, u * 1.4));
-            const rubY = Math.sin(u * Math.PI * 4.5) * 0.028;
-            const rubX = Math.cos(u * Math.PI * 4.5) * 0.018;
-            const approach = u < 0.25 ? (u / 0.25) : (u > 0.82 ? (1 - (u - 0.82) / 0.18) : 1.0);
-            const zDist = THREE.MathUtils.lerp(-0.36, -0.165, approach);
-            const yPos = THREE.MathUtils.lerp(-0.22, -0.03, approach) + rubY;
-            L.position.set(-0.068 + rubX, yPos, zDist);
-            R.position.set(0.068 - rubX, yPos, zDist);
-            L.rotation.set(0.55 * approach, 0.32, 0.25);
-            R.rotation.set(0.55 * approach, -0.32, -0.25);
+            const liftProgress = Math.min(1, u / 0.32);
+            const liftEase = liftProgress * liftProgress * (3 - 2 * liftProgress);
+            goalPitch = THREE.MathUtils.lerp(-0.44, -0.18, liftEase);
+
+            const rubY = Math.sin(u * Math.PI * 4.0) * 0.025 * approach;
+            const rubX = Math.cos(u * Math.PI * 4.0) * 0.016 * approach;
+            // Start from Phase 1 end pose (-0.075, -0.25, -0.42), glide to face (-0.065, -0.03, -0.17), then toward Phase 3 start (-0.12, -0.12, -0.34)
+            const baseX = u < 0.5 ? -0.075 : THREE.MathUtils.lerp(-0.075, -0.12, (u - 0.5) / 0.5);
+            const baseY = u < 0.5 ? -0.25 : THREE.MathUtils.lerp(-0.25, -0.12, (u - 0.5) / 0.5);
+            const baseZ = u < 0.5 ? -0.42 : THREE.MathUtils.lerp(-0.42, -0.34, (u - 0.5) / 0.5);
+
+            goalLX = THREE.MathUtils.lerp(baseX, -0.066, approach) + rubX;
+            goalRX = THREE.MathUtils.lerp(-baseX, 0.066, approach) - rubX;
+            goalLY = THREE.MathUtils.lerp(baseY, -0.032, approach) + rubY;
+            goalRY = THREE.MathUtils.lerp(baseY, -0.032, approach) + rubY;
+            goalLZ = THREE.MathUtils.lerp(baseZ, -0.168, approach);
+            goalRZ = goalLZ;
+            goalRotX = THREE.MathUtils.lerp(u < 0.5 ? -0.22 : 0.12, 0.54, approach);
+            goalRotY = THREE.MathUtils.lerp(0.26, 0.32, approach);
+            goalRotZ = THREE.MathUtils.lerp(u < 0.5 ? 0.34 : 0.16, 0.25, approach);
+
+            mTorsoLean = THREE.MathUtils.lerp(0.32, 0.18, liftEase);
+            mShRotX = THREE.MathUtils.lerp(0.85, 1.38, approach) + rubY * 2.5;
+            mShRotY = THREE.MathUtils.lerp(0.28, 0.42, approach) - rubX * 2.0;
+            mShRotZ = THREE.MathUtils.lerp(0.12, 0.08, approach);
+            mElbRotX = THREE.MathUtils.lerp(0.95, 1.68, approach);
         }
-        // Phase 3 (2.25 .. 3.35s): Eyes open & hands flick downward/outward twice to shake off water droplets!
+        // Phase 3 (2.30 .. 3.45s): Eyes open & hands smoothly flick downward/outward twice to shake off water droplets
         else {
-            const u = Math.min(1.0, (t - 2.25) / 1.10);
-            this.engine.renderer.setPostProcessParams({ wakeVignette: 0.0, fade: 1.0 });
-            this.pitch = THREE.MathUtils.lerp(-0.18, -0.05, u);
+            const u = Math.min(1.0, (t - 2.30) / 1.15);
+            const uEase = u * u * (3 - 2 * u);
+            eyeClose = 0;
+            goalPitch = THREE.MathUtils.lerp(-0.18, -0.05, uEase);
 
-            // Two sharp flick motions at u in [0.0..0.48] and [0.48..0.95]
             const flickPhase = (u * 2.0) % 1.0;
             const isSecondFlick = u >= 0.5;
             if (!anim.flick1Played && u > 0.06) {
@@ -471,17 +667,27 @@ export class PlayerController extends Component {
                 this.engine.audioSystem.playSpatialOneShot('pickup', this.transform.position, { volume: 0.32 });
             }
 
-            const snap = flickPhase < 0.35
-                ? (flickPhase / 0.35)
-                : Math.max(0, 1.0 - (flickPhase - 0.35) / 0.65);
-            const lowerOut = u > 0.82 ? ((u - 0.82) / 0.18) * 0.22 : 0;
+            // Smooth sine-shaped flick pulse so velocity is continuous at 0 and 1
+            const snap = Math.sin(flickPhase * Math.PI);
+            const lowerOut = u > 0.78 ? Math.pow((u - 0.78) / 0.22, 2) * 0.28 : 0;
 
-            L.position.set(-0.13 - snap * 0.09, -0.11 - snap * 0.13 - lowerOut, -0.34 - snap * 0.06);
-            R.position.set(0.13 + snap * 0.09, -0.11 - snap * 0.13 - lowerOut, -0.34 - snap * 0.06);
-            L.rotation.set(0.15 - snap * 0.85, 0.25 + snap * 0.35, 0.15 - snap * 0.45);
-            R.rotation.set(0.15 - snap * 0.85, -0.25 - snap * 0.35, -0.15 + snap * 0.45);
+            goalLX = -0.12 - snap * 0.085;
+            goalRX = 0.12 + snap * 0.085;
+            goalLY = -0.12 - snap * 0.12 - lowerOut;
+            goalRY = -0.12 - snap * 0.12 - lowerOut;
+            goalLZ = -0.34 - snap * 0.05;
+            goalRZ = -0.34 - snap * 0.05;
+            goalRotX = 0.12 - snap * 0.78;
+            goalRotY = 0.26 + snap * 0.32;
+            goalRotZ = 0.16 - snap * 0.42;
 
-            // Animate flying water droplets flung from the hands on each flick
+            const returnFade = 1.0 - (u > 0.72 ? (u - 0.72) / 0.28 : 0);
+            mTorsoLean = THREE.MathUtils.lerp(0.18, 0.0, uEase);
+            mShRotX = (0.95 - snap * 0.42) * returnFade;
+            mShRotY = (0.22 - snap * 0.28) * returnFade;
+            mShRotZ = (0.14 + snap * 0.22) * returnFade;
+            mElbRotX = (1.10 - snap * 0.65) * returnFade;
+
             const dropT = flickPhase;
             for (let i = 0; i < this._washDroplets.length; i++) {
                 const d = this._washDroplets[i];
@@ -503,7 +709,37 @@ export class PlayerController extends Component {
             }
         }
 
+        // Smoothly interpolate first-person hands & camera pitch so there are never sudden jumps
+        this.pitch = THREE.MathUtils.lerp(this.pitch, goalPitch, damp);
+        L.position.x = THREE.MathUtils.lerp(L.position.x, goalLX, damp);
+        L.position.y = THREE.MathUtils.lerp(L.position.y, goalLY, damp);
+        L.position.z = THREE.MathUtils.lerp(L.position.z, goalLZ, damp);
+        R.position.x = THREE.MathUtils.lerp(R.position.x, goalRX, damp);
+        R.position.y = THREE.MathUtils.lerp(R.position.y, goalRY, damp);
+        R.position.z = THREE.MathUtils.lerp(R.position.z, goalRZ, damp);
+
+        L.rotation.x = THREE.MathUtils.lerp(L.rotation.x, goalRotX, damp);
+        L.rotation.y = THREE.MathUtils.lerp(L.rotation.y, goalRotY, damp);
+        L.rotation.z = THREE.MathUtils.lerp(L.rotation.z, goalRotZ, damp);
+        R.rotation.x = THREE.MathUtils.lerp(R.rotation.x, goalRotX, damp);
+        R.rotation.y = THREE.MathUtils.lerp(R.rotation.y, -goalRotY, damp);
+        R.rotation.z = THREE.MathUtils.lerp(R.rotation.z, -goalRotZ, damp);
+
+        this._mirrorEyeClose = THREE.MathUtils.lerp(this._mirrorEyeClose, eyeClose, damp);
+        this.engine.renderer.setPostProcessParams({
+            wakeVignette: this._mirrorEyeClose,
+            fade: 1.0 - this._mirrorEyeClose * 0.92
+        });
+
+        anim.mirrorPose.torsoLean = THREE.MathUtils.lerp(anim.mirrorPose.torsoLean, mTorsoLean, damp);
+        anim.mirrorPose.shRotX = THREE.MathUtils.lerp(anim.mirrorPose.shRotX, mShRotX, damp);
+        anim.mirrorPose.shRotY = THREE.MathUtils.lerp(anim.mirrorPose.shRotY, mShRotY, damp);
+        anim.mirrorPose.shRotZ = THREE.MathUtils.lerp(anim.mirrorPose.shRotZ, mShRotZ, damp);
+        anim.mirrorPose.elbRotX = THREE.MathUtils.lerp(anim.mirrorPose.elbRotX, mElbRotX, damp);
+        anim.mirrorPose.eyeClose = this._mirrorEyeClose;
+
         if (t >= anim.duration) {
+            this._mirrorEyeClose = 0;
             this.engine.renderer.setPostProcessParams({ wakeVignette: 0.0, fade: 1.0 });
             if (this._washHandsGroup) this._washHandsGroup.visible = false;
             for (const d of this._washDroplets) d.visible = false;
@@ -513,6 +749,134 @@ export class PlayerController extends Component {
             this._washAnim = null;
             if (cb) cb();
         }
+    }
+
+    // Drives the articulated reflection avatar: body yaw follows the camera with lag, head turns/tilts,
+    // legs & arms swing while walking, crouch pose, held-item arm poses and the face-washing pose.
+    // Every joint is damped toward its goal so all state changes blend smoothly.
+    _updateMirrorBodyAvatar(deltaTime) {
+        if (!this._mirrorBodyGroup || !this._mirrorPelvis) return;
+        const dt = Math.min(0.1, Math.max(0, deltaTime || 0));
+        const k = 1 - Math.exp(-dt * 12);
+        const lerp = THREE.MathUtils.lerp;
+        const wrap = (a) => {
+            while (a > Math.PI) a -= Math.PI * 2;
+            while (a < -Math.PI) a += Math.PI * 2;
+            return a;
+        };
+
+        // Horizontal speed from the rigidbody
+        const vel = this.rb?.velocity;
+        const speed = vel ? Math.hypot(vel.x, vel.z) : 0;
+        const moving = speed > 0.15;
+        this._mirrorMoveBlend = lerp(this._mirrorMoveBlend, moving ? Math.min(1, speed / 2.0 + 0.35) : 0, k);
+        if (moving) this._mirrorWalkPhase += dt * (3.2 + speed * 3.4);
+
+        // Body yaw: follows camera yaw with lag; snaps faster while walking; head keeps the rest (max ±70°)
+        const yawErr = wrap(this.yaw - this._mirrorBodyYaw);
+        const bodyRate = moving ? 10 : 3.5;
+        this._mirrorBodyYaw += yawErr * Math.min(1, dt * bodyRate);
+        const maxHeadYaw = 1.2;
+        let headYaw = wrap(this.yaw - this._mirrorBodyYaw);
+        if (Math.abs(headYaw) > maxHeadYaw) {
+            this._mirrorBodyYaw = wrap(this.yaw - Math.sign(headYaw) * maxHeadYaw);
+            headYaw = Math.sign(headYaw) * maxHeadYaw;
+        }
+        this._mirrorBodyGroup.rotation.y = this._mirrorBodyYaw;
+
+        // Crouch blend from camera eye height (1.54 standing → 0.96 crouched)
+        const crouch = THREE.MathUtils.clamp((1.54 - (this.eyeHeight ?? 1.54)) / 0.58, 0, 1);
+
+        const blend = this._mirrorMoveBlend;
+        const ph = this._mirrorWalkPhase;
+        const swing = Math.sin(ph) * 0.55 * blend;
+        const bob = Math.abs(Math.sin(ph)) * 0.025 * blend;
+
+        // --- Goals ---
+        let pelvisY = 0.78 - crouch * 0.30 + bob;
+        let torsoLean = crouch * 0.28 + blend * 0.05;
+        let legLX = swing + crouch * 1.05;
+        let legRX = -swing + crouch * 1.05;
+        let kneeLX = -Math.max(0, -Math.sin(ph)) * 0.75 * blend - crouch * 1.75;
+        let kneeRX = -Math.max(0, Math.sin(ph)) * 0.75 * blend - crouch * 1.75;
+        let shLX = -swing * 0.8, shRX = swing * 0.8;
+        let shLY = 0, shRY = 0;
+        let shLZ = -0.06, shRZ = 0.06;       // slight outward hang
+        let elLX = 0.18 + blend * 0.25, elRX = 0.18 + blend * 0.25;
+        let eyeClose = 0;
+
+        // Held items
+        const item = this.heldItem;
+        const twoHanded = TWO_HANDED_ITEMS.has(item);
+        if (twoHanded) {
+            shLX = shRX = item === 'table' ? 0.85 : 1.05;
+            elLX = elRX = item === 'table' ? 0.35 : 0.65;
+            shLZ = 0.22; shRZ = -0.22;
+        } else if (item && item !== 'cigarette') {
+            shRX = 0.75; elRX = 0.95; shRZ = -0.08;
+        }
+        // Cigarette: right hand rises to mouth on each puff
+        if (this.cigaretteActive) {
+            const puff = this.cigPuffAnim > 0 ? this.cigPuffAnim / 1.85 : 0;
+            const raise = puff > 0.45 ? Math.min(1, (1 - puff) / 0.35) : puff / 0.45;
+            shRX = lerp(0.55, 1.15, raise);
+            elRX = lerp(1.2, 2.1, raise);
+            shRZ = lerp(-0.05, -0.32, raise);
+        }
+
+        // Face washing pose (already smoothly damped inside _updateWashFaceAnimation)
+        const mp = this._washAnim?.mirrorPose;
+        if (mp) {
+            torsoLean = Math.max(torsoLean, mp.torsoLean);
+            shLX = shRX = mp.shRotX;
+            shLY = -mp.shRotY; shRY = mp.shRotY;
+            shLZ = mp.shRotZ; shRZ = -mp.shRotZ;
+            elLX = elRX = mp.elbRotX;
+            eyeClose = mp.eyeClose;
+        } else {
+            eyeClose = this._mirrorEyeClose || 0;
+        }
+
+        // Idle blinking every few seconds
+        this._mirrorBlinkTimer = (this._mirrorBlinkTimer ?? 2.5) - dt;
+        if (this._mirrorBlinkTimer < 0) {
+            const b = -this._mirrorBlinkTimer;
+            eyeClose = Math.max(eyeClose, Math.sin(Math.min(1, b / 0.16) * Math.PI));
+            if (b > 0.16) this._mirrorBlinkTimer = 2.5 + Math.random() * 3.0;
+        }
+
+        // --- Apply with damping ---
+        const P = this._mirrorPelvis;
+        P.position.y = lerp(P.position.y, pelvisY, k);
+        const T = this._mirrorTorsoPivot;
+        T.rotation.x = lerp(T.rotation.x, -torsoLean, k);
+        T.rotation.y = lerp(T.rotation.y, headYaw * 0.25, k);
+
+        const H = this._mirrorHeadPivot;
+        // Head pitch is relative to the leaning torso so the eyes keep matching the camera pitch
+        H.rotation.order = 'YXZ';
+        H.rotation.y = lerp(H.rotation.y, headYaw * 0.75, k);
+        H.rotation.x = lerp(H.rotation.x, THREE.MathUtils.clamp(this.pitch + torsoLean, -1.0, 0.9), k);
+
+        this._mirrorLegL.rotation.x = lerp(this._mirrorLegL.rotation.x, legLX, k);
+        this._mirrorLegR.rotation.x = lerp(this._mirrorLegR.rotation.x, legRX, k);
+        this._mirrorKneeL.rotation.x = lerp(this._mirrorKneeL.rotation.x, kneeLX, k);
+        this._mirrorKneeR.rotation.x = lerp(this._mirrorKneeR.rotation.x, kneeRX, k);
+
+        const SL = this._mirrorShoulderL, SR = this._mirrorShoulderR;
+        SL.rotation.order = SR.rotation.order = 'XYZ';
+        SL.rotation.x = lerp(SL.rotation.x, shLX, k);
+        SR.rotation.x = lerp(SR.rotation.x, shRX, k);
+        SL.rotation.y = lerp(SL.rotation.y, shLY, k);
+        SR.rotation.y = lerp(SR.rotation.y, shRY, k);
+        SL.rotation.z = lerp(SL.rotation.z, shLZ, k);
+        SR.rotation.z = lerp(SR.rotation.z, shRZ, k);
+        this._mirrorElbowL.rotation.x = lerp(this._mirrorElbowL.rotation.x, elLX, k);
+        this._mirrorElbowR.rotation.x = lerp(this._mirrorElbowR.rotation.x, elRX, k);
+
+        const lid = lerp(0.08, 1.0, THREE.MathUtils.clamp(eyeClose, 0, 1));
+        this._mirrorEyelidL.scale.y = lid;
+        this._mirrorEyelidR.scale.y = lid;
     }
 
     startDecorateTreeAnimation(onProgress, onComplete) {
@@ -762,6 +1126,7 @@ export class PlayerController extends Component {
         const swayRoll = (this.cigaretteActive ? Math.sin(performance.now() * 0.0022) * 0.025 : 0) + (this.cinematicRollOffset || 0);
         const swayPitch = this.cigaretteActive ? Math.cos(performance.now() * 0.0017) * 0.014 : 0;
         this.camera.rotation.set(this.pitch + swayPitch, this.yaw, swayRoll, 'YXZ');
+        this._updateMirrorBodyAvatar(deltaTime);
 
         // Smooth rotational inertia for held items & pitch horizon clamping (never lift table/items over head)
         const isTwoHanded = TWO_HANDED_ITEMS.has(this.heldItem);

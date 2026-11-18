@@ -310,16 +310,26 @@ export class StoryDirector {
         if (w.wardrobeTablecloth) {
             const wardSpot = w.hidingSpots.find(s => s.id === 'wardrobe');
             w.wardrobeTablecloth.addComponent(Interactable, {
-                maxDistance: 1.75,
-                promptText: '[E] Взять праздничную скатерть',
+                maxDistance: 2.05,
+                promptText: () => (
+                    this.player.heldItem
+                        ? '[E] Взять праздничную скатерть (освободите руки)'
+                        : '[E] Взять праздничную скатерть'
+                ),
                 canInteract: () => (
                     this.act === 1 &&
-                    this.act1Tasks.peephole &&
                     !this.act1Tasks.tableclothPicked &&
-                    !this.player.heldItem &&
                     (!wardSpot || !wardSpot.isDoorClosed())
                 ),
                 onInteract: () => {
+                    if (!this.act1Tasks.peephole) {
+                        this.ui.showSubtitle('Сначала умоюсь и проверю входную дверь.', 2800);
+                        return;
+                    }
+                    if (this.player.heldItem) {
+                        this.ui.showSubtitle('Руки заняты. Сначала поставлю предмет, а потом возьму скатерть.', 3000);
+                        return;
+                    }
                     w.wardrobeTablecloth.transform.visible = false;
                     this.act1Tasks.tableclothPicked = true;
                     this.player.setHeldItem('tablecloth');
@@ -332,7 +342,7 @@ export class StoryDirector {
 
         // Folding Table interactions: pickup on balcony -> unfold half 1 (4s) -> unfold half 2 (4s) -> spread tablecloth from wardrobe -> place food -> sit at table
         w.table.go.addComponent(Interactable, {
-            maxDistance: 1.8,
+            maxDistance: 1.85,
             promptText: () => {
                 if (this._tableStage === 'on_balcony') {
                     return '[E] Поднять стол';
@@ -370,7 +380,7 @@ export class StoryDirector {
             canInteract: () => {
                 if (this.act !== 1 || this.phase !== 'act1') return false;
                 if (this._tableStage === 'on_balcony') {
-                    return this.act1Tasks.peephole && !this.player.heldItem;
+                    return this.act1Tasks.peephole && (!this.player.heldItem || this.player.heldItem === 'tablecloth');
                 }
                 if (this._tableStage === 'placed_folded' || this._tableStage === 'wing1_open') {
                     return !this.player.heldItem || this.player.heldItem === 'tablecloth';
@@ -401,7 +411,7 @@ export class StoryDirector {
                     w.table.setWingProgress(1, 1.0);
                     this._tableStage = 'wing1_open';
                     this.engine.audioSystem.playSpatialOneShot('door_open', w.table.go.transform.position);
-                    this.ui.showSubtitle('Первая половина и ножка разложены. Теперь вторую.', 3000);
+                    this.ui.showSubtitle('Первая половина и ножки разложены. Теперь вторую.', 3000);
                     this._refreshObjectives();
                     return;
                 }
@@ -411,6 +421,9 @@ export class StoryDirector {
                     this.act1Tasks.tableWings = true;
                     if (!this.act1Tasks.stool && w.stoolPlacementZone) {
                         w.stoolPlacementZone.transform.visible = true;
+                    }
+                    if (this.act1Tasks.tableclothPicked && !this.player.heldItem) {
+                        this.player.setHeldItem('tablecloth');
                     }
                     this.engine.audioSystem.playSpatialOneShot('door_open', w.table.go.transform.position);
                     if (this.act1Tasks.tableclothPicked) {
@@ -1430,6 +1443,10 @@ export class StoryDirector {
         updateDecorFrame(
             w.treeDecorHighlight,
             showDecorHighlights && !this.act1Tasks.garland && !this._treeDecoratingInProgress
+        );
+        updateDecorFrame(
+            w.tableclothHighlight,
+            this.act === 1 && this.act1Tasks?.peephole && !this.act1Tasks?.tableclothPicked
         );
 
         // Animate wing unfolding or tablecloth spreading in real time while the player holds KeyE on the table

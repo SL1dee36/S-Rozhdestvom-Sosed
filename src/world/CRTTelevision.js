@@ -299,7 +299,10 @@ export class NeighborWindowCanvas {
 
         this.material = new THREE.MeshBasicMaterial({
             map: this.texture,
-            color: 0xffffff
+            color: 0xffffff,
+            polygonOffset: true,
+            polygonOffsetFactor: -4,
+            polygonOffsetUnits: -4
         });
         this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 1.38), this.material);
         this.mesh.name = 'NeighborWindowCanvas';
