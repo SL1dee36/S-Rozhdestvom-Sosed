@@ -1,22 +1,12 @@
+import { t, getLanguage, setLanguage, applyDOMTranslations, onLanguageChange } from '../i18n/Localization.js';
+
 const ENDINGS_STORAGE_KEY = 'zarechnoe_unlocked_endings';
 const SENSITIVITY_STORAGE_KEY = 'zarechnoe_mouse_sensitivity';
 
 const ENDINGS_CATALOG = [
-    {
-        id: 1,
-        title: 'КОНЦОВКА №1: «ТИХАЯ НОЧЬ, СВЯТАЯ НОЧЬ»',
-        desc: 'Куранты отбили полночь, а за окном в падающем снегу вспыхнули новогодние фейерверки. Чудовище исчезло в темноте двора, оставив за собой лишь следы на снегу...'
-    },
-    {
-        id: 2,
-        title: 'КОНЦОВКА №2: «НЕ ПОДГЛЯДЫВАЙ В ЧУЖИЕ ОКНА!»',
-        desc: 'Вы поспешили выйти из укрытия, поверив в тишину... Но оно ждало в темноте за косяком выбитой двери.'
-    },
-    {
-        id: 3,
-        title: 'КОНЦОВКА №3: «ПОБЕГ В ПОДЪЕЗД»',
-        desc: 'Пока чудовище рыскало в глубине квартиры, вы выскочили из укрытия и бросились вниз по ледяным ступеням подъезда. Вы остались живы... но так и не узнали, что случилось в доме напротив.'
-    }
+    { id: 1, titleKey: 'ui.ending1.title', descKey: 'ui.ending1.desc' },
+    { id: 2, titleKey: 'ui.ending2.title', descKey: 'ui.ending2.desc' },
+    { id: 3, titleKey: 'ui.ending3.title', descKey: 'ui.ending3.desc' }
 ];
 
 export class UIManager {
@@ -84,6 +74,7 @@ export class UIManager {
             btnRetryEnding3: document.getElementById('btn-retry-ending3'),
             btnMenuEnding4: document.getElementById('btn-menu-ending4'),
             btnRetryEnding4: document.getElementById('btn-retry-ending4'),
+            selLang: document.getElementById('opt-language'),
             chkMic: document.getElementById('opt-mic-mode'),
             btnTestMic: document.getElementById('btn-test-mic'),
             micTestFill: document.getElementById('mic-test-fill'),
@@ -104,13 +95,33 @@ export class UIManager {
             onSensitivityChange: null
         };
 
+        this._micStatusKey = 'ui.settings.mic_note_default';
         this._bindEvents();
+        if (this.el.selLang) {
+            this.el.selLang.value = getLanguage();
+        }
+        applyDOMTranslations();
         this._renderCredits();
         this._loadCredits();
         this._updateEndingsTabVisibility();
         this._renderEndings();
+        onLanguageChange(() => {
+            if (this.el.selLang) this.el.selLang.value = getLanguage();
+            if (this.el.micStatus && this._micStatusKey) {
+                this.el.micStatus.textContent = t(this._micStatusKey);
+            }
+            this._renderCredits();
+            this._renderEndings();
+        });
         this.applyVHSIntensity(this.el.rngVhs ? parseFloat(this.el.rngVhs.value) : 0.2);
         this.applySensitivity(this._loadSavedSensitivity());
+    }
+
+    _setMicStatus(key) {
+        this._micStatusKey = key;
+        if (this.el.micStatus) {
+            this.el.micStatus.textContent = t(key);
+        }
     }
 
     async _loadCredits() {
@@ -127,19 +138,19 @@ export class UIManager {
         const audio = this.creditsData.filter(c => c.category === 'audio');
         const tex = this.creditsData.filter(c => c.category === 'image' || c.category === 'texture');
 
-        let html = `<h3>Движок и разработка</h3>
-            <p><strong>LuminaEngine</strong> — Nazaryan A.K. (@Sl1dee36)</p>
-            <p><strong>«С Новым Годом, Сосед»</strong> — Сценарий, геймдизайн и 3D-сборка на базе LuminaEngine</p>`;
+        let html = `<h3>${t('ui.credits.sec_engine')}</h3>
+            <p>${t('ui.credits.engine_line')}</p>
+            <p>${t('ui.credits.game_line')}</p>`;
 
         if (audio.length > 0) {
-            html += `<h3>Музыка и звуковые эффекты (Интернет / Wikimedia Commons)</h3><ul>`;
+            html += `<h3>${t('ui.credits.sec_audio')}</h3><ul>`;
             for (const c of audio) {
                 html += `<li><code>${c.file}</code> — <strong>${c.author}</strong> (${c.license})</li>`;
             }
             html += `</ul>`;
         }
         if (tex.length > 0) {
-            html += `<h3>Фототекстуры (Интернет / Wikimedia Commons &amp; Poly Haven)</h3><ul>`;
+            html += `<h3>${t('ui.credits.sec_tex')}</h3><ul>`;
             for (const c of tex) {
                 html += `<li><code>${c.file}</code> — <strong>${c.author}</strong> (${c.license})</li>`;
             }
@@ -198,8 +209,12 @@ export class UIManager {
             fetch('/__quit', { method: 'POST' }).catch(() => {});
             try { window.close(); } catch (e) {}
             setTimeout(() => {
-                document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#000;color:#d8dce6;font-family:monospace;font-size:20px;letter-spacing:2px;">ИГРА ЗАВЕРШЕНА. МОЖНО ЗАКРЫТЬ ВКЛАДКУ.</div>';
+                document.body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#000;color:#d8dce6;font-family:monospace;font-size:20px;letter-spacing:2px;">${t('app.game_exited')}</div>`;
             }, 250);
+        });
+
+        this.el.selLang?.addEventListener('change', (e) => {
+            setLanguage(e.target.value);
         });
 
         this.el.btnEndings?.addEventListener('click', () => {
@@ -219,13 +234,13 @@ export class UIManager {
                 if (!ok) {
                     e.target.checked = false;
                     this.engine.audioSystem.setMicMode(false);
-                    if (this.el.micStatus) this.el.micStatus.textContent = 'Микрофон не найден — включён режим «Без микрофона»';
+                    this._setMicStatus('ui.settings.mic_not_found');
                 } else {
-                    if (this.el.micStatus) this.el.micStatus.textContent = 'Микрофон активен (говорите тихо во время охоты!)';
+                    this._setMicStatus('ui.settings.mic_active');
                 }
             } else {
                 this.engine.audioSystem.setMicMode(false);
-                if (this.el.micStatus) this.el.micStatus.textContent = 'Режим «Без микрофона»: не дёргайте мышью и держите [ПРОБЕЛ] в укрытии';
+                this._setMicStatus('ui.settings.mic_disabled');
             }
         });
 
@@ -234,10 +249,10 @@ export class UIManager {
             if (this.el.chkMic) this.el.chkMic.checked = ok;
             if (!ok) {
                 this.engine.audioSystem.setMicMode(false);
-                if (this.el.micStatus) this.el.micStatus.textContent = 'Нет доступа к микрофону. Включён режим «Без микрофона».';
+                this._setMicStatus('ui.settings.mic_no_access');
                 return;
             }
-            if (this.el.micStatus) this.el.micStatus.textContent = 'Микрофон подключён! Проверка уровня шума (5 сек)...';
+            this._setMicStatus('ui.settings.mic_testing');
             if (this._micTestAnim) cancelAnimationFrame(this._micTestAnim);
             const start = performance.now();
             const tick = () => {
@@ -467,13 +482,13 @@ export class UIManager {
             const isUnlocked = unlocked.has(item.id);
             if (isUnlocked) {
                 html += `<div class="ending-card unlocked">
-                    <h3 class="ending-card-title">${item.title}</h3>
-                    <p class="ending-card-desc">${item.desc}</p>
+                    <h3 class="ending-card-title">${t(item.titleKey)}</h3>
+                    <p class="ending-card-desc">${t(item.descKey)}</p>
                 </div>`;
             } else {
                 html += `<div class="ending-card locked">
-                    <h3 class="ending-card-title">КОНЦОВКА №${item.id}: ???</h3>
-                    <p class="ending-card-desc">Концовка не открыта</p>
+                    <h3 class="ending-card-title">${t('ui.endings.locked_title', { id: item.id })}</h3>
+                    <p class="ending-card-desc">${t('ui.endings.locked_desc')}</p>
                 </div>`;
             }
         }
@@ -500,11 +515,9 @@ export class UIManager {
         if (this.el.chkMic) this.el.chkMic.checked = ok;
         if (!ok) {
             this.engine.audioSystem.setMicMode(false);
-            if (this.el.micStatus) {
-                this.el.micStatus.textContent = 'Доступ к микрофону не получен — включён режим «Без микрофона». Нажмите кнопку выше, чтобы запросить снова.';
-            }
-        } else if (this.el.micStatus) {
-            this.el.micStatus.textContent = 'Микрофон активен (говорите тихо во время охоты!)';
+            this._setMicStatus('ui.settings.mic_menu_denied');
+        } else {
+            this._setMicStatus('ui.settings.mic_active');
         }
         return ok;
     }
@@ -541,7 +554,7 @@ export class UIManager {
         this.setCleanIntroMode(cleanIntro);
         if (!cleanIntro && !this._shownBaseControlsHint) {
             this._shownBaseControlsHint = true;
-            this.showControlsHint('Взаимодействие — [E]   ·   Выглядывание — ПКМ   ·   Выход — [Q]', 5000);
+            this.showControlsHint(t('ui.hud.controls_base'), 5000);
         }
     }
 
@@ -556,7 +569,7 @@ export class UIManager {
         }
     }
 
-    setWakePrompt(text = 'Пробел, чтобы встать', visible = false) {
+    setWakePrompt(text = t('ui.hud.wake_prompt'), visible = false) {
         if (!this.el.wakePrompt) return;
         this.el.wakePrompt.textContent = text;
         this.el.wakePrompt.classList.toggle('hidden', !visible);
@@ -700,11 +713,11 @@ export class UIManager {
         }
         if (this.el.stealthHint) {
             if (!isHidden) {
-                this.el.stealthHint.textContent = 'НАЙДИТЕ УКРЫТИЕ И ЗАКРОЙТЕ ДВЕРЦУ [E]';
+                this.el.stealthHint.textContent = t('ui.hud.stealth_find_hide');
             } else if (micEnabled) {
-                this.el.stealthHint.textContent = 'МИКРОФОН АКТИВЕН — СОХРАНЯЙТЕ ТИШИНУ';
+                this.el.stealthHint.textContent = t('ui.hud.stealth_mic_active');
             } else {
-                this.el.stealthHint.textContent = 'НЕ ДЁРГАЙТЕ МЫШЬЮ | [ПРОБЕЛ] ЗАДЕРЖАТЬ ДЫХАНИЕ';
+                this.el.stealthHint.textContent = t('ui.hud.stealth_no_mic');
             }
         }
     }

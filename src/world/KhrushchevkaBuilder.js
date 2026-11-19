@@ -12,6 +12,7 @@ import {
 import { TextureManager } from './TextureManager.js';
 import { CRTTelevision, NeighborWindowCanvas } from './CRTTelevision.js';
 import { getEffectiveMapOverrides } from './MapOverrides.js';
+import { t } from '../i18n/Localization.js';
 
 export class KhrushchevkaBuilder {
     constructor(engine) {
@@ -520,8 +521,12 @@ export class KhrushchevkaBuilder {
             projectionMatrix.elements[10] = clipPlane.z + 1.0 - 0.005;
             projectionMatrix.elements[14] = clipPlane.w;
 
-            const playerAvatar = this.engine?.player?._mirrorBodyGroup;
-            if (playerAvatar) playerAvatar.visible = true;
+            // engine.player is the player GameObject; the avatar & FP-arm toggle live on its PlayerController component
+            const playerGO = this.engine?.player;
+            const playerCtrl = playerGO?.setMirrorRenderMode
+                ? playerGO
+                : (playerGO?.components?.find(c => c && typeof c.setMirrorRenderMode === 'function') || null);
+            if (playerCtrl) playerCtrl.setMirrorRenderMode(true);
             mirrorMesh.visible = false;
 
             const currentRenderTarget = renderer.getRenderTarget();
@@ -544,7 +549,7 @@ export class KhrushchevkaBuilder {
             }
 
             mirrorMesh.visible = true;
-            if (playerAvatar) playerAvatar.visible = false;
+            if (playerCtrl) playerCtrl.setMirrorRenderMode(false);
         };
 
         return mirrorMesh;
@@ -1144,18 +1149,18 @@ export class KhrushchevkaBuilder {
             neighborLight
         };
 
-        this._registerLight(ambient, 'ambient', 'Фоновый свет (Ambient)', null);
-        this._registerLight(moon, 'moon', 'Луна (Directional)', null);
-        this._registerLight(tvLight, 'tvLight', 'Свет ТВ', null);
-        this._registerLight(hallLight, 'hallLight', 'Люстра в зале', 'hall');
-        this._registerLight(kitchenLight, 'kitchenLight', 'Свет на кухне', 'kitchen');
-        this._registerLight(fridgeLight, 'fridgeLight', 'Лампа холодильника', null);
-        this._registerLight(ovenLight, 'ovenLight', 'Подсветка духовки', null);
-        this._registerLight(hallwayLight, 'hallwayLight', 'Свет в прихожей', 'hallway');
-        this._registerLight(bathroomLight, 'bathroomLight', 'Свет в ванной', 'bathroom');
-        this._registerLight(stairwellLight, 'stairwellLight', 'Свет в подъезде', null);
-        this._registerLight(streetLight, 'streetLight', 'Уличный фонарь', null);
-        this._registerLight(neighborLight, 'neighborLight', 'Окно дома №14', null);
+        this._registerLight(ambient, 'ambient', t('light.ambient'), null);
+        this._registerLight(moon, 'moon', t('light.moon'), null);
+        this._registerLight(tvLight, 'tvLight', t('light.tv'), null);
+        this._registerLight(hallLight, 'hallLight', t('light.hall'), 'hall');
+        this._registerLight(kitchenLight, 'kitchenLight', t('light.kitchen'), 'kitchen');
+        this._registerLight(fridgeLight, 'fridgeLight', t('light.fridge'), null);
+        this._registerLight(ovenLight, 'ovenLight', t('light.oven'), null);
+        this._registerLight(hallwayLight, 'hallwayLight', t('light.hallway'), 'hallway');
+        this._registerLight(bathroomLight, 'bathroomLight', t('light.bathroom'), 'bathroom');
+        this._registerLight(stairwellLight, 'stairwellLight', t('light.stairwell'), null);
+        this._registerLight(streetLight, 'streetLight', t('light.street'), null);
+        this._registerLight(neighborLight, 'neighborLight', t('light.neighbor'), null);
     }
 
     _buildApartmentStructure() {
@@ -1230,7 +1235,7 @@ export class KhrushchevkaBuilder {
             return true;
         };
         balcDoorPivot.addComponent(Interactable, {
-            promptText: () => (balcOpen ? '[E] Закрыть балконную дверь' : '[E] Открыть балконную дверь'),
+            promptText: () => (balcOpen ? t('prompt.balcony_close') : t('prompt.balcony_open')),
             onInteract: () => setBalconyOpen(!balcOpen)
         });
         this.engine.addGameObject(balcDoorPivot);
@@ -1343,7 +1348,7 @@ export class KhrushchevkaBuilder {
         this._addWallSegment('MidWall_South', 2.0, 1.3, 2.0, 1.8, 0, H, this.materials.wallpaperHall);
         this.world.doors.hall = this._addInteriorDoor({
             name: 'HallDoor',
-            label: 'в зал',
+            label: 'room.to_hall',
             pivotPos: new THREE.Vector3(2.0, 0, 1.3),
             size: new THREE.Vector3(0.06, 2.14, 1.08),
             leafOffset: new THREE.Vector3(0, 1.07, -0.54),
@@ -1373,7 +1378,7 @@ export class KhrushchevkaBuilder {
         this._addWallSegment('KitchenDiv_R', 3.4, -0.6, 4.2, -0.6, 0, H, this.materials.wallpaperKitchen);
         this.world.doors.kitchen = this._addInteriorDoor({
             name: 'KitchenDoor',
-            label: 'на кухню',
+            label: 'room.to_kitchen',
             pivotPos: new THREE.Vector3(2.42, 0, -0.6),
             size: new THREE.Vector3(0.98, 2.14, 0.06),
             leafOffset: new THREE.Vector3(0.49, 1.07, 0),
@@ -1420,6 +1425,24 @@ export class KhrushchevkaBuilder {
         const peepRing = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.11, 8), this.materials.metal);
         peepRing.rotation.x = Math.PI / 2;
         peepRing.position.set(0, 0.42, 0);
+        const peepLens = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.017, 0.017, 0.01, 8),
+            this._ps1Mat({ color: 0x0b1018, roughness: 0.15, metalness: 0.8 })
+        );
+        peepLens.rotation.x = Math.PI / 2;
+        peepLens.position.set(0, 0.42, -0.052);
+        // Pivoting brass peephole cover flap on the inner side of the front door
+        const peepFlapPivot = new THREE.Group();
+        peepFlapPivot.position.set(0, 0.448, -0.059);
+        const peepFlapMat = this._ps1Mat({ color: 0xb89648, roughness: 0.4, metalness: 0.7 });
+        const peepPin = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.01, 6), peepFlapMat);
+        peepPin.rotation.x = Math.PI / 2;
+        const peepShutter = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.056, 0.006), peepFlapMat);
+        peepShutter.position.set(0, -0.026, 0);
+        const peepTab = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.012, 0.012), peepFlapMat);
+        peepTab.position.set(0, -0.052, -0.005);
+        peepFlapPivot.add(peepPin, peepShutter, peepTab);
+
         const chain = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.02, 0.02), this.materials.metal);
         chain.position.set(-0.32, 0.15, -0.055);
         const clawDecal = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 1.3), this.materials.bloodClaw);
@@ -1427,7 +1450,7 @@ export class KhrushchevkaBuilder {
         clawDecal.rotation.y = Math.PI;
         clawDecal.visible = false;
 
-        frontDoorGO.transform.add(doorLeaf, peepRing, chain, clawDecal);
+        frontDoorGO.transform.add(doorLeaf, peepRing, peepLens, peepFlapPivot, chain, clawDecal);
         const frontCol = frontDoorGO.addComponent(BoxCollider, new THREE.Vector3(0.95, 2.15, 0.14));
         frontDoorGO.addComponent(RigidBody, { bodyType: 'static' });
         this.blockerMeshes.push(doorLeaf);
@@ -1453,7 +1476,8 @@ export class KhrushchevkaBuilder {
             go: frontDoorGO,
             mesh: doorLeaf,
             collider: frontCol,
-            clawDecal
+            clawDecal,
+            peepFlapPivot
         };
 
         const escapeGO = new GameObject('EntranceEscapeZone');
@@ -1806,7 +1830,7 @@ export class KhrushchevkaBuilder {
 
         this._registerHidingSpot({
             id: 'sofa',
-            label: 'под диваном',
+            label: 'hide.sofa.label',
             hidePos: new THREE.Vector3(-2.78, 0.16, -1.0),
             peekPos: new THREE.Vector3(-2.35, 0.18, -1.0),
             lookYaw: -Math.PI / 2,
@@ -1815,9 +1839,9 @@ export class KhrushchevkaBuilder {
             doorOpenAngle: 1.05,
             axis: 'z',
             enterObject: this._addStaticBox('SofaHideTrigger', -2.42, 0.24, -1.0, 0.2, 0.42, 1.8, this.materials.sofaFabric, { collide: false, blocker: false }).go,
-            enterPrompt: '[E] Залезть под диван',
-            doorPromptClose: '[E] Опустить покрывало дивана',
-            doorPromptOpen: '[E] Приподнять покрывало',
+            enterPrompt: () => t('hide.sofa.enter'),
+            doorPromptClose: () => t('hide.sofa.close'),
+            doorPromptOpen: () => t('hide.sofa.open'),
             defaultClosed: true
         });
         this._currentGroupId = null;
@@ -2932,7 +2956,7 @@ export class KhrushchevkaBuilder {
             }
         };
         fridgeDoorPivot.addComponent(Interactable, {
-            promptText: () => (fridgeOpen ? '[E] Закрыть холодильник' : '[E] Открыть холодильник'),
+            promptText: () => (fridgeOpen ? t('prompt.fridge_close') : t('prompt.fridge_open')),
             onInteract: () => setFridgeOpen(!fridgeOpen)
         });
         this.engine.addGameObject(fridgeDoorPivot);
@@ -3037,7 +3061,7 @@ export class KhrushchevkaBuilder {
             }
         };
         ovenDoorPivot.addComponent(Interactable, {
-            promptText: () => (ovenOpen ? '[E] Закрыть духовку' : '[E] Открыть духовку'),
+            promptText: () => (ovenOpen ? t('prompt.oven_close') : t('prompt.oven_open')),
             onInteract: () => setOvenOpen(!ovenOpen)
         });
         this.engine.addGameObject(ovenDoorPivot);
@@ -3129,7 +3153,7 @@ export class KhrushchevkaBuilder {
         const wardTrigger = this._addStaticBox('WardrobeEnter', 1.98, 1.1, 3.7, 0.12, 1.7, 0.65, this.materials.woodDark, { collide: false, blocker: false, category: 'gameplay' }).go;
         this._registerHidingSpot({
             id: 'wardrobe',
-            label: 'в шкафу в прихожей',
+            label: 'hide.wardrobe.label',
             hidePos: new THREE.Vector3(1.52, 0.95, 3.68),
             peekPos: new THREE.Vector3(1.75, 0.95, 3.68),
             lookYaw: -Math.PI / 2,
@@ -3141,9 +3165,9 @@ export class KhrushchevkaBuilder {
             doorOpenAngle: -1.25,
             axis: 'y',
             enterObject: wardTrigger,
-            enterPrompt: '[E] Спрятаться в шкаф',
-            doorPromptClose: '[E] Закрыть дверцу шкафа',
-            doorPromptOpen: '[E] Приоткрыть дверцу шкафа',
+            enterPrompt: () => t('hide.wardrobe.enter'),
+            doorPromptClose: () => t('hide.wardrobe.close'),
+            doorPromptOpen: () => t('hide.wardrobe.open'),
             defaultClosed: true
         });
 
@@ -3343,7 +3367,7 @@ export class KhrushchevkaBuilder {
 
         this._registerHidingSpot({
             id: 'pantry',
-            label: 'в кладовке',
+            label: 'hide.pantry.label',
             hidePos: new THREE.Vector3(1.45, 0.92, 2.42),
             peekPos: new THREE.Vector3(1.68, 0.92, 2.42),
             lookYaw: -Math.PI / 2,
@@ -3355,15 +3379,15 @@ export class KhrushchevkaBuilder {
             doorOpenAngle: 1.35,
             axis: 'y',
             enterObject: this._addStaticBox('PantryHideTrig', 1.48, 0.85, 2.65, 0.4, 1.2, 0.4, this.materials.woodDark, { collide: false, blocker: false, category: 'gameplay' }).go,
-            enterPrompt: '[E] Спрятаться в кладовке',
-            doorPromptClose: '[E] Закрыть дверь кладовки',
-            doorPromptOpen: '[E] Открыть дверь кладовки',
+            enterPrompt: () => t('hide.pantry.enter'),
+            doorPromptClose: () => t('hide.pantry.close'),
+            doorPromptOpen: () => t('hide.pantry.open'),
             defaultClosed: true
         });
 
         this.world.doors.bathroom = this._addInteriorDoor({
             name: 'BathroomDoor',
-            label: 'в ванную',
+            label: 'room.to_bathroom',
             pivotPos: new THREE.Vector3(4.2, 0, 2.1),
             size: new THREE.Vector3(0.06, 2.12, 0.88),
             leafOffset: new THREE.Vector3(0, 1.06, 0.44),
@@ -3510,7 +3534,7 @@ export class KhrushchevkaBuilder {
 
         this._registerHidingSpot({
             id: 'bathroom',
-            label: 'в ванной за шторкой',
+            label: 'hide.bathroom.label',
             hidePos: new THREE.Vector3(5.65, 0.96, 2.6),
             peekPos: new THREE.Vector3(5.45, 0.96, 2.6),
             lookYaw: Math.PI / 2,
@@ -3519,9 +3543,9 @@ export class KhrushchevkaBuilder {
             doorOpenAngle: 1.15,
             axis: 'y',
             enterObject: curtainPivot,
-            enterPrompt: '[E] Спрятаться за шторкой в ванной',
-            doorPromptClose: '[E] Задёрнуть шторку',
-            doorPromptOpen: '[E] Отодвинуть шторку',
+            enterPrompt: () => t('hide.bathroom.enter'),
+            doorPromptClose: () => t('hide.bathroom.close'),
+            doorPromptOpen: () => t('hide.bathroom.open'),
             isCurtain: true,
             defaultClosed: false
         });
@@ -3604,7 +3628,10 @@ export class KhrushchevkaBuilder {
                 curtainClosedZ = z;
                 applyDoorPose(true);
             },
-            getDoorPrompt: () => (isClosed ? cfg.doorPromptOpen : cfg.doorPromptClose),
+            getDoorPrompt: () => {
+                const p = isClosed ? cfg.doorPromptOpen : cfg.doorPromptClose;
+                return typeof p === 'function' ? p() : p;
+            },
             enterPrompt: cfg.enterPrompt,
             enterObject: cfg.enterObject,
             doorPivot: cfg.doorPivot,
@@ -3652,7 +3679,7 @@ export class KhrushchevkaBuilder {
         const configs = [
             {
                 id: 'hall',
-                label: 'в зале',
+                label: 'room.in_hall',
                 light: this.world.lights.hallLight,
                 baseIntensity: 2.45,
                 emissiveColor: 0xffe0a8,
@@ -3665,7 +3692,7 @@ export class KhrushchevkaBuilder {
             },
             {
                 id: 'kitchen',
-                label: 'на кухне',
+                label: 'room.in_kitchen',
                 light: this.world.lights.kitchenLight,
                 baseIntensity: 2.0,
                 emissiveColor: 0xffd796,
@@ -3676,7 +3703,7 @@ export class KhrushchevkaBuilder {
             },
             {
                 id: 'hallway',
-                label: 'в прихожей',
+                label: 'room.in_hallway',
                 light: this.world.lights.hallwayLight,
                 baseIntensity: 1.8,
                 emissiveColor: 0xffcfa0,
@@ -3687,7 +3714,7 @@ export class KhrushchevkaBuilder {
             },
             {
                 id: 'bathroom',
-                label: 'в ванной',
+                label: 'room.in_bathroom',
                 light: this.world.lights.bathroomLight,
                 baseIntensity: 1.7,
                 emissiveColor: 0xcbe8ff,
@@ -3846,7 +3873,7 @@ export class KhrushchevkaBuilder {
             }
         };
         openFramePivot.addComponent(Interactable, {
-            promptText: () => (balcWinOpen ? '[E] Закрыть окно' : '[E] Открыть окно'),
+            promptText: () => (balcWinOpen ? t('prompt.balcony_win_close') : t('prompt.balcony_win_open')),
             onInteract: () => setBalcWinOpen(!balcWinOpen)
         });
         this.engine.addGameObject(openFramePivot);
@@ -4112,7 +4139,7 @@ export class KhrushchevkaBuilder {
         const porchLight = new THREE.PointLight(0xffbe6b, 1.1, 8.5, 1.6);
         porchLight.position.set(porchX, GY + 2.15, -23.7);
         this.scene.add(porchLight);
-        this._registerLight(porchLight, 'house14PorchLight', 'Свет подъезда дома №14', null);
+        this._registerLight(porchLight, 'house14PorchLight', t('light.house14_porch'), null);
 
         this._buildSnowBench('House14_SnowBench', 5.3, GY, -23.1);
 
@@ -4445,7 +4472,7 @@ export class KhrushchevkaBuilder {
 
         const decorHall = new THREE.Group();
         addGarlandArc(decorHall, -2.2, 2.28, -3.40, -0.2, 2.28, -3.40, 0.24, 11, goldTinsel);
-        addGarlandArc(decorHall, 1.55, 1.95, -2.75, 1.55, 1.95, -1.35, 0.18, 9, redTinsel);
+        addGarlandArc(decorHall, -1.10, 1.93, 1.02, 0.40, 1.93, 1.02, 0.16, 10, redTinsel);
         addSnowflake(decorHall, -1.7, 1.62, -3.46, 0.16);
         addSnowflake(decorHall, -0.75, 1.72, -3.46, 0.14);
         addSnowflake(decorHall, -1.25, 1.25, -3.46, 0.13);

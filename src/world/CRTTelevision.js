@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { configurePS1Texture } from '../../lumina/index.js';
+import { t as tr } from '../i18n/Localization.js';
 
 export class CRTTelevision {
     constructor(tvLight) {
@@ -131,14 +132,14 @@ export class CRTTelevision {
 
         ctx.fillStyle = 'rgba(255,255,255,0.75)';
         ctx.font = 'bold 10px monospace';
-        ctx.fillText('1 КАНАЛ', 10, 16);
+        ctx.fillText(tr('tv.channel'), 10, 16);
 
         ctx.fillStyle = 'rgba(130, 15, 25, 0.85)';
         ctx.fillRect(0, 166, W, 26);
         ctx.fillStyle = '#ffe999';
         ctx.font = 'bold 11px monospace';
         const tickerX = 256 - ((t * 48) % 520);
-        ctx.fillText('★ ГОЛУБОЙ ОГОНЁК ★ С НАСТУПАЮЩИМ НОВЫМ ГОДОМ! ★', tickerX, 183);
+        ctx.fillText(tr('tv.ticker'), tickerX, 183);
 
         if (this.tvLight) {
             const r = hueShift > 0 ? 0.45 : 0.72;
@@ -198,7 +199,7 @@ export class CRTTelevision {
         ctx.fillRect(0, 0, W, 24);
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 11px monospace';
-        ctx.fillText('! ЭКСТРЕННЫЙ ВЫПУСК !', 12, 16);
+        ctx.fillText(tr('tv.news_header'), 12, 16);
 
         ctx.fillStyle = '#19223b';
         ctx.fillRect(172, 86, 76, 68);
@@ -215,9 +216,9 @@ export class CRTTelevision {
         ctx.fillRect(0, 158, W, 34);
         ctx.fillStyle = '#ff4c4c';
         ctx.font = 'bold 10px monospace';
-        ctx.fillText('УЛ. ЛЕНИНА, 14 И СОСЕДНИЙ ДОМ —', 8, 173);
+        ctx.fillText(tr('tv.news_line1'), 8, 173);
         ctx.fillStyle = '#f2f2f2';
-        ctx.fillText('НАЙДЕНЫ ТЕЛА. МАНЬЯК В КОЛПАКЕ.', 8, 186);
+        ctx.fillText(tr('tv.news_line2'), 8, 186);
 
         if (this.tvLight) {
             this.tvLight.color.setRGB(0.85, 0.25, 0.25);
@@ -245,7 +246,7 @@ export class CRTTelevision {
 
         ctx.fillStyle = '#ffd166';
         ctx.font = 'bold 12px monospace';
-        ctx.fillText('00:00 — С НОВЫМ ГОДОМ', 48, 178);
+        ctx.fillText(tr('tv.midnight'), 48, 178);
 
         if (this.tvLight) {
             this.tvLight.color.setRGB(1.0, 0.85, 0.5);

@@ -255,6 +255,22 @@ button.menu-text-btn:hover {
     color: #9ba3b8;
 }
 
+.setting-select {
+    background: #141824;
+    color: #e6ebf5;
+    border: 1px solid #4a536b;
+    padding: 4px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    outline: none;
+}
+
+.setting-select:hover,
+.setting-select:focus {
+    border-color: #ffd166;
+}
+
 #hud {
     position: fixed;
     top: 50%;

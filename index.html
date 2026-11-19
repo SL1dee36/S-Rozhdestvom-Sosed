@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>С Новым Годом, Сосед</title>
+    <title>{{app.title}}</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="./styles.css">
 </head>
@@ -22,7 +22,7 @@
             <div id="objectives-box" class="hidden"></div>
         </div>
         <div id="interact-prompt" class="hidden"></div>
-        <div id="wake-prompt" class="wake-prompt hidden">Пробел, чтобы встать</div>
+        <div id="wake-prompt" class="wake-prompt hidden" data-i18n="ui.hud.wake_prompt">{{ui.hud.wake_prompt}}</div>
         <div id="controls-hint" class="controls-hint-hidden"></div>
         <div id="subtitles" class="hidden"></div>
         <div id="stealth-panel" class="hidden">
@@ -32,11 +32,11 @@
                         <div id="noise-fill"></div>
                         <div class="meter-threshold"></div>
                     </div>
-                    <span class="meter-label-vertical">ШУМ</span>
+                    <span class="meter-label-vertical" data-i18n="ui.hud.noise">{{ui.hud.noise}}</span>
                 </div>
                 <div class="stealth-info-col">
                     <div id="oxygen-row" class="meter-row hidden">
-                        <span class="meter-label">ВОЗДУХ</span>
+                        <span class="meter-label" data-i18n="ui.hud.oxygen">{{ui.hud.oxygen}}</span>
                         <div class="meter-track">
                             <div id="oxygen-fill"></div>
                         </div>
@@ -49,14 +49,14 @@
     <div id="main-menu" class="menu-screen menu-main-bg">
         <div class="ui-16x9-stage main-stage">
             <div class="menu-right-col">
-                <h1 class="game-title">С НОВЫМ ГОДОМ, СОСЕД</h1>
+                <h1 class="game-title" data-i18n="ui.menu.title">{{ui.menu.title}}</h1>
                 <div class="btn-stack menu-list">
-                    <button id="btn-start" class="menu-text-btn primary-text-btn">Начать игру</button>
-                    <button id="btn-checkpoint-menu" class="menu-text-btn hidden">Продолжить (23:45)</button>
-                    <button id="btn-endings" class="menu-text-btn hidden">Концовки</button>
-                    <button id="btn-open-settings" class="menu-text-btn">Настройки</button>
-                    <button id="btn-credits" class="menu-text-btn">Авторство</button>
-                    <button id="btn-exit-game" class="menu-text-btn">Выйти из игры</button>
+                    <button id="btn-start" class="menu-text-btn primary-text-btn" data-i18n="ui.menu.start">{{ui.menu.start}}</button>
+                    <button id="btn-checkpoint-menu" class="menu-text-btn hidden" data-i18n="ui.menu.continue">{{ui.menu.continue}}</button>
+                    <button id="btn-endings" class="menu-text-btn hidden" data-i18n="ui.menu.endings">{{ui.menu.endings}}</button>
+                    <button id="btn-open-settings" class="menu-text-btn" data-i18n="ui.menu.settings">{{ui.menu.settings}}</button>
+                    <button id="btn-credits" class="menu-text-btn" data-i18n="ui.menu.credits">{{ui.menu.credits}}</button>
+                    <button id="btn-exit-game" class="menu-text-btn" data-i18n="ui.menu.exit">{{ui.menu.exit}}</button>
                 </div>
             </div>
         </div>
@@ -64,34 +64,41 @@
 
     <div id="settings-modal" class="menu-screen menu-dark-bg hidden" style="z-index:25;">
         <div class="ui-16x9-stage">
-            <button id="btn-close-settings" class="menu-text-btn top-right-back">← Назад</button>
+            <button id="btn-close-settings" class="menu-text-btn top-right-back" data-i18n="ui.menu.back">{{ui.menu.back}}</button>
             <div class="frameless-content">
-                <h2 class="frameless-title">НАСТРОЙКИ</h2>
+                <h2 class="frameless-title" data-i18n="ui.settings.title">{{ui.settings.title}}</h2>
                 <div id="settings-panel" class="settings-panel">
                     <div class="setting-row">
-                        <label for="opt-mic-mode">Микрофон в игре (стелс на звук)</label>
+                        <label for="opt-language" data-i18n="ui.settings.language">{{ui.settings.language}}</label>
+                        <select id="opt-language" class="setting-select">
+                            <option value="ru">Русский</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+                    <div class="setting-row">
+                        <label for="opt-mic-mode" data-i18n="ui.settings.mic_mode">{{ui.settings.mic_mode}}</label>
                         <input type="checkbox" id="opt-mic-mode" checked>
                     </div>
                     <div class="mic-test-row">
-                        <button id="btn-test-mic" style="padding:5px 10px; font-size:12px;">Подключить / Проверить микрофон</button>
+                        <button id="btn-test-mic" style="padding:5px 10px; font-size:12px;" data-i18n="ui.settings.test_mic">{{ui.settings.test_mic}}</button>
                         <div class="mic-test-bar"><div id="mic-test-fill"></div></div>
                     </div>
-                    <div id="mic-status" class="mic-note">Если микрофона нет — снимите галочку для режима «Без микрофона».</div>
+                    <div id="mic-status" class="mic-note" data-i18n="ui.settings.mic_note_default">{{ui.settings.mic_note_default}}</div>
 
                     <div class="setting-row">
-                        <label for="opt-ps1-jitter">PS1-дрожание полигонов (Vertex Jitter)</label>
-                        <input type="checkbox" id="opt-ps1-jitter" checked>
+                        <label for="opt-ps1-jitter" data-i18n="ui.settings.ps1_jitter">{{ui.settings.ps1_jitter}}</label>
+                        <input type="checkbox" id="opt-ps1-jitter">
                     </div>
                     <div class="setting-row">
-                        <label for="opt-vhs-intensity">Зернистость и резкость PS1</label>
+                        <label for="opt-vhs-intensity" data-i18n="ui.settings.vhs_intensity">{{ui.settings.vhs_intensity}}</label>
                         <input type="range" id="opt-vhs-intensity" min="0" max="1.5" step="0.05" value="0.5">
                     </div>
                     <div class="setting-row">
-                        <label for="opt-volume">Громкость звука</label>
+                        <label for="opt-volume" data-i18n="ui.settings.volume">{{ui.settings.volume}}</label>
                         <input type="range" id="opt-volume" min="0" max="1" step="0.05" value="0.85">
                     </div>
                     <div class="setting-row">
-                        <label for="opt-sensitivity">Чувствительность мыши (<span id="opt-sensitivity-val">1.00</span>×)</label>
+                        <label for="opt-sensitivity"><span data-i18n="ui.settings.sensitivity">{{ui.settings.sensitivity}}</span> (<span id="opt-sensitivity-val">1.00</span>×)</label>
                         <input type="range" id="opt-sensitivity" min="0.05" max="2.5" step="0.05" value="1.0">
                     </div>
                 </div>
@@ -102,15 +109,13 @@
     <div id="pause-menu" class="menu-screen menu-dark-bg hidden">
         <div class="ui-16x9-stage">
             <div class="frameless-content">
-                <h2 class="frameless-title">ПАУЗА</h2>
-                <p class="controls-hint">
-                    WASD — движение | Shift — бег | C / Ctrl — присесть | E — действие / дверца укрытия | Q — выйти из укрытия | Пробел — задержка дыхания
-                </p>
+                <h2 class="frameless-title" data-i18n="ui.pause.title">{{ui.pause.title}}</h2>
+                <p class="controls-hint" data-i18n="ui.pause.controls">{{ui.pause.controls}}</p>
                 <div class="btn-stack menu-center-list">
-                    <button id="btn-resume" class="menu-text-btn primary-text-btn">Продолжить</button>
-                    <button id="btn-checkpoint-pause" class="menu-text-btn hidden">Загрузить чекпоинт (23:45)</button>
-                    <button id="btn-pause-settings" class="menu-text-btn">Настройки</button>
-                    <button id="btn-quit-menu" class="menu-text-btn">В главное меню</button>
+                    <button id="btn-resume" class="menu-text-btn primary-text-btn" data-i18n="ui.pause.resume">{{ui.pause.resume}}</button>
+                    <button id="btn-checkpoint-pause" class="menu-text-btn hidden" data-i18n="ui.pause.checkpoint">{{ui.pause.checkpoint}}</button>
+                    <button id="btn-pause-settings" class="menu-text-btn" data-i18n="ui.pause.settings">{{ui.pause.settings}}</button>
+                    <button id="btn-quit-menu" class="menu-text-btn" data-i18n="ui.pause.quit_menu">{{ui.pause.quit_menu}}</button>
                 </div>
             </div>
         </div>
@@ -119,10 +124,10 @@
     <div id="death-screen" class="menu-screen menu-dark-bg hidden">
         <div class="ui-16x9-stage">
             <div class="frameless-content">
-                <h2 class="ending-title">ВЫ ПОГИБЛИ</h2>
-                <p id="death-reason" class="ending-desc">Существо нашло вас.</p>
+                <h2 class="ending-title" data-i18n="ui.death.title">{{ui.death.title}}</h2>
+                <p id="death-reason" class="ending-desc" data-i18n="ui.death.default_reason">{{ui.death.default_reason}}</p>
                 <div class="btn-stack menu-center-list">
-                    <button id="btn-retry-death" class="menu-text-btn primary-text-btn">Переиграть с чекпоинта (23:45)</button>
+                    <button id="btn-retry-death" class="menu-text-btn primary-text-btn" data-i18n="ui.death.retry">{{ui.death.retry}}</button>
                 </div>
             </div>
         </div>
@@ -131,12 +136,10 @@
     <div id="ending2-screen" class="menu-screen menu-dark-bg hidden">
         <div class="ui-16x9-stage">
             <div class="frameless-content">
-                <h2 class="ending-title">КОНЦОВКА №2: «НЕ ПОДГЛЯДЫВАЙ В ЧУЖИЕ ОКНА!»</h2>
-                <p class="ending-desc">
-                    Вы поспешили выйти из укрытия, поверив в тишину... Но оно ждало в темноте за косяком выбитой двери.
-                </p>
+                <h2 class="ending-title" data-i18n="ui.ending2.title">{{ui.ending2.title}}</h2>
+                <p class="ending-desc" data-i18n="ui.ending2.desc">{{ui.ending2.desc}}</p>
                 <div class="btn-stack menu-center-list">
-                    <button id="btn-retry-ending2" class="menu-text-btn primary-text-btn">Загрузить чекпоинт (23:45)</button>
+                    <button id="btn-retry-ending2" class="menu-text-btn primary-text-btn" data-i18n="ui.pause.checkpoint">{{ui.pause.checkpoint}}</button>
                 </div>
             </div>
         </div>
@@ -145,14 +148,11 @@
     <div id="ending3-screen" class="menu-screen menu-dark-bg hidden">
         <div class="ui-16x9-stage">
             <div class="frameless-content">
-                <h2 class="ending-title good">КОНЦОВКА №3: «ПОБЕГ В ПОДЪЕЗД»</h2>
-                <p class="ending-desc">
-                    Пока чудовище рыскало в глубине квартиры, вы выскочили из укрытия и бросились вниз по ледяным ступеням подъезда.
-                    Вы остались живы... но так и не узнали, что случилось в доме напротив.
-                </p>
+                <h2 class="ending-title good" data-i18n="ui.ending3.title">{{ui.ending3.title}}</h2>
+                <p class="ending-desc" data-i18n="ui.ending3.desc">{{ui.ending3.desc}}</p>
                 <div class="btn-stack menu-center-list">
-                    <button id="btn-menu-ending3" class="menu-text-btn primary-text-btn">В главное меню</button>
-                    <button id="btn-retry-ending3" class="menu-text-btn">Загрузить чекпоинт (23:45)</button>
+                    <button id="btn-menu-ending3" class="menu-text-btn primary-text-btn" data-i18n="ui.pause.quit_menu">{{ui.pause.quit_menu}}</button>
+                    <button id="btn-retry-ending3" class="menu-text-btn" data-i18n="ui.pause.checkpoint">{{ui.pause.checkpoint}}</button>
                 </div>
             </div>
         </div>
@@ -161,14 +161,11 @@
     <div id="ending4-screen" class="menu-screen menu-dark-bg hidden">
         <div class="ui-16x9-stage">
             <div class="frameless-content">
-                <h2 class="ending-title good">КОНЦОВКА №4: «ЛЕДЯНОЙ РУБЕЖ»</h2>
-                <p class="ending-desc">
-                    Вы заперлись на заснеженном балконе, слушая удары в промёрзшее стекло.
-                    Когда вдалеке ударили куранты, шаги в квартире затихли — вы дождались Нового года на морозе.
-                </p>
+                <h2 class="ending-title good" data-i18n="ui.ending4.title">{{ui.ending4.title}}</h2>
+                <p class="ending-desc" data-i18n="ui.ending4.desc">{{ui.ending4.desc}}</p>
                 <div class="btn-stack menu-center-list">
-                    <button id="btn-menu-ending4" class="menu-text-btn primary-text-btn">В главное меню</button>
-                    <button id="btn-retry-ending4" class="menu-text-btn">Загрузить чекпоинт (23:45)</button>
+                    <button id="btn-menu-ending4" class="menu-text-btn primary-text-btn" data-i18n="ui.pause.quit_menu">{{ui.pause.quit_menu}}</button>
+                    <button id="btn-retry-ending4" class="menu-text-btn" data-i18n="ui.pause.checkpoint">{{ui.pause.checkpoint}}</button>
                 </div>
             </div>
         </div>
@@ -177,12 +174,9 @@
     <div id="ending1-screen" class="menu-screen hidden" style="background: #000000;">
         <div class="ui-16x9-stage">
             <div class="frameless-content">
-                <h2 class="ending-title good">КОНЦОВКА №1: «ТИХАЯ НОЧЬ, СВЯТАЯ НОЧЬ»</h2>
-                <p class="ending-desc">
-                    Куранты отбили полночь, а за окном в падающем снегу вспыхнули новогодние фейерверки.
-                    Чудовище исчезло в темноте двора, оставив за собой лишь следы на снегу...
-                </p>
-                <p id="ending1-space-prompt" class="space-prompt">Нажмите "SPACE", чтобы продолжить</p>
+                <h2 class="ending-title good" data-i18n="ui.ending1.title">{{ui.ending1.title}}</h2>
+                <p class="ending-desc" data-i18n="ui.ending1.desc">{{ui.ending1.desc}}</p>
+                <p id="ending1-space-prompt" class="space-prompt" data-i18n="ui.ending1.space_prompt">{{ui.ending1.space_prompt}}</p>
             </div>
         </div>
     </div>
@@ -191,24 +185,24 @@
         <div class="ui-16x9-stage" style="overflow: hidden;">
             <div id="rolling-credits-track" class="rolling-credits-track">
                 <div class="rolling-credits-header">
-                    <h2>С НОВЫМ ГОДОМ, СОСЕД</h2>
-                    <div class="rolling-credits-sub">ТИТРЫ</div>
+                    <h2 data-i18n="ui.menu.title">{{ui.menu.title}}</h2>
+                    <div class="rolling-credits-sub" data-i18n="ui.credits.roll_sub">{{ui.credits.roll_sub}}</div>
                 </div>
                 <div id="credits-roll-body" class="credits-roll-body"></div>
                 <div class="rolling-credits-finale">
-                    <p class="finale-thanks">Спасибо за прохождение!</p>
-                    <p class="finale-hny">Счастливого Нового Года!</p>
+                    <p class="finale-thanks" data-i18n="ui.credits.finale_thanks">{{ui.credits.finale_thanks}}</p>
+                    <p class="finale-hny" data-i18n="ui.credits.finale_hny">{{ui.credits.finale_hny}}</p>
                 </div>
             </div>
-            <div id="rolling-credits-hint" class="rolling-credits-hint">[SPACE / ESC] — В главное меню</div>
+            <div id="rolling-credits-hint" class="rolling-credits-hint" data-i18n="ui.credits.roll_hint">{{ui.credits.roll_hint}}</div>
         </div>
     </div>
 
     <div id="endings-modal" class="menu-screen menu-dark-bg hidden" style="z-index:30;">
         <div class="ui-16x9-stage">
-            <button id="btn-close-endings" class="menu-text-btn top-right-back">← Назад</button>
+            <button id="btn-close-endings" class="menu-text-btn top-right-back" data-i18n="ui.menu.back">{{ui.menu.back}}</button>
             <div class="frameless-content endings-box">
-                <h2 class="frameless-title" style="margin-top:0;">КОНЦОВКИ</h2>
+                <h2 class="frameless-title" style="margin-top:0;" data-i18n="ui.endings.title">{{ui.endings.title}}</h2>
                 <div id="endings-list" class="endings-list"></div>
             </div>
         </div>
@@ -216,10 +210,10 @@
 
     <div id="credits-modal" class="menu-screen menu-dark-bg hidden" style="z-index:30;">
         <div class="ui-16x9-stage">
-            <button id="btn-close-credits" class="menu-text-btn top-right-back">← Назад</button>
+            <button id="btn-close-credits" class="menu-text-btn top-right-back" data-i18n="ui.menu.back">{{ui.menu.back}}</button>
             <div class="frameless-content credits-box">
-                <h2 class="frameless-title" style="margin-top:0;">АВТОРЫ И ЛИЦЕНЗИИ</h2>
-                <div id="credits-list">Загрузка списка авторов...</div>
+                <h2 class="frameless-title" style="margin-top:0;" data-i18n="ui.credits.title">{{ui.credits.title}}</h2>
+                <div id="credits-list" data-i18n="ui.credits.loading">{{ui.credits.loading}}</div>
             </div>
         </div>
     </div>
@@ -235,4 +229,3 @@
     <script type="module" src="./main.js?v=3"></script>
 </body>
 </html>
-

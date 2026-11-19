@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Interactable } from '../../lumina/index.js';
+import { t as tr, onLanguageChange } from '../i18n/Localization.js';
 
 export class StoryDirector {
     constructor(engine, world, player, monster, ui) {
@@ -15,6 +16,13 @@ export class StoryDirector {
         this.clockMinutes = 0;
         this.hasCheckpoint = localStorage.getItem('sng_checkpoint_2345') === '1';
         this.ui.setCheckpointAvailable(this.hasCheckpoint);
+        onLanguageChange(() => {
+            if (this.act === 1 && this.phase === 'act1') {
+                this._refreshObjectives();
+            } else if (this.act === 4) {
+                this._refreshAct4Objectives();
+            }
+        });
 
         this._noiseSustain = 0;
         this._assaultStep = 0;
@@ -114,12 +122,12 @@ export class StoryDirector {
         w.frontDoor.go.addComponent(Interactable, {
             maxDistance: 1.75,
             promptText: () => {
-                if (this.act === 1) return '[E] Посмотреть в глазок';
-                if (this.act === 4 && !this.act4Inspected.door) return '[E] Осмотреть выбитую дверь';
+                if (this.act === 1) return tr('prompt.peephole');
+                if (this.act === 4 && !this.act4Inspected.door) return tr('prompt.inspect_door');
                 return '';
             },
             canInteract: () => (
-                (this.act === 1 && this.act1Tasks.knockTriggered && !this.player.isPeephole) ||
+                (this.act === 1 && this.act1Tasks.knockTriggered && !this.player.isPeephole && !this.player._peepholeAnim) ||
                 (this.act === 4 && !this.act4Inspected.door)
             ),
             onInteract: () => {
@@ -128,18 +136,18 @@ export class StoryDirector {
                     this.player.enterPeephole();
                     if (!this.act1Tasks.peephole) {
                         this.act1Tasks.peephole = true;
-                        this.ui.showSubtitle('На лестнице уже никого... Кто-то только что убежал вниз по ступенькам. Ладно, пора готовить стол.', 4400);
+                        this.ui.showSubtitle(tr('sub.peephole_empty'), 4400);
                         this._refreshObjectives();
                     }
                 } else if (this.act === 4) {
-                    this._inspectPoint('door', 'Он выбил её с петель... Замок просто вырвало.');
+                    this._inspectPoint('door', tr('sub.act4_inspect_door'));
                 }
             }
         });
 
         w.bathroomSink.addComponent(Interactable, {
             maxDistance: 1.65,
-            promptText: '[E] Умыться холодной водой',
+            promptText: () => tr('prompt.wash_face'),
             canInteract: () => this.act === 1 && !this.act1Tasks.wash && !this._washingInProgress && this.phase === 'act1',
             onInteract: () => {
                 this._washingInProgress = true;
@@ -148,7 +156,7 @@ export class StoryDirector {
                     this._washingInProgress = false;
                     this.act1Tasks.wash = true;
                     this._washFinishTime = this.phaseTimer;
-                    this.ui.showSubtitle('Ух, ледяная... Сон как рукой сняло.', 3200);
+                    this.ui.showSubtitle(tr('sub.wash_done'), 3200);
                     this._refreshObjectives();
                 });
             }
@@ -157,11 +165,11 @@ export class StoryDirector {
         if (w.toilet) {
             w.toilet.addComponent(Interactable, {
                 maxDistance: 1.65,
-                promptText: '[E] Смыть воду',
+                promptText: () => tr('prompt.flush_toilet'),
                 canInteract: () => (this.act === 1 || this.act === 2) && this.phase === 'act1',
                 onInteract: () => {
                     this.engine.audioSystem.playSpatialOneShot('steam_hiss', w.toilet.transform.position, { volume: 0.45 });
-                    this.ui.showSubtitle('Старый бачок шумит на всю квартиру.', 2600);
+                    this.ui.showSubtitle(tr('sub.toilet_flush'), 2600);
                 }
             });
         }
@@ -170,7 +178,9 @@ export class StoryDirector {
             for (const door of w.interiorDoors) {
                 door.pivot.addComponent(Interactable, {
                     maxDistance: 1.75,
-                    promptText: () => (door.isOpen() ? `[E] Закрыть дверь ${door.label}` : `[E] Открыть дверь ${door.label}`),
+                    promptText: () => (door.isOpen()
+                        ? tr('prompt.door_close', { label: tr(door.label) })
+                        : tr('prompt.door_open', { label: tr(door.label) })),
                     canInteract: () => !this.player.isHidden && !this.player.isPeephole,
                     onInteract: () => door.toggle()
                 });
@@ -186,10 +196,10 @@ export class StoryDirector {
             promptText: () => {
                 if (this.act === 1 && !this.act1Tasks.garland) {
                     return this.act1Tasks.decorBox
-                        ? '[E] Нарядить ёлку игрушками и включить гирлянду'
-                        : '[E] Нарядить ёлку (нужна коробка с игрушками из прихожей)';
+                        ? tr('prompt.tree_decorate')
+                        : tr('prompt.tree_need_box');
                 }
-                if (this.act === 4 && !this.act4Inspected.tree) return '[E] Осмотреть поваленную ёлку';
+                if (this.act === 4 && !this.act4Inspected.tree) return tr('prompt.inspect_tree');
                 return '';
             },
             canInteract: () => (
@@ -199,12 +209,12 @@ export class StoryDirector {
             onInteract: () => {
                 if (this.act === 1) {
                     if (!this.act1Tasks.decorBox) {
-                        this.ui.showSubtitle('Сначала нужно взять коробку с ёлочными игрушками и мишурой в прихожей.', 3400);
+                        this.ui.showSubtitle(tr('sub.tree_need_box'), 3400);
                         return;
                     }
                     this._treeDecoratingInProgress = true;
                     if (w.treeDecorHighlight) w.treeDecorHighlight.visible = false;
-                    this.ui.showSubtitle('Повешу шары, мишуру и включу гирлянду...', 3200);
+                    this.ui.showSubtitle(tr('sub.tree_decorating'), 3200);
                     this.player.startDecorateTreeAnimation(
                         (ratio) => {
                             w.setTreeDecorProgress?.(ratio);
@@ -222,13 +232,13 @@ export class StoryDirector {
                                     this.player.setHeldItem(null);
                                 }
                             }
-                            this.ui.showSubtitle('Ёлка наряжена и светится! Сразу другое дело.', 3400);
+                            this.ui.showSubtitle(tr('sub.tree_done'), 3400);
                             this._refreshObjectives();
                             this._checkAct1IndoorCompletion();
                         }
                     );
                 } else if (this.act === 4) {
-                    this._inspectPoint('tree', 'Обычный дешёвый колпак... И зеркало с серванта вдребезги.');
+                    this._inspectPoint('tree', tr('sub.act4_inspect_tree'));
                 }
             }
         });
@@ -237,7 +247,7 @@ export class StoryDirector {
         if (w.tablePlacementZone?.go) {
             w.tablePlacementZone.go.addComponent(Interactable, {
                 maxDistance: 1.85,
-                promptText: '[E] Поставить стол',
+                promptText: () => tr('prompt.table_place'),
                 canInteract: () => this.act === 1 && this._tableStage === 'carrying' && this.player.heldItem === 'table',
                 onInteract: () => {
                     this.player.setHeldItem(null);
@@ -246,7 +256,7 @@ export class StoryDirector {
                     this._tableStage = 'placed_folded';
                     this.act1Tasks.tablePlaced = true;
                     this.engine.audioSystem.playSpatialOneShot('footstep_parquet', w.table.hallPos, { heavy: true, volume: 0.75 });
-                    this.ui.showSubtitle('Поставил. Теперь нужно разложить сначала одну половину, потом вторую.', 3800);
+                    this.ui.showSubtitle(tr('sub.table_placed'), 3800);
                     this._refreshObjectives();
                 }
             });
@@ -256,7 +266,7 @@ export class StoryDirector {
         if (w.kitchenStool) {
             w.kitchenStool.addComponent(Interactable, {
                 maxDistance: 1.7,
-                promptText: '[E] Взять табуретку',
+                promptText: () => tr('prompt.stool_pickup'),
                 canInteract: () => this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.stoolPicked && !this.player.heldItem,
                 onInteract: () => {
                     w.kitchenStool.transform.visible = false;
@@ -264,7 +274,7 @@ export class StoryDirector {
                     this.player.setHeldItem('stool');
                     if (w.stoolPlacementZone) w.stoolPlacementZone.transform.visible = true;
                     this.engine.audioSystem.playSpatialOneShot('pickup', w.kitchenStool.transform.position);
-                    this.ui.showSubtitle('Отнесу табуретку в зал к столу.', 3000);
+                    this.ui.showSubtitle(tr('sub.stool_pickup'), 3000);
                     this._refreshObjectives();
                 }
             });
@@ -273,7 +283,7 @@ export class StoryDirector {
         if (w.stoolPlacementZone) {
             w.stoolPlacementZone.addComponent(Interactable, {
                 maxDistance: 1.8,
-                promptText: '[E] Поставить табуретку к столу',
+                promptText: () => tr('prompt.stool_place'),
                 canInteract: () => this.act === 1 && this.player.heldItem === 'stool',
                 onInteract: () => {
                     this.player.setHeldItem(null);
@@ -281,7 +291,7 @@ export class StoryDirector {
                     if (w.placedHallStool) w.placedHallStool.transform.visible = true;
                     this.act1Tasks.stool = true;
                     this.engine.audioSystem.playSpatialOneShot('footstep_parquet', w.stoolPlacementZone.transform.position, { volume: 0.55 });
-                    this.ui.showSubtitle('Табуретка на месте. Теперь можно будет нормально посидеть перед телевизором.', 3500);
+                    this.ui.showSubtitle(tr('sub.stool_placed'), 3500);
                     this._refreshObjectives();
                     this._checkAct1IndoorCompletion();
                 }
@@ -291,7 +301,7 @@ export class StoryDirector {
         if (w.placedHallStool) {
             w.placedHallStool.addComponent(Interactable, {
                 maxDistance: 1.75,
-                promptText: '[E] Сесть за праздничный стол',
+                promptText: () => tr('prompt.table_sit'),
                 canInteract: () => (
                     this.act === 1 &&
                     this.phase === 'act1' &&
@@ -313,8 +323,8 @@ export class StoryDirector {
                 maxDistance: 2.05,
                 promptText: () => (
                     this.player.heldItem
-                        ? '[E] Взять праздничную скатерть (освободите руки)'
-                        : '[E] Взять праздничную скатерть'
+                        ? tr('prompt.tablecloth_hands_full')
+                        : tr('prompt.tablecloth_pickup')
                 ),
                 canInteract: () => (
                     this.act === 1 &&
@@ -323,18 +333,18 @@ export class StoryDirector {
                 ),
                 onInteract: () => {
                     if (!this.act1Tasks.peephole) {
-                        this.ui.showSubtitle('Сначала умоюсь и проверю входную дверь.', 2800);
+                        this.ui.showSubtitle(tr('sub.tablecloth_early'), 2800);
                         return;
                     }
                     if (this.player.heldItem) {
-                        this.ui.showSubtitle('Руки заняты. Сначала поставлю предмет, а потом возьму скатерть.', 3000);
+                        this.ui.showSubtitle(tr('sub.tablecloth_hands_full'), 3000);
                         return;
                     }
                     w.wardrobeTablecloth.transform.visible = false;
                     this.act1Tasks.tableclothPicked = true;
                     this.player.setHeldItem('tablecloth');
                     this.engine.audioSystem.playSpatialOneShot('pickup', w.wardrobeTablecloth.transform.position);
-                    this.ui.showSubtitle('Чистая праздничная скатерть. Постелю её на разложенный стол в зале.', 3600);
+                    this.ui.showSubtitle(tr('sub.tablecloth_pickup'), 3600);
                     this._refreshObjectives();
                 }
             });
@@ -345,25 +355,25 @@ export class StoryDirector {
             maxDistance: 1.85,
             promptText: () => {
                 if (this._tableStage === 'on_balcony') {
-                    return '[E] Поднять стол';
+                    return tr('prompt.table_pickup');
                 }
                 if (this._tableStage === 'placed_folded') {
-                    return '[Удерживать E] Разложить первую половину стола (4 сек)';
+                    return tr('prompt.table_unfold_1');
                 }
                 if (this._tableStage === 'wing1_open') {
-                    return '[Удерживать E] Разложить вторую половину стола (4 сек)';
+                    return tr('prompt.table_unfold_2');
                 }
                 if (this._tableStage === 'unfolded_bare') {
                     return this.act1Tasks.tableclothPicked
-                        ? '[Удерживать E] Постелить праздничную скатерть на стол'
-                        : '[E] Постелить скатерть (нужно взять скатерть в шкафу в прихожей)';
+                        ? tr('prompt.table_spread_cloth')
+                        : tr('prompt.table_need_cloth');
                 }
                 if (this._tableStage === 'unfolded') {
                     if (this.player.heldItem && this._isFoodOrTableItem(this.player.heldItem)) {
-                        return `[E] Поставить на стол (${this._itemName(this.player.heldItem)})`;
+                        return tr('prompt.table_put_item', { item: this._itemName(this.player.heldItem) });
                     }
                     if (this._isIndoorChoresDone() && this.act1Tasks.champagne && !this.act1Tasks.pourDrink && !this.player.heldItem) {
-                        return '[E] Сесть за праздничный стол';
+                        return tr('prompt.table_sit');
                     }
                 }
                 return '';
@@ -403,7 +413,7 @@ export class StoryDirector {
                     this.act1Tasks.tablePicked = true;
                     if (w.tablePlacementZone?.go) w.tablePlacementZone.go.transform.visible = true;
                     this.engine.audioSystem.playSpatialOneShot('pickup', w.table.balconyPos, { volume: 0.6 });
-                    this.ui.showSubtitle('Тяжёлый стол... Отнесу его в зал и поставлю перед диваном.', 3800);
+                    this.ui.showSubtitle(tr('sub.table_pickup'), 3800);
                     this._refreshObjectives();
                     return;
                 }
@@ -411,7 +421,7 @@ export class StoryDirector {
                     w.table.setWingProgress(1, 1.0);
                     this._tableStage = 'wing1_open';
                     this.engine.audioSystem.playSpatialOneShot('door_open', w.table.go.transform.position);
-                    this.ui.showSubtitle('Первая половина и ножки разложены. Теперь вторую.', 3000);
+                    this.ui.showSubtitle(tr('sub.table_wing1'), 3000);
                     this._refreshObjectives();
                     return;
                 }
@@ -427,16 +437,16 @@ export class StoryDirector {
                     }
                     this.engine.audioSystem.playSpatialOneShot('door_open', w.table.go.transform.position);
                     if (this.act1Tasks.tableclothPicked) {
-                        this.ui.showSubtitle('Стол полностью разложен. Теперь постелю на него скатерть.', 3500);
+                        this.ui.showSubtitle(tr('sub.table_unfolded_with_cloth'), 3500);
                     } else {
-                        this.ui.showSubtitle('Стол разложен! Теперь нужно взять скатерть в шкафу в прихожей и застелить его.', 4000);
+                        this.ui.showSubtitle(tr('sub.table_unfolded_no_cloth'), 4000);
                     }
                     this._refreshObjectives();
                     return;
                 }
                 if (this._tableStage === 'unfolded_bare') {
                     if (!this.act1Tasks.tableclothPicked) {
-                        this.ui.showSubtitle('Сначала нужно взять праздничную скатерть в шкафу в прихожей.', 3400);
+                        this.ui.showSubtitle(tr('sub.table_need_cloth'), 3400);
                         return;
                     }
                     w.table.setTableclothProgress(1.0);
@@ -446,7 +456,7 @@ export class StoryDirector {
                         this.player.setHeldItem(null);
                     }
                     this.engine.audioSystem.playSpatialOneShot('pickup', w.table.go.transform.position, { volume: 0.55 });
-                    this.ui.showSubtitle('Скатерть постелена! Теперь можно ставить посуду и угощения.', 3800);
+                    this.ui.showSubtitle(tr('sub.table_cloth_done'), 3800);
                     this._refreshObjectives();
                     this._checkAct1IndoorCompletion();
                     return;
@@ -469,16 +479,16 @@ export class StoryDirector {
 
         w.table.wreckedGO.addComponent(Interactable, {
             maxDistance: 1.8,
-            promptText: '[E] Осмотреть разгромленный стол',
+            promptText: () => tr('prompt.inspect_table'),
             canInteract: () => this.act === 4 && !this.act4Inspected.table,
             onInteract: () => {
-                this._inspectPoint('table', 'Весь новогодний ужин... Насмарку.');
+                this._inspectPoint('table', tr('sub.act4_inspect_table'));
             }
         });
 
         w.sideboardCrystal.addComponent(Interactable, {
             maxDistance: 1.65,
-            promptText: '[E] Взять хрустальные бокалы',
+            promptText: () => tr('prompt.crystal_pickup'),
             canInteract: () => this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.crystal && !this.player.heldItem,
             onInteract: () => {
                 w.sideboardCrystal.transform.visible = false;
@@ -489,7 +499,7 @@ export class StoryDirector {
 
         w.pantryPickles.addComponent(Interactable, {
             maxDistance: 1.65,
-            promptText: '[E] Взять банку солений',
+            promptText: () => tr('prompt.pickles_pickup'),
             canInteract: () => this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.pickles && !this.player.heldItem,
             onInteract: () => {
                 w.pantryPickles.transform.visible = false;
@@ -500,7 +510,7 @@ export class StoryDirector {
 
         w.fridgeOlivier.addComponent(Interactable, {
             maxDistance: 1.65,
-            promptText: '[E] Взять салатник с оливье',
+            promptText: () => tr('prompt.olivier_pickup'),
             canInteract: () => this.act === 1 && this.act1Tasks.peephole && w.fridge.isOpen() && !this.act1Tasks.olivier && !this.player.heldItem,
             onInteract: () => {
                 w.fridgeOlivier.transform.visible = false;
@@ -511,7 +521,7 @@ export class StoryDirector {
 
         w.fridgeMeat.addComponent(Interactable, {
             maxDistance: 1.65,
-            promptText: '[E] Взять мясную нарезку',
+            promptText: () => tr('prompt.meat_pickup'),
             canInteract: () => this.act === 1 && this.act1Tasks.peephole && w.fridge.isOpen() && !this.act1Tasks.meat && !this.player.heldItem,
             onInteract: () => {
                 w.fridgeMeat.transform.visible = false;
@@ -522,37 +532,37 @@ export class StoryDirector {
 
         w.ovenChicken.addComponent(Interactable, {
             maxDistance: 1.65,
-            promptText: '[E] Забрать запечённую курицу',
+            promptText: () => tr('prompt.chicken_pickup'),
             canInteract: () => this.act === 1 && this.act1Tasks.peephole && w.stove.isOpen() && !this.act1Tasks.chicken && !this.player.heldItem,
             onInteract: () => {
                 w.ovenChicken.transform.visible = false;
                 this.player.setHeldItem('chicken');
                 this.engine.audioSystem.playSpatialOneShot('pickup', w.ovenChicken.transform.position);
-                this.ui.showSubtitle('Румяная, совсем не подгорела. Отлично.', 3500);
+                this.ui.showSubtitle(tr('sub.chicken_pickup'), 3500);
             }
         });
 
         w.champagneBottle.addComponent(Interactable, {
             maxDistance: 1.75,
-            promptText: '[E] Взять шампанское из снега',
+            promptText: () => tr('prompt.champagne_pickup'),
             canInteract: () => this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.champagne && !this.player.heldItem,
             onInteract: () => {
                 w.champagneBottle.transform.visible = false;
                 this.engine.audioSystem.playSpatialOneShot('pickup', w.champagneBottle.transform.position);
                 this.player.setHeldItem('champagne');
-                this.ui.showSubtitle('Холодное шампанское. Поставлю на стол.', 3400);
+                this.ui.showSubtitle(tr('sub.champagne_pickup'), 3400);
                 this._refreshObjectives();
             }
         });
 
         w.tvGameObject.addComponent(Interactable, {
             maxDistance: 1.75,
-            promptText: () => '[E] Посмотреть экстренный выпуск по ТВ',
+            promptText: () => tr('prompt.tv_news'),
             canInteract: () => this.act === 4 && !this.act4Inspected.tv,
             onInteract: () => {
                 const countOthers = ['door', 'table', 'tree'].filter(k => this.act4Inspected[k]).length;
                 if (countOthers < 3) {
-                    this.ui.showSubtitle('Сначала нужно осмотреть разгром в квартире...', 3000);
+                    this.ui.showSubtitle(tr('sub.act4_inspect_first'), 3000);
                     return;
                 }
                 this._triggerTVTwist();
@@ -576,7 +586,7 @@ export class StoryDirector {
                 canInteract: () => !this.player.isHidden && (this.act === 3 || (!hasSolidDoor && this.act === 1 && this.phase === 'act1')),
                 onInteract: () => {
                     if (this.act === 1) {
-                        this.ui.showSubtitle('Зачем мне сейчас прятаться? Надо готовиться к празднику.', 2800);
+                        this.ui.showSubtitle(tr('sub.hide_act1'), 2800);
                         return;
                     }
                     this.player.enterHidingSpot(spot);
@@ -588,10 +598,11 @@ export class StoryDirector {
             sw.go.addComponent(Interactable, {
                 maxDistance: 1.75,
                 promptText: () => {
-                    if (this.act === 4) return `[E] Щёлкнуть выключателем (${sw.label})`;
+                    const roomLabel = tr(sw.label);
+                    if (this.act === 4) return tr('prompt.switch_click', { label: roomLabel });
                     return sw.room.isOn()
-                        ? `[E] Выключить свет ${sw.label}`
-                        : `[E] Включить свет ${sw.label}`;
+                        ? tr('prompt.switch_off', { label: roomLabel })
+                        : tr('prompt.switch_on', { label: roomLabel });
                 },
                 canInteract: () => !this.player.isHidden && !this.player.isPeephole,
                 onInteract: () => {
@@ -600,12 +611,12 @@ export class StoryDirector {
                         if (sw.room.isOn()) {
                             sw.room.setOn(false);
                         } else {
-                            this.ui.showSubtitle('Нельзя сейчас включать свет — он сразу меня заметит!', 3000);
+                            this.ui.showSubtitle(tr('sub.switch_act3'), 3000);
                         }
                         return;
                     }
                     if (this.act === 4) {
-                        this.ui.showSubtitle('Пробки выбило... Свет не зажигается.', 3000);
+                        this.ui.showSubtitle(tr('sub.switch_act4'), 3000);
                         return;
                     }
                     sw.room.toggle();
@@ -616,33 +627,33 @@ export class StoryDirector {
         if (w.decorQuest) {
             w.decorQuest.box.addComponent(Interactable, {
                 maxDistance: 1.7,
-                promptText: '[E] Взять коробку с новогодней мишурой',
+                promptText: () => tr('prompt.decor_box_pickup'),
                 canInteract: () => this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.decorBox && !this.player.heldItem,
                 onInteract: () => {
                     this.act1Tasks.decorBox = true;
                     w.decorQuest.box.transform.visible = false;
                     this.player.setHeldItem('decorBox');
                     this.engine.audioSystem.playSpatialOneShot('pickup', w.decorQuest.box.transform.position, { volume: 0.45 });
-                    this.ui.showSubtitle('Украшу мишурой зал, кухню и прихожую!', 3800);
+                    this.ui.showSubtitle(tr('sub.decor_box_pickup'), 3800);
                     this._refreshObjectives();
                 }
             });
 
             const roomSpecs = [
-                { key: 'hall', taskKey: 'decorHall', prompt: '[Удерживать E] Украсить зал мишурой и снежинками', quote: 'Зал сразу стал наряднее.' },
-                { key: 'kitchen', taskKey: 'decorKitchen', prompt: '[Удерживать E] Украсить кухню мишурой к празднику', quote: 'На кухне теперь тоже чувствуется Новый год.' },
-                { key: 'hallway', taskKey: 'decorHallway', prompt: '[Удерживать E] Украсить прихожую мишурой и венком', quote: 'Прихожая украшена!' }
+                { key: 'hall', taskKey: 'decorHall', promptKey: 'prompt.decor_hall', quoteKey: 'sub.decor_hall_done' },
+                { key: 'kitchen', taskKey: 'decorKitchen', promptKey: 'prompt.decor_kitchen', quoteKey: 'sub.decor_kitchen_done' },
+                { key: 'hallway', taskKey: 'decorHallway', promptKey: 'prompt.decor_hallway', quoteKey: 'sub.decor_hallway_done' }
             ];
             for (const spec of roomSpecs) {
                 const spotGO = w.decorQuest.spots[spec.key];
                 spotGO.addComponent(Interactable, {
                     maxDistance: 1.85,
-                    promptText: () => this.act1Tasks.decorBox ? spec.prompt : '[E] Украсить комнату (нужна коробка с мишурой)',
+                    promptText: () => (this.act1Tasks.decorBox ? tr(spec.promptKey) : tr('prompt.decor_need_box')),
                     holdDuration: () => (this.act1Tasks.decorBox ? 1.8 : 0),
                     canInteract: () => this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks[spec.taskKey],
                     onInteract: () => {
                         if (!this.act1Tasks.decorBox) {
-                            this.ui.showSubtitle('Сначала нужно взять коробку с мишурой в прихожей.', 3200);
+                            this.ui.showSubtitle(tr('sub.decor_need_box'), 3200);
                             return;
                         }
                         this.act1Tasks[spec.taskKey] = true;
@@ -659,12 +670,12 @@ export class StoryDirector {
                             }
                             this.ui.showSubtitle(
                                 t.garland
-                                    ? 'Вся квартира и ёлка украшены к Новому году!'
-                                    : 'Комнаты украшены мишурой! Осталось нарядить ёлку в зале.',
+                                    ? tr('sub.decor_all_done')
+                                    : tr('sub.decor_rooms_done'),
                                 3600
                             );
                         } else {
-                            this.ui.showSubtitle(spec.quote, 3000);
+                            this.ui.showSubtitle(tr(spec.quoteKey), 3000);
                         }
                         this._refreshObjectives();
                         this._checkAct1IndoorCompletion();
@@ -686,14 +697,14 @@ export class StoryDirector {
 
     _itemName(key) {
         const map = {
-            crystal: 'хрусталь',
-            pickles: 'соленья',
-            olivier: 'оливье',
-            meat: 'нарезку',
-            chicken: 'курицу',
-            champagne: 'шампанское'
+            crystal: 'item.crystal',
+            pickles: 'item.pickles',
+            olivier: 'item.olivier',
+            meat: 'item.meat',
+            chicken: 'item.chicken',
+            champagne: 'item.champagne'
         };
-        return map[key] || key;
+        return map[key] ? tr(map[key]) : key;
     }
 
     _isIndoorChoresDone() {
@@ -717,9 +728,9 @@ export class StoryDirector {
         this._checkAct1HorrorEvents();
         if (this._isIndoorChoresDone()) {
             if (this.act1Tasks.champagne) {
-                this.ui.showSubtitle('Стол полностью накрыт и табуретка стоит! Можно присесть за стол к телевизору.', 4400);
+                this.ui.showSubtitle(tr('sub.chores_all_done'), 4400);
             } else {
-                this.ui.showSubtitle('Стол почти готов! Осталось принести шампанское с балкона.', 4200);
+                this.ui.showSubtitle(tr('sub.chores_need_champagne'), 4200);
             }
         }
     }
@@ -744,12 +755,12 @@ export class StoryDirector {
             setTimeout(() => {
                 if (this.act === 1 && w.crtTV) w.crtTV.setMode('ogonyok', false);
             }, 1400);
-            this.ui.showSubtitle('Что за помехи по телевизору?.. Наверное, ветер антенну качает.', 3600);
+            this.ui.showSubtitle(tr('sub.suspense_tv'), 3600);
         } else if (count >= 5 && !this._horrorEventsTriggered.has(2)) {
             this._horrorEventsTriggered.add(2);
             // Event 2: Metallic scratch & footsteps outside the front door in the stairwell
             a.playSpatialOneShot('knife_drag', new THREE.Vector3(3.08, 1.2, 4.65), { volume: 0.85, refDistance: 2.5 });
-            this.ui.showSubtitle('Показалось?.. Будто кто-то провёл железом по входной двери снаружи.', 4000);
+            this.ui.showSubtitle(tr('sub.suspense_scratch'), 4000);
         } else if (count >= 8 && !this._horrorEventsTriggered.has(3)) {
             this._horrorEventsTriggered.add(3);
             // Event 3: Lights flicker in apartment + distant thud from neighbor house
@@ -763,7 +774,7 @@ export class StoryDirector {
                     if (w.roomLights.hallway?.isOn()) w.lights.hallwayLight.intensity = 1.8;
                 }
             }, 650);
-            this.ui.showSubtitle('Свет моргнул... Напряжение в сети скачет перед полуночью.', 3600);
+            this.ui.showSubtitle(tr('sub.suspense_flicker'), 3600);
         } else if (count >= 10 && !this._horrorEventsTriggered.has(4)) {
             this._horrorEventsTriggered.add(4);
             // Event 4: Cold draft creak from the balcony
@@ -797,9 +808,9 @@ export class StoryDirector {
         this.player.lookPitchMax = 0.45;
 
         this.engine.audioSystem.playSpatialOneShot('footstep_parquet', stoolPos, { volume: 0.4 });
-        this.ui.showSubtitle('Уф, наконец-то присел. Всё на столе, телевизор поёт...', 3800);
-        this.ui.setObjectives('АКТ I: ЗА СТОЛОМ', [
-            { text: 'Налить бокал шампанского и проводить старый год [E]', done: false }
+        this.ui.showSubtitle(tr('sub.dinner_sit'), 3800);
+        this.ui.setObjectives(tr('obj.act1.dinner_title'), [
+            { text: tr('obj.act1.pour_drink'), done: false }
         ]);
     }
 
@@ -818,7 +829,7 @@ export class StoryDirector {
         this.stopAllAudioLoops();
 
         if (this.player.isHidden) this.player.exitHidingSpot();
-        if (this.player.isPeephole) this.player.exitPeephole();
+        if (this.player.isPeephole || this.player._peepholeAnim) this.player.exitPeephole(true);
         this.player.controlsLocked = false;
         this.player.allowLookWhileLocked = false;
         this.player.lookYawCenter = null;
@@ -1090,7 +1101,7 @@ export class StoryDirector {
         // Clean screen on wake: no objectives, no subtitles, no crosshair until standing up
         this.ui.showGameplayHUD(true);
         this.ui.setClockText('23:30');
-        this.ui.setWakePrompt('Пробел, чтобы встать', false);
+        this.ui.setWakePrompt(tr('ui.hud.wake_prompt'), false);
     }
 
     loadCheckpoint2345() {
@@ -1142,8 +1153,8 @@ export class StoryDirector {
             this.world.courtyardStroller.visible = true;
             this.world.courtyardStroller.position.set(-14.0, -6.5, -17.5);
         }
-        this.ui.setObjectives('АКТ II: СВИДЕТЕЛЬ', [{ text: 'Покурить на балконе [ЛКМ / F — затянуться]', done: false }]);
-        this.ui.showSubtitle('Морозный воздух... И вон сосед внизу куда-то пошёл по двору.', 4200);
+        this.ui.setObjectives(tr('obj.act2.title'), [{ text: tr('obj.act2.smoke'), done: false }]);
+        this.ui.showSubtitle(tr('sub.act2_balcony'), 4200);
     }
 
     _startAct2ZoomSequence() {
@@ -1177,12 +1188,12 @@ export class StoryDirector {
         a.setLoopVolume('wind', 0.38, 0.4);
 
         this.monster.startCourtyardSprint();
-        this.ui.setObjectives('АКТ III: ОХОТА', [
-            { text: 'Бегите в квартиру (стеклянная дверь балкона не защитит!)', done: false },
-            { text: 'Спрячьтесь в шкаф / кладовку / ванную / под диван', done: false },
-            { text: 'Закройте дверцу или шторку [E] и не шумите!', done: false }
+        this.ui.setObjectives(tr('obj.act3.title'), [
+            { text: tr('obj.act3.run_inside'), done: false },
+            { text: tr('obj.act3.hide'), done: false },
+            { text: tr('obj.act3.close_door'), done: false }
         ]);
-        this.ui.showSubtitle('ОН БЕЖИТ СЮДА! На балконе не спастись — надо прятаться в квартире!', 4500);
+        this.ui.showSubtitle(tr('sub.act3_run'), 4500);
         this._assaultStep = 0;
     }
 
@@ -1204,7 +1215,7 @@ export class StoryDirector {
         this.world.setApartmentDestroyedState();
         this.engine.renderer.setPostProcessParams({ panic: 0.0, aberration: 0.0012 });
 
-        this.ui.showSubtitle('Кажется... он ушёл вниз по лестнице. Что он сделал с квартирой?!', 4800);
+        this.ui.showSubtitle(tr('sub.act4_start'), 4800);
         this._refreshAct4Objectives();
     }
 
@@ -1228,9 +1239,9 @@ export class StoryDirector {
         }
 
         const tvPos = new THREE.Vector3(1.58, 0.94, -1.0);
-        this._tvLine1 = 'Внимание! Экстренный выпуск. В районе орудует маньяк в костюме Санта-Клауса.';
-        this._tvLine2 = 'На данный момент зафиксировано два нападения: в доме номер четырнадцать и по улице Ленина, двенадцать, квартира тридцать четыре.';
-        this._tvLine3 = 'По данным следствия, тела в обеих квартирах уже обнаружены...';
+        this._tvLine1 = tr('sub.tv_line1');
+        this._tvLine2 = tr('sub.tv_line2');
+        this._tvLine3 = tr('sub.tv_line3');
 
         // Starts pre-recorded retro-processed voiceover (with 0.75s emergency alert tones at start)
         a.speakTVBroadcast('', tvPos);
@@ -1263,7 +1274,7 @@ export class StoryDirector {
         a.setLoopVolume('wind', 0.24, 2.5);
         a.playSpatialOneShot('chimes', new THREE.Vector3(1.58, 0.94, -1.0), { bufferKey: 'chimes', volume: 0.8, checkOcclusion: false });
         a.playSpatialOneShot('fireworks', new THREE.Vector3(0, 4, -14), { bufferKey: 'fireworks', volume: 0.6, maxDistance: 60 });
-        this.ui.showSubtitle('С Новым Годом...', 4800);
+        this.ui.showSubtitle(tr('sub.midnight_hny'), 4800);
         this.ui.setObjectives('00:00', []);
     }
 
@@ -1277,87 +1288,87 @@ export class StoryDirector {
 
         // Step 1: Wash face in bathroom
         if (!t.wash) {
-            this.ui.setObjectives('АКТ I: ПРОБУЖДЕНИЕ', [
-                { text: 'Умыться холодной водой в ванной', done: false }
+            this.ui.setObjectives(tr('obj.act1.wake_title'), [
+                { text: tr('obj.act1.wash'), done: false }
             ]);
             return;
         }
 
         // Wait for neighbor door knock right after washing
         if (!t.knockTriggered) {
-            this.ui.setObjectives('АКТ I: ПРОБУЖДЕНИЕ', []);
+            this.ui.setObjectives(tr('obj.act1.wake_title'), []);
             return;
         }
 
         // Step 2: Check front door peephole after loud knock
         if (!t.peephole) {
-            this.ui.setObjectives('АКТ I: КТО ТАМ?', [
-                { text: 'Кто-то стучал в дверь — проверить глазок входной двери', done: false }
+            this.ui.setObjectives(tr('obj.act1.who_title'), [
+                { text: tr('obj.act1.peephole'), done: false }
             ]);
             return;
         }
 
         // Step 3: Main New Year preparation chores
         const decorDoneCount = (t.decorHall ? 1 : 0) + (t.decorKitchen ? 1 : 0) + (t.decorHallway ? 1 : 0);
-        let tableTaskText = 'Принести стол-книжку с балкона в зал';
+        let tableTaskText = tr('obj.act1.table_balcony');
         if (this._tableStage === 'carrying') {
-            tableTaskText = 'Поставить стол в подсвеченную зону перед диваном';
+            tableTaskText = tr('obj.act1.table_place');
         } else if (this._tableStage === 'placed_folded') {
-            tableTaskText = 'Разложить первую половину стола (удерживать [E] 4 сек)';
+            tableTaskText = tr('obj.act1.table_unfold');
         } else if (this._tableStage === 'wing1_open') {
-            tableTaskText = 'Разложить вторую половину стола (удерживать [E] 4 сек)';
+            tableTaskText = tr('obj.act1.table_unfold');
         } else if (this._tableStage === 'unfolded_bare') {
             tableTaskText = t.tableclothPicked
-                ? 'Постелить праздничную скатерть на разложенный стол [E]'
-                : 'Взять скатерть в шкафу в прихожей и постелить на стол';
+                ? tr('obj.act1.table_spread_cloth')
+                : tr('obj.act1.table_get_cloth');
         }
 
         const list = [
             { text: tableTaskText, done: !!t.table },
             {
                 text: t.stoolPicked
-                    ? 'Поставить табуретку в подсвеченную зону у стола'
-                    : 'Принести табуретку с кухни в зал к столу',
+                    ? tr('obj.act1.stool_place')
+                    : tr('obj.act1.stool_get'),
                 done: !!t.stool
             },
             {
                 text: t.decorBox
-                    ? 'Нарядить ёлку игрушками и включить гирлянду'
-                    : 'Взять коробку с игрушками в прихожей и нарядить ёлку',
+                    ? tr('obj.act1.tree_decorate')
+                    : tr('obj.act1.tree_get_box'),
                 done: !!t.garland
             },
             {
                 text: t.decorBox
-                    ? `Украсить квартиру мишурой в подсвеченных местах (${decorDoneCount}/3)`
-                    : `Взять коробку с мишурой в прихожей и украсить квартиру (${decorDoneCount}/3)`,
+                    ? tr('obj.act1.decor_places', { done: decorDoneCount })
+                    : tr('obj.act1.decor_get_box', { done: decorDoneCount }),
                 done: !!t.decorate
             },
-            { text: 'Принести хрустальный сервиз из серванта на стол', done: !!t.crystal },
-            { text: 'Принести банку солений из кладовки на стол', done: !!t.pickles },
-            { text: 'Принести оливье и мясную нарезку из холодильника', done: !!(t.olivier && t.meat) },
-            { text: 'Достать запечённую курицу из духовки на стол', done: !!t.chicken }
+            { text: tr('obj.act1.crystal'), done: !!t.crystal },
+            { text: tr('obj.act1.pickles'), done: !!t.pickles },
+            { text: tr('obj.act1.fridge'), done: !!(t.olivier && t.meat) },
+            { text: tr('obj.act1.chicken'), done: !!t.chicken }
         ];
 
         if (this._isIndoorChoresDone()) {
             if (!t.champagne) {
-                list.push({ text: 'Принести шампанское с балкона на стол', done: false });
+                list.push({ text: tr('obj.act1.champagne'), done: false });
             } else {
-                list.push({ text: 'Сесть за праздничный стол на табуретку [E]', done: !!(t.watchTv && t.pourDrink) });
+                list.push({ text: tr('obj.act1.sit_table'), done: !!(t.watchTv && t.pourDrink) });
                 if (t.watchTv && t.pourDrink) {
-                    list.push({ text: 'Выйти на балкон — перекурить', done: false });
+                    list.push({ text: tr('obj.act1.go_smoke'), done: false });
                 }
             }
         }
-        this.ui.setObjectives('АКТ I: ПОДГОТОВКА К НОВОМУ ГОДУ', list);
+        this.ui.setObjectives(tr('obj.act1.prep_title'), list);
     }
 
     _refreshAct4Objectives() {
         const d = this.act4Inspected;
-        this.ui.setObjectives('АКТ IV: ПОСЛЕДСТВИЯ', [
-            { text: 'Осмотреть выбитую дверь в прихожей', done: d.door },
-            { text: 'Осмотреть перевёрнутый стол в зале', done: d.table },
-            { text: 'Осмотреть поваленную ёлку', done: d.tree },
-            { text: 'Подойти к телевизору (Экстренный выпуск)', done: d.tv }
+        this.ui.setObjectives(tr('obj.act4.title'), [
+            { text: tr('obj.act4.door'), done: d.door },
+            { text: tr('obj.act4.table'), done: d.table },
+            { text: tr('obj.act4.tree'), done: d.tree },
+            { text: tr('obj.act4.tv'), done: d.tv }
         ]);
     }
 
@@ -1401,12 +1412,12 @@ export class StoryDirector {
                 this.ui.showEnding2();
             } else {
                 const reasonMsg = this._jumpscareReason === 'noise'
-                    ? 'Существо услышало ваш шум!'
+                    ? tr('ui.death.reason.noise')
                     : (this._jumpscareReason === 'door_open'
-                        ? 'Вы не закрыли за собой дверцу / шторку укрытия!'
+                        ? tr('ui.death.reason.door_open')
                         : (this._jumpscareReason === 'balcony_broken'
-                            ? 'Хлипкое стекло балконной двери не смогло остановить маньяка!'
-                            : 'Он увидел вас!'));
+                            ? tr('ui.death.reason.balcony_broken')
+                            : tr('ui.death.reason.spotted')));
                 this.ui.showDeathScreen(reasonMsg);
             }
         }
@@ -1518,7 +1529,7 @@ export class StoryDirector {
             this.engine.renderer.setPostProcessParams({ fade, wakeVignette: wakeVig });
 
             if (t >= 2.1) {
-                this.ui.setWakePrompt('Пробел, чтобы встать', true);
+                this.ui.setWakePrompt(tr('ui.hud.wake_prompt'), true);
             }
             if (t >= 1.5 && input.wasKeyJustPressed('Space')) {
                 this.phase = 'act1_standing_up';
@@ -1578,17 +1589,17 @@ export class StoryDirector {
                 this.ui.setCleanIntroMode(false);
                 this.phase = 'act1_look_around';
                 this.phaseTimer = 0;
-                this.ui.showSubtitle('Чёрт... Задремал перед телевизором. Уже половина двенадцатого...', 4800);
+                this.ui.showSubtitle(tr('sub.wake_1'), 4800);
             }
             return;
         }
 
-        // 3. Look-around timer (6.5s) before displaying the first objective "Умыться в ванной"
+        // 3. Look-around timer (6.5s) before displaying the first objective
         if (this.phase === 'act1_look_around') {
             if (this.phaseTimer >= 6.5) {
                 this.phase = 'act1';
                 this.phaseTimer = 0;
-                this.ui.showSubtitle('Голова тяжёлая со сна. Надо сначала пойти в ванную и умыться холодной водой.', 4400);
+                this.ui.showSubtitle(tr('sub.wake_2'), 4400);
                 this._refreshObjectives();
             }
             return;
@@ -1603,9 +1614,9 @@ export class StoryDirector {
                     this.act1Tasks.pourDrink = true;
                     this.player.setHeldItem('crystal');
                     this.engine.audioSystem.playSpatialOneShot('pickup', this.player.transform.position, { volume: 0.5 });
-                    this.ui.showSubtitle('С наступающим Новым годом... Хоть бы он был спокойнее уходящего.', 4200);
-                    this.ui.setObjectives('АКТ I: ЗА СТОЛОМ', [
-                        { text: 'Послушать новогодний эфир по телевизору', done: false }
+                    this.ui.showSubtitle(tr('sub.dinner_toast'), 4200);
+                    this.ui.setObjectives(tr('obj.act1.dinner_title'), [
+                        { text: tr('obj.act1.listen_tv'), done: false }
                     ]);
                 }
             } else if (this._tableDinnerStep === 1) {
@@ -1621,15 +1632,15 @@ export class StoryDirector {
                     this._dinnerTvQuoteShown = true;
                     this.player.setHeldItem(null);
                     this.engine.audioSystem.playSpatialOneShot('pickup', this.world.table.hallPos, { volume: 0.35 });
-                    this.ui.showSubtitle('«Уважаемые телезрители! До боя кремлёвских курантов остаётся совсем немного времени...»', 5000);
+                    this.ui.showSubtitle(tr('sub.dinner_tv_speech'), 5000);
                 }
                 if (this._tableDinnerTimer >= 9.4 && !this._dinnerSmokeQuoteShown) {
                     this._dinnerSmokeQuoteShown = true;
                     this.act1Tasks.watchTv = true;
-                    this.ui.showSubtitle('Хорошо посидел. Пойду выйду на балкон — перекурю перед курантами.', 4200);
-                    this.ui.setWakePrompt('Пробел, чтобы встать из-за стола', true);
-                    this.ui.setObjectives('АКТ I: ПОДГОТОВКА К НОВОМУ ГОДУ', [
-                        { text: 'Встать из-за стола [Пробел] и выйти на балкон перекурить', done: false }
+                    this.ui.showSubtitle(tr('sub.dinner_done'), 4200);
+                    this.ui.setWakePrompt(tr('ui.hud.wake_table_prompt'), true);
+                    this.ui.setObjectives(tr('obj.act1.prep_title'), [
+                        { text: tr('obj.act1.stand_smoke'), done: false }
                     ]);
                 }
                 if (this._tableDinnerTimer >= 9.4 && (input.wasKeyJustPressed('Space') || input.wasKeyJustPressed('KeyE') || input.wasKeyJustPressed('KeyQ'))) {
@@ -1666,14 +1677,14 @@ export class StoryDirector {
                     bufferKey: 'door_knock',
                     volume: 1.2
                 });
-                this.ui.showSubtitle('В дверь кто-то громко стучит!.. Кого там принесло на ночь глядя?', 4200);
+                this.ui.showSubtitle(tr('sub.door_knock'), 4200);
                 this._refreshObjectives();
             }
         } else if (this.act1Tasks.knockTriggered && !this._knockTurnedToRun && !this.act1Tasks.peephole) {
             const focusedGO = this.engine.interactionSystem?.currentTarget?.gameObject;
             if (focusedGO && focusedGO === this.world.frontDoor?.go) {
                 this._stopDoorKnockAndPlayStairRun();
-                this.ui.showSubtitle('Стук резко оборвался — за дверью кто-то бросился бежать вниз по лестнице!', 3800);
+                this.ui.showSubtitle(tr('sub.door_run'), 3800);
             } else {
                 this._knockRepeatTimer = (this._knockRepeatTimer || 0) + deltaTime;
                 if (this._knockRepeatTimer >= 2.2) {
@@ -1746,19 +1757,23 @@ export class StoryDirector {
         }
         if (this.phase === 'act1_sitting_table') {
             if (this._tableDinnerStep === 0) {
-                this.ui.setPrompt('Налить бокал шампанского и выпить [E]', 0);
+                this.ui.setPrompt(tr('prompt.pour_champagne'), 0);
             } else {
                 this.ui.setPrompt('', 0);
             }
             return;
         }
+        if (this.player._peepholeAnim) {
+            this.ui.setPrompt('', 0);
+            return;
+        }
         if (this.player.isPeephole) {
-            this.ui.setPrompt('Отойти от глазка [E / Q]', 0);
+            this.ui.setPrompt(tr('prompt.peephole_exit'), 0);
         } else if (this.player.isHidden && this.player.currentHidingSpot) {
             const spot = this.player.currentHidingSpot;
             this.ui.setPrompt(spot.getDoorPrompt(), 0);
         } else if (this.act === 2 && this.phase === 'act2_smoke' && this.player.cigaretteActive && !this.engine.interactionSystem.currentPrompt) {
-            this.ui.setPrompt('Затянуться сигаретой [ЛКМ / F]', 0);
+            this.ui.setPrompt(tr('prompt.smoke_puff'), 0);
         } else {
             const basePrompt = this.engine.interactionSystem.currentPrompt;
             const holdRatio = this.engine.interactionSystem.getHoldRatio?.() || 0;
@@ -1789,8 +1804,8 @@ export class StoryDirector {
                 this.world.lights.neighborLight.intensity = 5.2;
                 if (this.world.neighborWindowCanvas) this.world.neighborWindowCanvas.setMode('lit_idle');
                 this.world.neighborScene.gazeTrigger.enabled = true;
-                this.ui.showSubtitle('В доме напротив на третьем этаже загорелся свет...', 3800);
-                this.ui.setObjectives('АКТ II: СВИДЕТЕЛЬ', [{ text: 'Посмотреть на окно дома напротив', done: false }]);
+                this.ui.showSubtitle(tr('sub.act2_light_on'), 3800);
+                this.ui.setObjectives(tr('obj.act2.title'), [{ text: tr('obj.act2.look_window'), done: false }]);
             }
         } else if (this.phase === 'act2_window_lit' && this.phaseTimer > 4.8) {
             this._startAct2ZoomSequence();
@@ -1805,7 +1820,7 @@ export class StoryDirector {
             if (this.phaseTimer > 2.65 && this.monster.state !== 'window_stare') {
                 this.monster.triggerWindowStare();
                 this.engine.renderer.triggerGlitch(0.85);
-                this.ui.showSubtitle('Он... он меня увидел.', 3200);
+                this.ui.showSubtitle(tr('sub.act2_seen'), 3200);
             }
             if (this.phaseTimer > 4.9) {
                 this._screamPlayed = false;
@@ -1843,7 +1858,7 @@ export class StoryDirector {
             if (this._assaultStep === 0) {
                 this._assaultStep = 1;
                 this.phaseTimer = 0;
-                this.ui.showSubtitle('Тяжёлые шаги бегут вверх по лестнице подъезда!', 3500);
+                this.ui.showSubtitle(tr('sub.act3_stairs'), 3500);
             }
             if (this._assaultStep === 1) {
                 const stepInterval = 0.28;
@@ -1858,7 +1873,7 @@ export class StoryDirector {
                     this._assaultStep = 2;
                     this.phaseTimer = 0;
                     a.playSpatialOneShot('sniff', new THREE.Vector3(3.075, 1.3, 4.7), { volume: 1.15, refDistance: 2.8 });
-                    this.ui.showSubtitle('Он стоит прямо за входной дверью... Принюхивается.', 3400);
+                    this.ui.showSubtitle(tr('sub.act3_sniff'), 3400);
                 }
             } else if (this._assaultStep === 2 && this.phaseTimer > 2.4) {
                 this._assaultStep = 3;
@@ -1867,7 +1882,7 @@ export class StoryDirector {
                     bufferKey: 'doorbell',
                     volume: 1.05
                 });
-                this.ui.showSubtitle('Дзинь-дзинь-дзинь... Он давит на звонок!', 2800);
+                this.ui.showSubtitle(tr('sub.act3_doorbell'), 2800);
             } else if (this._assaultStep === 3 && this.phaseTimer > 2.6) {
                 this._assaultStep = 4;
                 this.phaseTimer = 0;
@@ -1906,8 +1921,8 @@ export class StoryDirector {
                 a.startSpatialLoop('tv_audio', 'tv_static', new THREE.Vector3(1.58, 0.94, -1.0), { volume: 0.24, tvFilter: true });
 
                 this.monster.enterApartmentPatrol();
-                this.ui.setObjectives('АКТ III: ОХОТА', [
-                    { text: 'Не издавайте ни звука и держите дверцу укрытия закрытой!', done: false }
+                this.ui.setObjectives(tr('obj.act3.title'), [
+                    { text: tr('obj.act3.stay_quiet'), done: false }
                 ]);
             }
         }
@@ -1922,10 +1937,10 @@ export class StoryDirector {
             if (!this._endingTriggered && this.monster.state === 'patrol' && p.z < -3.65 && !this.world.doors.balcony.isOpen()) {
                 if (this.monster._balconyState === 'sniffing' && !this._balconySniffQuote) {
                     this._balconySniffQuote = true;
-                    this.ui.showSubtitle('Он у балконной двери... Видит меня сквозь стекло!', 2600);
+                    this.ui.showSubtitle(tr('sub.act3_balcony_seen'), 2600);
                 } else if (this.monster._balconyState === 'pounding' && !this._balconyPoundQuote) {
                     this._balconyPoundQuote = true;
-                    this.ui.showSubtitle('Он бьёт по стеклу балконной двери! Оно сейчас разлетится!', 2800);
+                    this.ui.showSubtitle(tr('sub.act3_balcony_pound'), 2800);
                 }
             }
 
@@ -1947,7 +1962,7 @@ export class StoryDirector {
             a.setLoopVolume('horror_darkness', 0.04, 1.5);
             a.setLoopVolume('heartbeat', 0.0, 1.0);
             this.engine.renderer.setPostProcessParams({ panic: 0.05, aberration: 0.0012 });
-            this.ui.showSubtitle('Шаги стихли в прихожей... Подождать ещё или выходить?', 4200);
+            this.ui.showSubtitle(tr('sub.act3_trap_quiet'), 4200);
         } else if (this.monster.state !== 'trap') {
             this._trapCueShown = false;
         }
@@ -1965,7 +1980,7 @@ export class StoryDirector {
         this._escapeStartPos = this.player.transform.position.clone();
         this._escapeLookTarget = new THREE.Vector3(2.52, -0.5, 7.2);
         this.ui.updateStealthHUD(false, 0, 1, false, false);
-        this.ui.setObjectives('ПОБЕГ', []);
+        this.ui.setObjectives(tr('obj.escape.title'), []);
         this.player.controlsLocked = true;
         this.player.allowLookWhileLocked = false;
         this.player.setHeldItem(null);
@@ -1980,7 +1995,7 @@ export class StoryDirector {
         const a = this.engine.audioSystem;
         a.playSpatialOneShot('monster_roar', new THREE.Vector3(1.5, 1.2, 0.5), { volume: 0.85, maxDistance: 30 });
         a.playSpatialOneShot('footstep_concrete', new THREE.Vector3(3.1, 0, 5.0), { volume: 0.9 });
-        this.ui.showSubtitle('Вниз по лестнице! Быстрее на улицу!', 3400);
+        this.ui.showSubtitle(tr('sub.escape_stairs'), 3400);
     }
 
     _updateEscapeRoadCinematic(deltaTime) {
@@ -2037,7 +2052,7 @@ export class StoryDirector {
             a.playSpatialOneShot('door_crash', new THREE.Vector3(3.1, -5.5, -4.2), { volume: 0.85 });
             a.playSpatialOneShot('chimes', new THREE.Vector3(0, 4, -14), { bufferKey: 'chimes', volume: 0.65, checkOcclusion: false });
             a.playSpatialOneShot('fireworks', new THREE.Vector3(-8, 4, -16), { bufferKey: 'fireworks', volume: 0.8, maxDistance: 80 });
-            this.ui.showSubtitle('Прочь со двора! Бежать не оглядываясь!', 4000);
+            this.ui.showSubtitle(tr('sub.escape_yard'), 4000);
         }
 
         const ct = t - 3.1;
@@ -2117,13 +2132,13 @@ export class StoryDirector {
             // line1: 0.75s..6.93s | line2: 7.28s..15.40s | line3: 15.80s..19.43s
             if (this._twistStep === 0 && t >= 0.72) {
                 this._twistStep = 1;
-                this.ui.showSubtitle(`[ДИКТОР ТВ]: «${this._tvLine1}»`, 6300, 'tv');
+                this.ui.showSubtitle(tr('sub.tv_anchor_format', { line: this._tvLine1 }), 6300, 'tv');
             } else if (this._twistStep === 1 && t >= 7.25) {
                 this._twistStep = 2;
-                this.ui.showSubtitle(`[ДИКТОР ТВ]: «${this._tvLine2}»`, 8200, 'tv');
+                this.ui.showSubtitle(tr('sub.tv_anchor_format', { line: this._tvLine2 }), 8200, 'tv');
             } else if (this._twistStep === 2 && t >= 15.75) {
                 this._twistStep = 3;
-                this.ui.showSubtitle(`[ДИКТОР ТВ]: «${this._tvLine3}»`, 4800, 'tv');
+                this.ui.showSubtitle(tr('sub.tv_anchor_format', { line: this._tvLine3 }), 4800, 'tv');
 
                 this.player.controlsLocked = true;
                 this.player.allowLookWhileLocked = false;

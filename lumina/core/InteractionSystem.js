@@ -4,7 +4,7 @@ import { Component } from './Component.js';
 export class Interactable extends Component {
     constructor(gameObject, options = {}) {
         super(gameObject);
-        this.promptText = options.promptText || '[E] Взаимодействовать';
+        this.promptText = options.promptText || '[E]';
         this.maxDistance = options.maxDistance !== undefined ? Math.min(options.maxDistance, 1.85) : 1.65;
         this.enabled = options.enabled !== undefined ? options.enabled : true;
         this.canInteract = options.canInteract || (() => true);

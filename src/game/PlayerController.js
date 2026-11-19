@@ -46,6 +46,7 @@ export class PlayerController extends Component {
         this._cameraRig = new THREE.Object3D();
         this._handAnchor = new THREE.Object3D();
         this._handMeshes = {};
+        this._fpOnlyArms = [];
         this._handYaw = 0;
         this._handPitch = 0;
         this._swayX = 0;
@@ -103,7 +104,19 @@ export class PlayerController extends Component {
         const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.028, 0.045), skinMat);
         thumb.position.set(isLeft ? 0.036 : -0.036, 0.028, -0.035);
         armGroup.add(forearm, cuff, hand, thumb);
+        this._fpOnlyArms.push(armGroup);
         return armGroup;
+    }
+
+    setMirrorRenderMode(isMirrorPass) {
+        if (this._mirrorBodyGroup) {
+            this._mirrorBodyGroup.visible = !!isMirrorPass;
+        }
+        if (this._fpOnlyArms) {
+            for (const arm of this._fpOnlyArms) {
+                arm.visible = !isMirrorPass;
+            }
+        }
     }
 
     _attachOneHand(propGroup, offsetX = 0.04, offsetY = -0.05, offsetZ = 0.06) {
@@ -383,6 +396,13 @@ export class PlayerController extends Component {
         this._treeDecorHandsGroup = treeHandsGroup;
         this._treeDecorLeftHand = tLeft;
         this._treeDecorRightHand = tRight;
+
+        // 12b. First-person right hand rig for opening/closing the front door peephole shutter
+        const peepHand = this._makeSleeveArm(false);
+        peepHand.visible = false;
+        this.camera.add(peepHand);
+        this._peepholeHand = peepHand;
+        this._peepholeAnim = null;
 
         // 13. Full Articulated 3D Player Reflection Avatar (visible in real-time planar mirrors)
         const mirrorBody = new THREE.Group();
@@ -993,40 +1013,281 @@ export class PlayerController extends Component {
     }
 
     enterPeephole() {
-        if (this.isHidden) return;
+        if (this.isHidden || this.isPeephole || this._peepholeAnim) return;
         this.isPeephole = true;
+        this.controlsLocked = true;
+        this.allowLookWhileLocked = false;
         this._handAnchor.visible = false;
         this._exitSafePos.copy(this.transform.position);
+        this._exitSafePos.z = Math.min(this._exitSafePos.z, 4.10);
+
+        const approachPos = new THREE.Vector3(3.075, 0.0, 4.02);
         this.peepholePos = new THREE.Vector3(3.075, 0.0, 4.45);
-        this.yaw = Math.PI;
-        this.pitch = -0.08;
+
+        // Shortest-angle target yaw facing the front door (+Z => Math.PI)
+        let targetYaw = Math.PI;
+        let diff = targetYaw - this.yaw;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        targetYaw = this.yaw + diff;
+
         if (this.rb) {
             this.rb.useGravity = false;
             this.rb.velocity.set(0, 0, 0);
         }
         if (this.collider) this.collider.enabled = false;
-        this.transform.position.copy(this.peepholePos);
-        this._cameraRig.position.set(0, 1.50, 0);
-        this.engine.renderer.setPostProcessParams({ peephole: 1.0 });
-        this.engine.renderer.setFOV(95);
+
+        if (this._peepholeHand) {
+            this._peepholeHand.visible = true;
+            this._peepholeHand.position.set(0.24, -0.38, -0.26);
+            this._peepholeHand.rotation.set(-0.2, -0.25, -0.15);
+        }
+
+        this._peepholeAnim = {
+            mode: 'enter',
+            timer: 0,
+            duration: 1.45,
+            startPos: this.transform.position.clone(),
+            approachPos,
+            peepPos: this.peepholePos.clone(),
+            startYaw: this.yaw,
+            targetYaw,
+            startPitch: this.pitch,
+            startEyeHeight: this._cameraRig.position.y,
+            clickPlayed: false,
+            stepPlayed: false
+        };
     }
 
-    exitPeephole() {
-        if (!this.isPeephole) return;
-        this.isPeephole = false;
-        this._handAnchor.visible = true;
-        this.transform.position.copy(this._exitSafePos);
-        if (this.rb) {
-            this.rb.position.copy(this._exitSafePos);
-            this.rb.useGravity = true;
-            this.rb.velocity.set(0, 0, 0);
+    exitPeephole(instant = false) {
+        if (!this.isPeephole && !this._peepholeAnim) return;
+        const flap = this.world?.frontDoor?.peepFlapPivot;
+        if (instant) {
+            this._peepholeAnim = null;
+            this.isPeephole = false;
+            this.controlsLocked = false;
+            this.allowLookWhileLocked = false;
+            this._handAnchor.visible = true;
+            if (this._peepholeHand) this._peepholeHand.visible = false;
+            if (flap) flap.rotation.z = 0;
+            this.transform.position.copy(this._exitSafePos);
+            if (this.rb) {
+                this.rb.position.copy(this._exitSafePos);
+                this.rb.useGravity = true;
+                this.rb.velocity.set(0, 0, 0);
+            }
+            if (this.collider) this.collider.enabled = true;
+            this._cameraRig.position.set(0, this.eyeHeight, 0);
+            this.engine.renderer.setPostProcessParams({ peephole: 0.0 });
+            this.engine.renderer.setFOV(75);
+            return;
         }
-        this.yaw = 0;
-        this.pitch = 0;
-        if (this.collider) this.collider.enabled = true;
-        this._cameraRig.position.set(0, this.eyeHeight, 0);
-        this.engine.renderer.setPostProcessParams({ peephole: 0.0 });
-        this.engine.renderer.setFOV(75);
+        if (this._peepholeAnim) return;
+
+        // Smooth animated return to the original standing pose WITHOUT rotating 180 degrees
+        this.controlsLocked = true;
+        this.allowLookWhileLocked = false;
+        const approachPos = new THREE.Vector3(3.075, 0.0, 4.02);
+        if (this._peepholeHand) {
+            this._peepholeHand.visible = true;
+            this._peepholeHand.position.set(0.24, -0.38, -0.26);
+            this._peepholeHand.rotation.set(-0.2, -0.25, -0.15);
+        }
+        this._peepholeAnim = {
+            mode: 'exit',
+            timer: 0,
+            duration: 0.95,
+            startPos: this.transform.position.clone(),
+            approachPos,
+            endPos: this._exitSafePos.clone(),
+            startYaw: this.yaw,
+            targetYaw: this.yaw, // Stay facing the door (no 180-degree spin!)
+            startPitch: this.pitch,
+            targetPitch: -0.02,
+            startEyeHeight: this._cameraRig.position.y,
+            clickPlayed: false,
+            stepPlayed: false
+        };
+    }
+
+    _updatePeepholeAnimation(deltaTime) {
+        const anim = this._peepholeAnim;
+        if (!anim) return;
+        anim.timer += deltaTime;
+        const t = anim.timer;
+        const smooth = (u) => {
+            const c = Math.max(0, Math.min(1, u));
+            return c * c * (3 - 2 * c);
+        };
+        const flap = this.world?.frontDoor?.peepFlapPivot;
+        const hand = this._peepholeHand;
+
+        if (anim.mode === 'enter') {
+            // Phase 1 (0.00..0.45s): Approach the door & raise right hand toward the peephole shutter
+            if (t < 0.45) {
+                const e = smooth(t / 0.45);
+                this.transform.position.lerpVectors(anim.startPos, anim.approachPos, e);
+                this.yaw = THREE.MathUtils.lerp(anim.startYaw, anim.targetYaw, e);
+                this.pitch = THREE.MathUtils.lerp(anim.startPitch, -0.02, e);
+                this._cameraRig.position.y = THREE.MathUtils.lerp(anim.startEyeHeight, 1.495, e) + Math.sin(e * Math.PI) * 0.018;
+                if (!anim.stepPlayed && e > 0.35) {
+                    anim.stepPlayed = true;
+                    this.engine.audioSystem.playSpatialOneShot('footstep_linoleum', this.transform.position, { volume: 0.32 });
+                }
+                if (hand) {
+                    hand.position.set(
+                        THREE.MathUtils.lerp(0.24, 0.045, e),
+                        THREE.MathUtils.lerp(-0.38, -0.045, e),
+                        THREE.MathUtils.lerp(-0.26, -0.37, e)
+                    );
+                    hand.rotation.set(
+                        THREE.MathUtils.lerp(-0.2, 0.22, e),
+                        THREE.MathUtils.lerp(-0.25, -0.12, e),
+                        THREE.MathUtils.lerp(-0.15, 0.25, e)
+                    );
+                }
+            }
+            // Phase 2 (0.45..0.90s): Hand slides the brass peephole shutter open, then lowers out of view
+            else if (t < 0.90) {
+                const u = (t - 0.45) / 0.45;
+                this.transform.position.copy(anim.approachPos);
+                this.yaw = anim.targetYaw;
+                this.pitch = -0.02;
+                this._cameraRig.position.y = 1.495;
+
+                const slideE = smooth(Math.min(1, u / 0.60));
+                if (flap) flap.rotation.z = THREE.MathUtils.lerp(0, 1.65, slideE);
+                if (!anim.clickPlayed && u > 0.12) {
+                    anim.clickPlayed = true;
+                    this.engine.audioSystem.playSpatialOneShot('pickup', anim.peepPos, { volume: 0.38 });
+                }
+
+                if (hand) {
+                    if (u < 0.60) {
+                        hand.position.set(
+                            THREE.MathUtils.lerp(0.045, 0.16, slideE),
+                            THREE.MathUtils.lerp(-0.045, 0.01, slideE),
+                            -0.37
+                        );
+                        hand.rotation.set(0.22, THREE.MathUtils.lerp(-0.12, -0.38, slideE), THREE.MathUtils.lerp(0.25, -0.25, slideE));
+                    } else {
+                        const downE = smooth((u - 0.60) / 0.40);
+                        hand.position.set(
+                            THREE.MathUtils.lerp(0.16, 0.26, downE),
+                            THREE.MathUtils.lerp(0.01, -0.42, downE),
+                            THREE.MathUtils.lerp(-0.37, -0.24, downE)
+                        );
+                        hand.rotation.set(THREE.MathUtils.lerp(0.22, -0.25, downE), -0.38, -0.25);
+                    }
+                }
+            }
+            // Phase 3 (0.90..1.45s): Lean eye forward right into the peephole lens
+            else {
+                const e = smooth((t - 0.90) / 0.55);
+                if (hand) hand.visible = false;
+                if (flap) flap.rotation.z = 1.65;
+                this.transform.position.lerpVectors(anim.approachPos, anim.peepPos, e);
+                this.yaw = anim.targetYaw;
+                this.pitch = THREE.MathUtils.lerp(-0.02, -0.08, e);
+                this._cameraRig.position.y = 1.495;
+                this.engine.renderer.setPostProcessParams({ peephole: e });
+                this.engine.renderer.setFOV(THREE.MathUtils.lerp(75, 95, e));
+            }
+
+            if (t >= anim.duration) {
+                this.transform.position.copy(anim.peepPos);
+                this.yaw = anim.targetYaw;
+                this.pitch = -0.08;
+                this._cameraRig.position.set(0, 1.495, 0);
+                this.engine.renderer.setPostProcessParams({ peephole: 1.0 });
+                this.engine.renderer.setFOV(95);
+                if (hand) hand.visible = false;
+                if (flap) flap.rotation.z = 1.65;
+                this.controlsLocked = false;
+                this._peepholeAnim = null;
+            }
+        } else if (anim.mode === 'exit') {
+            // Phase 1 (0.00..0.45s): Pull eye back from the peephole & close shutter with hand
+            if (t < 0.45) {
+                const e = smooth(t / 0.45);
+                this.transform.position.lerpVectors(anim.startPos, anim.approachPos, e);
+                this.yaw = anim.targetYaw;
+                this.pitch = THREE.MathUtils.lerp(anim.startPitch, anim.targetPitch, e);
+                this._cameraRig.position.y = THREE.MathUtils.lerp(anim.startEyeHeight, 1.50, e);
+                this.engine.renderer.setPostProcessParams({ peephole: 1.0 - e });
+                this.engine.renderer.setFOV(THREE.MathUtils.lerp(95, 75, e));
+                if (hand) {
+                    const riseE = smooth(Math.max(0, (e - 0.30) / 0.70));
+                    hand.visible = e > 0.25;
+                    hand.position.set(
+                        THREE.MathUtils.lerp(0.24, 0.14, riseE),
+                        THREE.MathUtils.lerp(-0.38, -0.02, riseE),
+                        THREE.MathUtils.lerp(-0.26, -0.37, riseE)
+                    );
+                    hand.rotation.set(0.18, -0.32, -0.15);
+                }
+            }
+            // Phase 2 (0.45..0.95s): Close the peephole shutter & step smoothly back to original pose (still facing the door)
+            else {
+                const u = (t - 0.45) / 0.50;
+                const e = smooth(u);
+                const closeE = smooth(Math.min(1, u / 0.45));
+                if (flap) flap.rotation.z = THREE.MathUtils.lerp(1.65, 0, closeE);
+                if (!anim.clickPlayed && u > 0.15) {
+                    anim.clickPlayed = true;
+                    this.engine.audioSystem.playSpatialOneShot('pickup', anim.startPos, { volume: 0.30 });
+                }
+                if (!anim.stepPlayed && u > 0.45) {
+                    anim.stepPlayed = true;
+                    this.engine.audioSystem.playSpatialOneShot('footstep_linoleum', anim.endPos, { volume: 0.30 });
+                }
+                this.transform.position.lerpVectors(anim.approachPos, anim.endPos, e);
+                this.yaw = anim.targetYaw;
+                this.pitch = anim.targetPitch;
+                this._cameraRig.position.y = THREE.MathUtils.lerp(1.50, this.eyeHeight, e) + Math.sin(e * Math.PI) * 0.015;
+                this.engine.renderer.setPostProcessParams({ peephole: 0.0 });
+                this.engine.renderer.setFOV(75);
+                if (hand) {
+                    if (u < 0.45) {
+                        hand.position.set(
+                            THREE.MathUtils.lerp(0.14, 0.04, closeE),
+                            THREE.MathUtils.lerp(-0.02, -0.05, closeE),
+                            -0.37
+                        );
+                        hand.rotation.set(0.18, THREE.MathUtils.lerp(-0.32, -0.10, closeE), THREE.MathUtils.lerp(-0.15, 0.20, closeE));
+                    } else {
+                        const downE = smooth((u - 0.45) / 0.55);
+                        hand.position.set(
+                            THREE.MathUtils.lerp(0.04, 0.24, downE),
+                            THREE.MathUtils.lerp(-0.05, -0.42, downE),
+                            THREE.MathUtils.lerp(-0.37, -0.24, downE)
+                        );
+                    }
+                }
+            }
+
+            if (t >= anim.duration) {
+                this.transform.position.copy(anim.endPos);
+                if (this.rb) {
+                    this.rb.position.copy(anim.endPos);
+                    this.rb.useGravity = true;
+                    this.rb.velocity.set(0, 0, 0);
+                }
+                this.yaw = anim.targetYaw;
+                this._handYaw = this.yaw;
+                this.pitch = anim.targetPitch;
+                if (this.collider) this.collider.enabled = true;
+                this._cameraRig.position.set(0, this.eyeHeight, 0);
+                this.engine.renderer.setPostProcessParams({ peephole: 0.0 });
+                this.engine.renderer.setFOV(75);
+                if (hand) hand.visible = false;
+                if (flap) flap.rotation.z = 0;
+                this._handAnchor.visible = true;
+                this.isPeephole = false;
+                this.controlsLocked = false;
+                this._peepholeAnim = null;
+            }
+        }
     }
 
     enterHidingSpot(spot) {
@@ -1080,6 +1341,7 @@ export class PlayerController extends Component {
     update(deltaTime) {
         this._updateWashFaceAnimation(deltaTime);
         this._updateDecorateTreeAnimation(deltaTime);
+        this._updatePeepholeAnimation(deltaTime);
 
         const input = this.engine.inputManager;
         const delta = input.getMouseDelta();
@@ -1238,9 +1500,11 @@ export class PlayerController extends Component {
             }
         }
 
-        const goalFov = this.isPeephole ? 95 : (this.isPeeking ? 62 : (this.forcedFov ?? 75));
-        const curFov = this.engine.renderer.camera.fov;
-        this.engine.renderer.setFOV(THREE.MathUtils.lerp(curFov, goalFov, Math.min(1, deltaTime * 4.5)));
+        if (!this._peepholeAnim) {
+            const goalFov = this.isPeephole ? 95 : (this.isPeeking ? 62 : (this.forcedFov ?? 75));
+            const curFov = this.engine.renderer.camera.fov;
+            this.engine.renderer.setFOV(THREE.MathUtils.lerp(curFov, goalFov, Math.min(1, deltaTime * 4.5)));
+        }
 
         // Interactions strictly bound to KeyE (freeing LMB)
         const interactPressed = input.wasKeyJustPressed('KeyE');
@@ -1300,12 +1564,14 @@ export class PlayerController extends Component {
                 this.rb.velocity.x = 0;
                 this.rb.velocity.z = 0;
             }
-            this.eyeHeight = THREE.MathUtils.lerp(this.eyeHeight, this.targetEyeHeight, Math.min(1, deltaTime * 4.5));
-            this._cameraRig.position.y = THREE.MathUtils.lerp(
-                this._cameraRig.position.y,
-                this.eyeHeight + (this.cinematicBobOffset || 0),
-                Math.min(1, deltaTime * 8.0)
-            );
+            if (!this._peepholeAnim) {
+                this.eyeHeight = THREE.MathUtils.lerp(this.eyeHeight, this.targetEyeHeight, Math.min(1, deltaTime * 4.5));
+                this._cameraRig.position.y = THREE.MathUtils.lerp(
+                    this._cameraRig.position.y,
+                    this.eyeHeight + (this.cinematicBobOffset || 0),
+                    Math.min(1, deltaTime * 8.0)
+                );
+            }
             return;
         }
 
