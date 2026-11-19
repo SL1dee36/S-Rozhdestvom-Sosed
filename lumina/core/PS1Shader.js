@@ -69,7 +69,7 @@ export const VHS_POST_SHADER = {
         tDiffuse: { value: null },
         uTime: { value: 0 },
         uResolution: { value: new THREE.Vector2(640, 480) },
-        uGrain: { value: 0.065 },
+        uGrain: { value: 0.015 },
         uSharpen: { value: 0.48 },
         uAberration: { value: 0.0008 },
         uVSync: { value: 0.0 },

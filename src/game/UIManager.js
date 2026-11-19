@@ -316,7 +316,7 @@ export class UIManager {
     applyVHSIntensity(value) {
         const v = Number.isFinite(value) ? value : 0.5;
         this.engine.renderer.setPostProcessParams({
-            grain: 0.085 * v,
+            grain: 0.025 * v,
             sharpen: 0.58 * v,
             aberration: 0.0008 * v,
             vsync: 0.0,

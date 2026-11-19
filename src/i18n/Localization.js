@@ -1,16 +1,22 @@
 import { ru } from './ru.js';
 import { en } from './en.js';
+import { fr } from './fr.js';
+import { de } from './de.js';
 
 const STORAGE_KEY = 'zarechnoe_language';
 
 const TRANSLATIONS = {
     ru,
-    en
+    en,
+    fr,
+    de
 };
 
 export const SUPPORTED_LANGUAGES = [
     { code: 'ru', name: 'Русский' },
-    { code: 'en', name: 'English' }
+    { code: 'en', name: 'English' },
+    { code: 'fr', name: 'Français' },
+    { code: 'de', name: 'Deutsch' }
 ];
 
 function _detectInitialLanguage() {

@@ -1009,6 +1009,8 @@ export class StoryDirector {
         if (w.crtTV) w.crtTV.setMode('off', false);
         if (w.neighborWindowCanvas) w.neighborWindowCanvas.setMode('lit_idle');
         if (w.lights?.neighborLight) w.lights.neighborLight.intensity = 1.6;
+        w.doors?.balcony?.setOpen(false, false, true);
+        w.balconyWindow?.setOpen(false, false, true);
         w.garlandOn = true;
         if (w.decorQuest?.meshes?.hall) w.decorQuest.meshes.hall.visible = true;
 
