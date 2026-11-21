@@ -202,7 +202,7 @@ export const en = {
     'obj.act2.smoke': 'Smoke on the balcony [LMB / F — take a drag]',
     'obj.act2.look_window': 'Look at the window in the building across the courtyard',
     'obj.act3.title': 'ACT III: THE HUNT',
-    'obj.act3.run_inside': 'Run back inside (the glass balcony door won\'t hold!)',
+    'obj.act3.run_inside': 'Run back inside',
     'obj.act3.hide': 'Hide in the wardrobe / pantry / bathroom / under the sofa',
     'obj.act3.close_door': 'Close the door or curtain [E] and stay silent!',
     'obj.act3.stay_quiet': 'Don\'t make a sound and keep your hiding spot closed!',

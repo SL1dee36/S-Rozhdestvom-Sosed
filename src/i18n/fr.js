@@ -202,7 +202,7 @@ export const fr = {
     'obj.act2.smoke': 'Fumer sur le balcon [Clic gauche / F — tirer une bouffée]',
     'obj.act2.look_window': 'Regarder la fenêtre de l\'immeuble en face de la cour',
     'obj.act3.title': 'ACTE III : LA TRAQUE',
-    'obj.act3.run_inside': 'Rentrez vite dans l\'appartement (la porte vitrée du balcon ne tiendra pas !)',
+    'obj.act3.run_inside': 'Rentrez vite dans l\'appartement',
     'obj.act3.hide': 'Cachez-vous dans l\'armoire / le garde-manger / la salle de bain / sous le canapé',
     'obj.act3.close_door': 'Fermez la porte ou le rideau [E] et restez silencieux !',
     'obj.act3.stay_quiet': 'Ne faites aucun bruit et gardez votre cachette fermée !',

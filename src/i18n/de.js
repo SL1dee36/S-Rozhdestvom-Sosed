@@ -202,7 +202,7 @@ export const de = {
     'obj.act2.smoke': 'Auf dem Balkon rauchen [LMT / F — ziehen]',
     'obj.act2.look_window': 'Zum Fenster des Gebäudes gegenüber vom Hof schauen',
     'obj.act3.title': 'AKT III: DIE JAGD',
-    'obj.act3.run_inside': 'Lauf zurück in die Wohnung (die Glastür des Balkons hält nicht stand!)',
+    'obj.act3.run_inside': 'Lauf zurück in die Wohnung',
     'obj.act3.hide': 'Verstecke dich im Schrank / in der Speisekammer / im Bad / unter dem Sofa',
     'obj.act3.close_door': 'Schließe die Tür oder den Vorhang [E] und bleib leise!',
     'obj.act3.stay_quiet': 'Mach keinen Mucks und halte dein Versteck geschlossen!',
