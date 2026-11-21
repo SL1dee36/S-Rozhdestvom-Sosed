@@ -13,7 +13,9 @@ export class CRTTelevision {
         configurePS1Texture(this.texture, 1, 1);
 
         this.tvLight = tvLight;
-        this.mode = 'ogonyok';
+        this.mode = 'movie';
+        this.channels = ['movie', 'weather', 'cartoon', 'ogonyok'];
+        this.channelIndex = 0;
         this.cracked = false;
         this._time = 0;
         this._frameAccum = 0;
@@ -28,6 +30,14 @@ export class CRTTelevision {
     setMode(mode, cracked = false) {
         this.mode = mode;
         this.cracked = cracked;
+        const idx = this.channels.indexOf(mode);
+        if (idx >= 0) this.channelIndex = idx;
+    }
+
+    nextChannel() {
+        this.channelIndex = (this.channelIndex + 1) % this.channels.length;
+        this.mode = this.channels[this.channelIndex];
+        return this.mode;
     }
 
     update(deltaTime) {
@@ -47,6 +57,12 @@ export class CRTTelevision {
             if (this.tvLight) this.tvLight.intensity = 0;
         } else if (this.mode === 'ogonyok') {
             this._drawOgonyok(ctx, W, H);
+        } else if (this.mode === 'movie') {
+            this._drawMovie(ctx, W, H);
+        } else if (this.mode === 'weather') {
+            this._drawWeather(ctx, W, H);
+        } else if (this.mode === 'cartoon') {
+            this._drawCartoon(ctx, W, H);
         } else if (this.mode === 'static') {
             this._drawStatic(ctx, W, H);
         } else if (this.mode === 'news') {
@@ -147,6 +163,137 @@ export class CRTTelevision {
             const b = hueShift > 0 ? 1.0 : 0.68;
             this.tvLight.color.setRGB(r, g, b);
             this.tvLight.intensity = 1.65 + Math.sin(t * 14) * 0.22;
+        }
+    }
+
+    _drawMovie(ctx, W, H) {
+        // Classic Soviet New Year comedy film (warm amber cinema tint, snowy window, festive table)
+        const t = this._time;
+        ctx.fillStyle = '#2e241b';
+        ctx.fillRect(0, 0, W, H);
+        // Snowy blue window in background
+        ctx.fillStyle = '#1b2c4a';
+        ctx.fillRect(16, 22, 86, 84);
+        ctx.strokeStyle = '#5e4b3a';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(16, 22, 86, 84);
+        ctx.beginPath(); ctx.moveTo(59, 22); ctx.lineTo(59, 106); ctx.stroke();
+        // Falling snow outside window
+        ctx.fillStyle = '#dce8f8';
+        for (let i = 0; i < 18; i++) {
+            const sx = 20 + ((i * 19 + t * 14) % 78);
+            const sy = 26 + ((i * 29 + t * 22) % 76);
+            ctx.fillRect(sx, sy, 2, 2);
+        }
+        // Festive tree on right
+        ctx.fillStyle = '#1c4f28';
+        ctx.beginPath(); ctx.moveTo(204, 28); ctx.lineTo(170, 126); ctx.lineTo(238, 126); ctx.closePath(); ctx.fill();
+        for (let b = 0; b < 6; b++) {
+            ctx.fillStyle = (Math.sin(t * 4 + b) > 0) ? '#ffd166' : '#e04242';
+            ctx.fillRect(186 + (b % 3) * 14, 56 + b * 11, 4, 4);
+        }
+        // Two characters talking at dinner table
+        const nod = Math.sin(t * 2.5) * 2;
+        ctx.fillStyle = '#3d4c5c'; ctx.fillRect(92, 92, 28, 42);
+        ctx.fillStyle = '#dcb598'; ctx.beginPath(); ctx.arc(106, 80 + nod, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#7a2b38'; ctx.fillRect(136, 94, 28, 40);
+        ctx.fillStyle = '#e3bfa4'; ctx.beginPath(); ctx.arc(150, 82 - nod, 10, 0, Math.PI * 2); ctx.fill();
+        // Table & champagne
+        ctx.fillStyle = '#d9cfb8'; ctx.fillRect(66, 130, 124, 34);
+        ctx.fillStyle = '#1f542a'; ctx.fillRect(124, 112, 7, 20);
+        // Cinema letterbox bars & channel badge
+        ctx.fillStyle = '#070709';
+        ctx.fillRect(0, 0, W, 16);
+        ctx.fillRect(0, H - 22, W, 22);
+        ctx.fillStyle = 'rgba(255,245,215,0.82)';
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText('2 КАНАЛ · КИНО', 10, 12);
+        ctx.fillStyle = '#f2d98a';
+        ctx.fillText('«С ЛЁГКИМ ПАРОМ!»', 68, H - 7);
+        if (this.tvLight) {
+            this.tvLight.color.setRGB(0.88, 0.72, 0.48);
+            this.tvLight.intensity = 1.55 + Math.sin(t * 9) * 0.14;
+        }
+    }
+
+    _drawWeather(ctx, W, H) {
+        // Retro Soviet TV Weather Forecast (map + snowflakes + presenter)
+        const t = this._time;
+        ctx.fillStyle = '#143352';
+        ctx.fillRect(0, 0, W, H);
+        // Stylized map landmass
+        ctx.fillStyle = '#2d5c45';
+        ctx.beginPath();
+        ctx.moveTo(14, 130); ctx.lineTo(42, 62); ctx.lineTo(108, 46); ctx.lineTo(176, 56);
+        ctx.lineTo(222, 92); ctx.lineTo(192, 146); ctx.lineTo(48, 152); ctx.closePath();
+        ctx.fill();
+        // Animated snow clouds & temperature badges
+        const drift = Math.sin(t * 1.4) * 8;
+        ctx.fillStyle = '#dbe6f2';
+        for (const [cx, cy] of [[68, 72], [140, 68], [108, 108]]) {
+            ctx.beginPath(); ctx.arc(cx + drift, cy, 12, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(cx + 12 + drift, cy + 2, 10, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.fillStyle = '#7ad4ff';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText('-18°C', 48, 106);
+        ctx.fillText('-22°C', 132, 100);
+        // Presenter silhouette on right
+        ctx.fillStyle = '#252c3b'; ctx.fillRect(198, 108, 42, 60);
+        ctx.fillStyle = '#dfb89c'; ctx.beginPath(); ctx.arc(219, 92, 12, 0, Math.PI * 2); ctx.fill();
+        // Header & footer
+        ctx.fillStyle = '#1d4d7a'; ctx.fillRect(0, 0, W, 24);
+        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px monospace';
+        ctx.fillText('3 КАНАЛ · ПРОГНОЗ ПОГОДЫ', 12, 16);
+        ctx.fillStyle = '#0e2238'; ctx.fillRect(0, 164, W, 28);
+        ctx.fillStyle = '#9fe2ff'; ctx.font = 'bold 10px monospace';
+        ctx.fillText('31 ДЕКАБРЯ: МЕТЕЛЬ, МОРОЗ ДО -20°C', 18, 182);
+        if (this.tvLight) {
+            this.tvLight.color.setRGB(0.42, 0.72, 1.0);
+            this.tvLight.intensity = 1.6;
+        }
+    }
+
+    _drawCartoon(ctx, W, H) {
+        // Cozy winter Soviet cartoon (blue night forest, dancing snowman, glowing tree)
+        const t = this._time;
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#0d1b3d');
+        grad.addColorStop(1, '#264373');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+        // Snowy ground
+        ctx.fillStyle = '#dce8f5';
+        ctx.fillRect(0, 134, W, 58);
+        // Moon
+        ctx.fillStyle = '#fff0a8';
+        ctx.beginPath(); ctx.arc(214, 38, 16, 0, Math.PI * 2); ctx.fill();
+        // Spruce tree on left
+        ctx.fillStyle = '#1d6134';
+        ctx.beginPath(); ctx.moveTo(64, 42); ctx.lineTo(26, 138); ctx.lineTo(102, 138); ctx.closePath(); ctx.fill();
+        // Bouncing snowman on right
+        const hop = Math.abs(Math.sin(t * 3.8)) * 10;
+        const sx = 162;
+        ctx.fillStyle = '#f4f8fc';
+        ctx.beginPath(); ctx.arc(sx, 128 - hop, 18, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(sx, 102 - hop, 13, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(sx, 82 - hop, 9, 0, Math.PI * 2); ctx.fill();
+        // Bucket hat & carrot nose
+        ctx.fillStyle = '#758294'; ctx.fillRect(sx - 7, 64 - hop, 14, 11);
+        ctx.fillStyle = '#eb721c'; ctx.fillRect(sx - 15, 81 - hop, 10, 3);
+        // Falling snow
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < 24; i++) {
+            const fx = (i * 23 + Math.sin(t + i) * 6) % W;
+            const fy = (i * 19 + t * 28) % H;
+            ctx.fillRect(fx, fy, 2, 2);
+        }
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText('4 КАНАЛ · МУЛЬТФИЛЬМ', 10, 16);
+        if (this.tvLight) {
+            this.tvLight.color.setRGB(0.55, 0.78, 1.0);
+            this.tvLight.intensity = 1.65;
         }
     }
 

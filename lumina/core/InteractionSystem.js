@@ -5,7 +5,7 @@ export class Interactable extends Component {
     constructor(gameObject, options = {}) {
         super(gameObject);
         this.promptText = options.promptText || '[E]';
-        this.maxDistance = options.maxDistance !== undefined ? Math.min(options.maxDistance, 1.85) : 1.65;
+        this.maxDistance = options.maxDistance !== undefined ? Math.min(options.maxDistance, 2.85) : 1.95;
         this.enabled = options.enabled !== undefined ? options.enabled : true;
         this.canInteract = options.canInteract || (() => true);
         this.onInteract = options.onInteract || (() => {});
@@ -67,6 +67,7 @@ export class InteractionSystem {
         this.blockerMeshes = [];
         this.currentTarget = null;
         this.currentPrompt = '';
+        this.currentHitPoint = null;
         this._holdTarget = null;
         this._holdProgress = 0;
         this._center = new THREE.Vector2(0, 0);
@@ -182,9 +183,10 @@ export class InteractionSystem {
 
         this.currentTarget = null;
         this.currentPrompt = '';
+        this.currentHitPoint = null;
 
         if (activeInterMeshes.length > 0) {
-            this.raycaster.far = 2.1;
+            this.raycaster.far = 2.95;
             const visibleBlockers = this.blockerMeshes.filter(m => this._isVisibleInHierarchy(m));
             const testPool = [...activeInterMeshes, ...visibleBlockers];
             const hits = this.raycaster.intersectObjects(testPool, false);
@@ -194,6 +196,7 @@ export class InteractionSystem {
                 if (owner && firstHit.distance <= owner.maxDistance) {
                     this.currentTarget = owner;
                     this.currentPrompt = owner.getPrompt();
+                    this.currentHitPoint = firstHit.point.clone();
                 }
             }
         }

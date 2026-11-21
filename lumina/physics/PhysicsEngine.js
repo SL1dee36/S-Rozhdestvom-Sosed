@@ -82,8 +82,11 @@ export class PhysicsEngine {
         if (!playerBody.collider || !playerBody.collider.enabled) return collisions;
 
         const playerBox = playerBody.collider.getBox(nextPos);
-        
         playerBox.expandByScalar(-0.02);
+
+        const curBox = playerBody.collider.getBox(playerBody.position);
+        curBox.expandByScalar(-0.02);
+        const otherCenter = new THREE.Vector3();
 
         this.rigidBodies.forEach(otherBody => {
             if (otherBody === playerBody || !otherBody.collider || !otherBody.collider.enabled) return;
@@ -91,6 +94,15 @@ export class PhysicsEngine {
             const otherBox = otherBody.collider.getBox(otherBody.position);
             
             if (playerBox.intersectsBox(otherBox)) {
+                // If already overlapping this collider at current position, allow movement that increases distance from its center
+                if (curBox.intersectsBox(otherBox)) {
+                    otherBox.getCenter(otherCenter);
+                    const curDistSq = (playerBody.position.x - otherCenter.x) ** 2 + (playerBody.position.z - otherCenter.z) ** 2;
+                    const nextDistSq = (nextPos.x - otherCenter.x) ** 2 + (nextPos.z - otherCenter.z) ** 2;
+                    if (nextDistSq > curDistSq + 1e-6) {
+                        return;
+                    }
+                }
                 collisions.push(otherBody);
             }
         });

@@ -301,7 +301,37 @@ export const de = {
     'light.stairwell': 'Treppenhauslicht',
     'light.street': 'Straßenlaterne',
     'light.neighbor': 'Fenster Haus Nr. 14',
-    'light.house14_porch': 'Eingangslicht Haus Nr. 14'
+    'light.house14_porch': 'Eingangslicht Haus Nr. 14',
+
+    // Dialogue UI
+    'ui.dialogue.hint': 'Antwort wählen [1-5] oder klicken · [ESC] Gespräch beenden',
+    'dlg.common.bye': 'Also gut, ich muss los. Frohes Neues!',
+    'prompt.go_to_store': '[E] Zum Laden „Produkte 24“ gehen',
+    'prompt.store_take_olivier': '[E] Erbsen und Mayonnaise nehmen',
+    'prompt.store_take_meat': '[E] Wurst, Käse und Hähnchen nehmen',
+    'prompt.store_exit_home': '[E] Mit den Einkäufen nach Hause gehen',
+    'prompt.store_exit_need_pay': '[E] Ausgang (zuerst an der Kasse bezahlen)',
+    'prompt.talk_galya': '[E] Mit Tante Galja sprechen (Kasse)',
+    'prompt.talk_nina': '[E] Mit Oma Nina sprechen',
+    'prompt.talk_viktor': '[E] Mit Viktor Petrowitsch sprechen',
+    'prompt.talk_lyokha': '[E] Mit Ljocha sprechen',
+    'prompt.drop_groceries': '[E] Einkaufstüte auf den Küchentisch stellen',
+    'prompt.cook_olivier': '[E] Olivier-Salat schneiden und anmachen',
+    'prompt.cook_meat': '[E] Wurst und Käse aufschneiden',
+    'prompt.raw_chicken_pickup': '[E] Gewürztes Hähnchen für den Ofen nehmen',
+    'prompt.put_chicken_oven': '[E] Hähnchen zum Braten in den Ofen schieben',
+    'obj.act1.shop_title': 'AKT I: EINKAUF',
+    'obj.act1.go_store': 'Durch die Wohnungstür zum Laden „Produkte 24“ gehen',
+    'obj.act1.store_olivier_pack': 'Erbsen und Mayonnaise aus dem Regal nehmen (und mit Leuten plaudern)',
+    'obj.act1.store_meat_pack': 'Wurst, Käse und Hähnchen aus dem Kühlregal nehmen',
+    'obj.act1.store_pay': 'Bei Tante Galja an der Kasse bezahlen',
+    'obj.act1.store_return_home': 'Den Laden verlassen und nach Hause zurückkehren',
+    'obj.act1.unpack_groceries': 'Einkaufstüte auf den Küchentisch stellen',
+    'obj.act1.cook_olivier': 'Olivier-Salat am Küchentisch zubereiten',
+    'obj.act1.cook_meat': 'Wurst- und Käseplatte am Küchentisch schneiden',
+    'obj.act1.put_chicken_oven': 'Ofen öffnen und Hähnchen zum Braten hineinstellen',
+    'obj.act1.wait_chicken_oven': 'Warten, bis das Hähnchen im Ofen gar ist',
+    'obj.act1.carry_cooked_food': 'Frischen Olivier-Salat und Aufschnitt auf den Festtisch bringen'
 };
 
 export default de;

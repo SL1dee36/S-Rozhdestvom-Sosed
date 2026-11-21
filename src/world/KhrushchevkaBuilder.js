@@ -13,6 +13,7 @@ import { TextureManager } from './TextureManager.js';
 import { CRTTelevision, NeighborWindowCanvas } from './CRTTelevision.js';
 import { getEffectiveMapOverrides } from './MapOverrides.js';
 import { t } from '../i18n/Localization.js';
+import { buildKitchenCookingStation, buildGroceryStore } from './StoreAndCookingBuilder.js';
 
 export class KhrushchevkaBuilder {
     constructor(engine) {
@@ -204,7 +205,6 @@ export class KhrushchevkaBuilder {
         const tileScaleMap = {
             tiles: 0.75,
             parquet: 1.15,
-            linoleum: 1.15,
             wallpaperHall: 1.25,
             wallpaperKitchen: 1.25,
             stairwellWall: 2.68,
@@ -216,7 +216,14 @@ export class KhrushchevkaBuilder {
             sofaFabric: 0.55,
             tablecloth: 0.65,
             dermantine: 1.1,
-            pine: 0.6
+            pine: 0.6,
+            storeFloor: 0.9,
+            storeWallLow: 1.5,
+            storeWallHigh: 1.5,
+            storeCeiling: 1.2,
+            storeWood: 0.95,
+            storeEnamel: 1.1,
+            storeTileBacksplash: 0.75
         };
         const tileSize = tileScaleMap[matKey] || 1.25;
         const pos = geo.attributes.position;
@@ -232,7 +239,7 @@ export class KhrushchevkaBuilder {
             const ny = Math.abs(norm.getY(i));
             const nz = Math.abs(norm.getZ(i));
 
-            if (matKey === 'stairwellWall') {
+            if (matKey === 'stairwellWall' || matKey === 'storeWallLow') {
                 // Keep vertical two-tone wall split aligned from floor to ceiling, tile horizontally
                 const uCoord = nx > 0.5 ? vz : vx;
                 const vNorm = (pos.getY(i) / Math.max(0.01, h)) + 0.5;
@@ -326,6 +333,8 @@ export class KhrushchevkaBuilder {
         this._buildBalcony();
         this._buildApartmentDecorations();
         this._buildCourtyardAndOppositeHouse();
+        buildKitchenCookingStation(this);
+        buildGroceryStore(this);
         this._buildParticles();
         this._autoRegisterChildParts();
 
@@ -557,7 +566,6 @@ export class KhrushchevkaBuilder {
 
     _initMaterials() {
         const tParquet = this.tex.loadPhoto('parquet', 'parquet.jpg', 1, 1);
-        const tLinoleum = this.tex.loadPhoto('linoleum', 'linoleum.png', 1, 1);
         const tCarpet = this.tex.loadPhoto('carpet', 'carpet_soviet.jpg', 1, 1);
         const tTiles = this.tex.loadPhoto('tiles', 'tiles_bathroom.jpg', 1, 1);
         const tDermantine = this.tex.loadPhoto('dermantine', 'dermantine.jpg', 1, 2);
@@ -582,10 +590,35 @@ export class KhrushchevkaBuilder {
         const tCrystal = this.tex.createCrystalTexture();
         const tMirror = this.tex.createMirrorTexture();
         const tWineLabel = this.tex.createWineLabelTexture();
+        const tStoreFloor = this.tex.createStoreFloorTileTexture();
+        const tStoreWallLow = this.tex.createStoreWallLowerTexture();
+        const tStoreWallHigh = this.tex.createStoreWallUpperTexture();
+        const tStoreCeiling = this.tex.createStoreCeilingTexture();
+        const tStoreWood = this.tex.createStoreWoodTexture();
+        const tStoreEnamel = this.tex.createStoreEnamelTexture();
+        const tStoreSign = this.tex.createStoreSignTexture('ПРОДУКТЫ 24');
+        const tPeasLabel = this.tex.createPeasLabelTexture();
+        const tMayoLabel = this.tex.createMayoLabelTexture();
+        const tCuttingBoard = this.tex.createCuttingBoardTexture();
+        const tGroceryBag = this.tex.createGroceryBagTexture();
+        const tScalesDial = this.tex.createScalesDialTexture();
+        const tRegisterDisplay = this.tex.createRegisterDisplayTexture();
+        const tStoreTileBacksplash = this.tex.createStoreTileBacksplashTexture();
+        const tCondensedMilk = this.tex.createCondensedMilkLabelTexture();
+        const tTeaBox = this.tex.createTeaBoxTexture();
+        const tMilkCarton = this.tex.createMilkCartonTexture();
+        const tInteriorDoor = this.tex.createInteriorDoorTexture();
+        const tPaintedDoorWood = this.tex.createPaintedDoorWoodTexture();
+        const tStoreDoor = this.tex.createStoreDoorTexture();
+        const tCardboardBox = this.tex.createCardboardBoxTexture();
+        const tStoveEnamel = this.tex.createStoveEnamelTexture();
+        const tFridgeEnamel = this.tex.createFridgeEnamelTexture();
+        const tCeramicSink = this.tex.createCeramicSinkTexture();
+        const tKitchenCabinet = this.tex.createKitchenCabinetTexture();
+        const tMetalBrushed = this.tex.createMetalBrushedTexture();
 
         this.materials = {
             parquet: this._ps1Mat({ map: tParquet, roughness: 0.85 }),
-            linoleum: this._ps1Mat({ map: tLinoleum, roughness: 0.78 }),
             carpet: this._ps1Mat({ map: tCarpet, roughness: 0.95 }),
             tiles: this._ps1Mat({ map: tTiles, roughness: 0.65 }),
             dermantine: this._ps1Mat({ map: tDermantine, color: 0xb8957a, roughness: 0.8 }),
@@ -600,9 +633,11 @@ export class KhrushchevkaBuilder {
             woodFrame: this._ps1Mat({ color: 0x725944, roughness: 0.85 }),
             tablecloth: this._ps1Mat({ map: tTablecloth, roughness: 0.9 }),
             sofaFabric: this._ps1Mat({ map: tUpholstery, roughness: 0.95 }),
-            fridgeWhite: this._ps1Mat({ color: 0xcfd6cf, roughness: 0.58 }),
-            stoveWhite: this._ps1Mat({ color: 0xbcc0bc, roughness: 0.62 }),
-            metal: this._ps1Mat({ color: 0x5c6066, roughness: 0.5, metalness: 0.4 }),
+            fridgeWhite: this._ps1Mat({ map: tFridgeEnamel, color: 0xe6eeec, roughness: 0.38 }),
+            stoveWhite: this._ps1Mat({ map: tStoveEnamel, color: 0xc8c6bc, roughness: 0.58 }),
+            ceramicSink: this._ps1Mat({ map: tCeramicSink, color: 0xecf2f5, roughness: 0.28 }),
+            kitchenCabinet: this._ps1Mat({ map: tKitchenCabinet, roughness: 0.78 }),
+            metal: this._ps1Mat({ map: tMetalBrushed, color: 0x828890, roughness: 0.45, metalness: 0.42 }),
             curtain: this._ps1Mat({ color: 0xb8c8c6, roughness: 0.9, doubleSided: true }),
             glass: this._ps1Mat({ color: 0x8fb0c7, transparent: true, opacity: 0.28, roughness: 0.15, depthWrite: false, snap: false }),
             mirror: this._ps1Mat({ map: tMirror, color: 0xf0f8ff, emissive: 0x3b4f63, emissiveIntensity: 0.52, roughness: 0.08, metalness: 0.82, snap: false }),
@@ -619,7 +654,28 @@ export class KhrushchevkaBuilder {
             santaHatRed: this._ps1Mat({ color: 0xb51c1c, emissive: 0x380505, roughness: 0.85 }),
             santaHatFur: this._ps1Mat({ color: 0xedeae2, emissive: 0x2a2824, roughness: 0.9 }),
             pine: this._ps1Mat({ map: tPine, color: 0x5c805c, roughness: 0.92 }),
-            darkSilhouette: new THREE.MeshBasicMaterial({ color: 0x050507 })
+            darkSilhouette: new THREE.MeshBasicMaterial({ color: 0x050507 }),
+            storeFloor: this._ps1Mat({ map: tStoreFloor, roughness: 0.72 }),
+            storeWallLow: this._ps1Mat({ map: tStoreWallLow, roughness: 0.88 }),
+            storeWallHigh: this._ps1Mat({ map: tStoreWallHigh, roughness: 0.92 }),
+            storeCeiling: this._ps1Mat({ map: tStoreCeiling, roughness: 0.95 }),
+            storeWood: this._ps1Mat({ map: tStoreWood, roughness: 0.72 }),
+            storeEnamel: this._ps1Mat({ map: tStoreEnamel, roughness: 0.48 }),
+            storeSign: new THREE.MeshBasicMaterial({ map: tStoreSign }),
+            peasLabel: this._ps1Mat({ map: tPeasLabel, roughness: 0.52 }),
+            mayoLabel: this._ps1Mat({ map: tMayoLabel, roughness: 0.45 }),
+            cuttingBoard: this._ps1Mat({ map: tCuttingBoard, roughness: 0.82 }),
+            groceryBag: this._ps1Mat({ map: tGroceryBag, roughness: 0.88 }),
+            scalesDial: this._ps1Mat({ map: tScalesDial, roughness: 0.4 }),
+            registerDisplay: new THREE.MeshBasicMaterial({ map: tRegisterDisplay }),
+            storeTileBacksplash: this._ps1Mat({ map: tStoreTileBacksplash, roughness: 0.45 }),
+            condensedMilk: this._ps1Mat({ map: tCondensedMilk, roughness: 0.48 }),
+            teaBox: this._ps1Mat({ map: tTeaBox, roughness: 0.75 }),
+            milkCarton: this._ps1Mat({ map: tMilkCarton, roughness: 0.62 }),
+            interiorDoor: this._ps1Mat({ map: tInteriorDoor, roughness: 0.78 }),
+            paintedDoorWood: this._ps1Mat({ map: tPaintedDoorWood, roughness: 0.78 }),
+            storeDoor: this._ps1Mat({ map: tStoreDoor, roughness: 0.72 }),
+            cardboardBox: this._ps1Mat({ map: tCardboardBox, roughness: 0.90 })
         };
 
         for (const [key, mat] of Object.entries(this.materials)) {
@@ -1213,7 +1269,7 @@ export class KhrushchevkaBuilder {
         balcDoorPivot.addComponent(RigidBody, { bodyType: 'static' });
         let balcOpen = false;
         let balcBaseYaw = 0;
-        let balcOpenAngle = 1.45;
+        let balcOpenAngle = -1.45;
         this.world.animatedDoors.push({
             pivot: balcDoorPivot,
             axis: 'y',
@@ -1245,7 +1301,7 @@ export class KhrushchevkaBuilder {
                 gameObject: balcDoorPivot,
                 collide: true,
                 blocker: true,
-                initialOpenAngle: 1.45,
+                initialOpenAngle: -1.45,
                 getOpenAngle: () => balcOpenAngle,
                 setOpenAngle: (a) => {
                     balcOpenAngle = a;
@@ -1593,6 +1649,9 @@ export class KhrushchevkaBuilder {
         const oy = cfg.leafOffset.y;
         const oz = cfg.leafOffset.z;
         const isXLeaf = w >= d;
+        const leafMat = cfg.hasGlass
+            ? (this.materials.paintedDoorWood || cfg.doorMat)
+            : (this.materials.interiorDoor || cfg.doorMat);
 
         if (cfg.hasGlass) {
             const botH = h * 0.44;
@@ -1602,7 +1661,7 @@ export class KhrushchevkaBuilder {
 
             const botPanel = new THREE.Mesh(
                 new THREE.BoxGeometry(w, botH, d),
-                cfg.doorMat
+                leafMat
             );
             botPanel.position.set(ox, botH * 0.5, oz);
             pivot.transform.add(botPanel);
@@ -1610,11 +1669,11 @@ export class KhrushchevkaBuilder {
 
             if (isXLeaf) {
                 const span = w - sideT * 2;
-                const sideL = new THREE.Mesh(new THREE.BoxGeometry(sideT, h - botH, d), cfg.doorMat);
+                const sideL = new THREE.Mesh(new THREE.BoxGeometry(sideT, h - botH, d), leafMat);
                 sideL.position.set(ox - w * 0.5 + sideT * 0.5, botH + (h - botH) * 0.5, oz);
-                const sideR = new THREE.Mesh(new THREE.BoxGeometry(sideT, h - botH, d), cfg.doorMat);
+                const sideR = new THREE.Mesh(new THREE.BoxGeometry(sideT, h - botH, d), leafMat);
                 sideR.position.set(ox + w * 0.5 - sideT * 0.5, botH + (h - botH) * 0.5, oz);
-                const topRail = new THREE.Mesh(new THREE.BoxGeometry(span, topH, d), cfg.doorMat);
+                const topRail = new THREE.Mesh(new THREE.BoxGeometry(span, topH, d), leafMat);
                 topRail.position.set(ox, h - topH * 0.5, oz);
                 const pane = new THREE.Mesh(new THREE.BoxGeometry(span, glassH, d * 0.35), this.materials.glass);
                 pane.position.set(ox, botH + glassH * 0.5, oz);
@@ -1622,11 +1681,11 @@ export class KhrushchevkaBuilder {
                 this.blockerMeshes.push(sideL, sideR, topRail);
             } else {
                 const span = d - sideT * 2;
-                const sideL = new THREE.Mesh(new THREE.BoxGeometry(w, h - botH, sideT), cfg.doorMat);
+                const sideL = new THREE.Mesh(new THREE.BoxGeometry(w, h - botH, sideT), leafMat);
                 sideL.position.set(ox, botH + (h - botH) * 0.5, oz - d * 0.5 + sideT * 0.5);
-                const sideR = new THREE.Mesh(new THREE.BoxGeometry(w, h - botH, sideT), cfg.doorMat);
+                const sideR = new THREE.Mesh(new THREE.BoxGeometry(w, h - botH, sideT), leafMat);
                 sideR.position.set(ox, botH + (h - botH) * 0.5, oz + d * 0.5 - sideT * 0.5);
-                const topRail = new THREE.Mesh(new THREE.BoxGeometry(w, topH, span), cfg.doorMat);
+                const topRail = new THREE.Mesh(new THREE.BoxGeometry(w, topH, span), leafMat);
                 topRail.position.set(ox, h - topH * 0.5, oz);
                 const pane = new THREE.Mesh(new THREE.BoxGeometry(w * 0.35, glassH, span), this.materials.glass);
                 pane.position.set(ox, botH + glassH * 0.5, oz);
@@ -1634,7 +1693,7 @@ export class KhrushchevkaBuilder {
                 this.blockerMeshes.push(sideL, sideR, topRail);
             }
         } else {
-            const leaf = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), cfg.doorMat);
+            const leaf = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), leafMat);
             leaf.position.set(ox, oy, oz);
             leaf.castShadow = true;
             pivot.transform.add(leaf);
@@ -1778,7 +1837,8 @@ export class KhrushchevkaBuilder {
         this._addStaticBox('WallCarpet', -3.41, 1.48, -1.0, 0.03, 1.45, 2.35, this.materials.carpet, { collide: false, blocker: false, worldUV: false });
 
         this._currentGroupId = 'group_sofa';
-        this._addStaticBox('SofaBase', -2.92, 0.46, -1.0, 1.02, 0.24, 2.1, this.materials.sofaFabric, { castShadow: true });
+        const sofaBaseRes = this._addStaticBox('SofaBase', -2.92, 0.46, -1.0, 1.02, 0.24, 2.1, this.materials.sofaFabric, { castShadow: true });
+        this.world.sofaNapGO = sofaBaseRes.go;
         // Solid dark underside lining so looking up from under the sofa never shows backfaces or gaps
         const underLiningMat = this._ps1Mat({ color: 0x161210, roughness: 0.95, doubleSided: true });
         this._addStaticBox('SofaUnderLining', -2.92, 0.335, -1.0, 1.00, 0.02, 2.08, underLiningMat, { collide: false, blocker: true });
@@ -2069,27 +2129,57 @@ export class KhrushchevkaBuilder {
         const clockGO = new GameObject('WallClock');
         clockGO.transform.position.set(2.90, 2.25, -0.71);
         clockGO.transform.rotation.y = -Math.PI / 2;
-        const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.04, 12), this.materials.clockDial);
+        const clockRim = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.205, 0.036, 16), this.materials.woodDark);
+        clockRim.rotation.z = Math.PI / 2;
+        const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.042, 16), this.materials.clockDial);
         dial.rotation.z = Math.PI / 2;
         const minutePivot = new THREE.Object3D();
-        minutePivot.position.set(-0.026, 0, 0);
-        const minHand = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.13, 0.015), this.materials.darkSilhouette);
-        minHand.position.set(0, 0.06, 0);
+        minutePivot.position.set(-0.025, 0, 0);
+        const minHand = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.135, 0.014), this.materials.darkSilhouette);
+        minHand.position.set(0, 0.058, 0);
         minutePivot.add(minHand);
         const hourPivot = new THREE.Object3D();
-        hourPivot.position.set(-0.03, 0, 0);
-        const hrHand = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.09, 0.02), this.materials.darkSilhouette);
-        hrHand.position.set(0, 0.04, 0);
+        hourPivot.position.set(-0.029, 0, 0);
+        const hrHand = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.09, 0.018), this.materials.darkSilhouette);
+        hrHand.position.set(0, 0.038, 0);
         hourPivot.add(hrHand);
-        clockGO.transform.add(dial, minutePivot, hourPivot);
+        const secondPivot = new THREE.Object3D();
+        secondPivot.position.set(-0.033, 0, 0);
+        const secHand = new THREE.Mesh(
+            new THREE.BoxGeometry(0.006, 0.155, 0.006),
+            new THREE.MeshBasicMaterial({ color: 0xcc2222 })
+        );
+        secHand.position.set(0, 0.052, 0);
+        secondPivot.add(secHand);
+        const centerPin = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.018, 8), this.materials.metal);
+        centerPin.rotation.z = Math.PI / 2;
+        centerPin.position.set(-0.031, 0, 0);
+
+        clockGO.transform.add(clockRim, dial, minutePivot, hourPivot, secondPivot, centerPin);
         this.engine.addGameObject(clockGO);
         this._registerEditable(clockGO.transform, 'WallClock', {
             extra: { gameObject: clockGO, primaryMesh: dial, materialKey: 'clockDial' }
         });
+
+        this.world.clocks = [{ hourPivot, minutePivot, secondPivot, axis: 'x', sign: 1 }];
+        this.world._clockSeconds = 0;
+        this.world._clockBaseMins = 0;
         this.world.setClockTime = (minsAfter2330) => {
-            const totalMin = 30 + minsAfter2330;
-            minutePivot.rotation.x = (totalMin / 60) * Math.PI * 2;
-            hourPivot.rotation.x = ((11 + totalMin / 60) / 12) * Math.PI * 2;
+            this.world._clockBaseMins = minsAfter2330;
+            const totalMin = 23 * 60 + 30 + minsAfter2330 + (this.world._clockSeconds / 60);
+            const secAngle = (Math.floor(this.world._clockSeconds % 60) / 60) * Math.PI * 2;
+            const minAngle = ((totalMin % 60) / 60) * Math.PI * 2;
+            const hrAngle = (((totalMin / 60) % 12) / 12) * Math.PI * 2;
+            for (const c of this.world.clocks) {
+                const s = c.sign ?? 1;
+                c.minutePivot.rotation[c.axis] = s * minAngle;
+                c.hourPivot.rotation[c.axis] = s * hrAngle;
+                if (c.secondPivot) c.secondPivot.rotation[c.axis] = s * secAngle;
+            }
+        };
+        this.world.updateClocks = (dt) => {
+            this.world._clockSeconds += dt;
+            this.world.setClockTime(this.world._clockBaseMins);
         };
         this.world.setClockTime(0);
 
@@ -2450,6 +2540,17 @@ export class KhrushchevkaBuilder {
             chicken: makeTableProp(chickenTable),
             champagne: makeTableProp(champTable)
         };
+
+        // Preview placement ring on the festive tablecloth so player can choose exact dish placement
+        const placeMarker = new THREE.Mesh(
+            new THREE.RingGeometry(0.08, 0.11, 16),
+            new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.78, side: THREE.DoubleSide, depthWrite: false })
+        );
+        placeMarker.rotation.x = -Math.PI / 2;
+        placeMarker.position.set(0, 0.768, 0);
+        placeMarker.visible = false;
+        tableGO.transform.add(placeMarker);
+        this.world.tablePlaceMarker = placeMarker;
 
         this._registerEditable(crystalGroup, 'TableItem_Crystal', {
             category: 'activated', groupId: 'group_table_set', activatedGroup: 'table', defaultHidden: true,
@@ -3029,6 +3130,46 @@ export class KhrushchevkaBuilder {
             this._addStaticBox(`StoveBurner_${idx}`, 3.75 + bx, 0.895, stoveZ + bz, 0.14, 0.03, 0.14, this.materials.metal, { collide: false, blocker: false });
         });
 
+        // Detailed kitchenware on the stove: gas control knobs, Soviet enamel kettle & cooking pot
+        const knobMat = this._ps1Mat({ color: 0x222428, roughness: 0.7 });
+        for (let k = 0; k < 5; k++) {
+            const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.020, 0.025, 8), knobMat);
+            knob.rotation.z = Math.PI / 2;
+            knob.position.set(3.41, 0.80, stoveZ - 0.22 + k * 0.11);
+            this.scene.add(knob);
+        }
+        // Soviet red enamel kettle on rear-left burner
+        const kettleGroup = new THREE.Group();
+        kettleGroup.position.set(3.89, 0.91, stoveZ - 0.15);
+        const kettleMat = this._ps1Mat({ color: 0xa62626, roughness: 0.35 });
+        const kBody = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.095, 0.13, 10), kettleMat);
+        kBody.position.y = 0.065;
+        const kLid = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.064, 0.018, 10), kettleMat);
+        kLid.position.y = 0.136;
+        const kKnob = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 5), knobMat);
+        kKnob.position.y = 0.152;
+        const kSpout = new THREE.Mesh(new THREE.CylinderGeometry(0.010, 0.020, 0.09, 6), kettleMat);
+        kSpout.rotation.z = 0.75;
+        kSpout.position.set(-0.085, 0.09, 0);
+        const kHandle = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.010, 5, 10, Math.PI), knobMat);
+        kHandle.position.y = 0.13;
+        kettleGroup.add(kBody, kLid, kKnob, kSpout, kHandle);
+        this.scene.add(kettleGroup);
+
+        // Enamel soup pot on front-right burner
+        const potGroup = new THREE.Group();
+        potGroup.position.set(3.61, 0.91, stoveZ + 0.15);
+        const potMat = this._ps1Mat({ color: 0xd9d4c0, roughness: 0.42 });
+        const potRimMat = this._ps1Mat({ color: 0x2a4566, roughness: 0.5 });
+        const pBody = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.088, 0.14, 10), potMat);
+        pBody.position.y = 0.07;
+        const pLid = new THREE.Mesh(new THREE.CylinderGeometry(0.098, 0.098, 0.015, 10), potRimMat);
+        pLid.position.y = 0.145;
+        const pKnob = new THREE.Mesh(new THREE.SphereGeometry(0.015, 6, 5), knobMat);
+        pKnob.position.y = 0.16;
+        potGroup.add(pBody, pLid, pKnob);
+        this.scene.add(potGroup);
+
         // Range Hood (Вытяжка над плитой)
         this._addStaticBox('RangeHoodCanopy', 3.75, 1.66, stoveZ, 0.66, 0.14, 0.68, this.materials.stoveWhite, { collide: false });
         this._addStaticBox('RangeHoodVisor', 3.41, 1.63, stoveZ, 0.06, 0.08, 0.68, this.materials.metal, { collide: false });
@@ -3095,16 +3236,104 @@ export class KhrushchevkaBuilder {
         this.world.stove = { pivot: ovenDoorPivot, isOpen: () => ovenOpen, setOpen: setOvenOpen };
         this._currentGroupId = null;
 
-        // Kitchen Sink (Раковина на кухне) next to the stove at z = -1.25
+        // Kitchen Sink (Раковина на кухне) with real deep basin, drain hole + grate, and dynamic rising/draining water!
         const kSinkZ = -1.25;
         this._currentGroupId = 'group_kitchen_sink';
-        this._addStaticBox('KitchenSinkCabinet', 3.76, 0.41, kSinkZ, 0.62, 0.82, 0.72, this.materials.stoveWhite, { castShadow: true });
-        this._addStaticBox('KitchenSinkRimN', 3.76, 0.85, kSinkZ - 0.31, 0.62, 0.08, 0.10, this.materials.metal, { collide: false });
-        this._addStaticBox('KitchenSinkRimS', 3.76, 0.85, kSinkZ + 0.31, 0.62, 0.08, 0.10, this.materials.metal, { collide: false });
-        this._addStaticBox('KitchenSinkRimW', 3.50, 0.85, kSinkZ, 0.10, 0.08, 0.52, this.materials.metal, { collide: false });
-        this._addStaticBox('KitchenSinkRimE', 4.02, 0.85, kSinkZ, 0.10, 0.08, 0.52, this.materials.metal, { collide: false });
-        this._addStaticBox('KitchenSinkFaucetBase', 4.00, 0.96, kSinkZ, 0.06, 0.16, 0.06, this.materials.metal, { collide: false });
-        this._addStaticBox('KitchenSinkFaucetSpout', 3.88, 1.03, kSinkZ, 0.22, 0.04, 0.04, this.materials.metal, { collide: false });
+        // Cabinet sits below the recessed sink basin (height 0.70 so basin from y=0.70..0.88 is genuinely deep)
+        const kSinkCab = this._addStaticBox('KitchenSinkCabinet', 3.76, 0.35, kSinkZ, 0.62, 0.70, 0.72, this.materials.kitchenCabinet, { castShadow: true, blocker: false });
+        this.world.kitchenSinkGO = kSinkCab.go;
+        // Full-sink interaction hitbox attached to kitchenSinkGO covering the entire sink basin, rims, and cabinet
+        const kSinkFullHit = new THREE.Mesh(
+            new THREE.BoxGeometry(0.72, 0.96, 0.82),
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false })
+        );
+        kSinkFullHit.position.set(0, 0.13, 0);
+        kSinkCab.go.transform.add(kSinkFullHit);
+
+        // Deep stainless steel sink basin walls & recessed bottom (blocker: false so they never block sink interaction)
+        const kSinkBot = this._addStaticBox('KitchenSinkBottom', 3.76, 0.715, kSinkZ, 0.54, 0.03, 0.56, this.materials.metal, { collide: false, blocker: false });
+        const kSinkRimN = this._addStaticBox('KitchenSinkRimN', 3.76, 0.81, kSinkZ - 0.31, 0.62, 0.16, 0.10, this.materials.metal, { collide: false, blocker: false });
+        const kSinkRimS = this._addStaticBox('KitchenSinkRimS', 3.76, 0.81, kSinkZ + 0.31, 0.62, 0.16, 0.10, this.materials.metal, { collide: false, blocker: false });
+        const kSinkRimW = this._addStaticBox('KitchenSinkRimW', 3.50, 0.81, kSinkZ, 0.10, 0.16, 0.52, this.materials.metal, { collide: false, blocker: false });
+        const kSinkRimE = this._addStaticBox('KitchenSinkRimE', 4.02, 0.81, kSinkZ, 0.10, 0.16, 0.52, this.materials.metal, { collide: false, blocker: false });
+        this.world.kitchenSinkMeshes = [
+            kSinkFullHit,
+            kSinkCab.mesh,
+            kSinkBot.mesh,
+            kSinkRimN.mesh,
+            kSinkRimS.mesh,
+            kSinkRimW.mesh,
+            kSinkRimE.mesh
+        ];
+
+        // Drain hole & stainless grate at the bottom of the kitchen sink
+        const kDrainHole = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.034, 0.034, 0.008, 12),
+            new THREE.MeshBasicMaterial({ color: 0x0b0d10 })
+        );
+        kDrainHole.position.set(3.78, 0.731, kSinkZ);
+        const kDrainRing = new THREE.Mesh(
+            new THREE.RingGeometry(0.028, 0.044, 12),
+            this.materials.metal
+        );
+        kDrainRing.rotation.x = -Math.PI / 2;
+        kDrainRing.position.set(3.78, 0.736, kSinkZ);
+        const kDrainCross1 = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.004, 0.007), this.materials.metal);
+        kDrainCross1.position.set(3.78, 0.736, kSinkZ);
+        const kDrainCross2 = new THREE.Mesh(new THREE.BoxGeometry(0.007, 0.004, 0.056), this.materials.metal);
+        kDrainCross2.position.set(3.78, 0.736, kSinkZ);
+        this.scene.add(kDrainHole, kDrainRing, kDrainCross1, kDrainCross2);
+
+        // Dynamic pooling water plane inside the kitchen sink (rises when faucet is on, drains down the hole when off)
+        const kWaterPool = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.42, 0.50),
+            this.materials.water
+        );
+        kWaterPool.rotation.x = -Math.PI / 2;
+        kWaterPool.position.set(3.76, 0.735, kSinkZ);
+        kWaterPool.visible = false;
+        this.scene.add(kWaterPool);
+
+        const faucetBase = this._addStaticBox('KitchenSinkFaucetBase', 4.00, 0.96, kSinkZ, 0.06, 0.16, 0.06, this.materials.metal, { collide: false, blocker: false });
+        const faucetSpout = this._addStaticBox('KitchenSinkFaucetSpout', 3.88, 1.03, kSinkZ, 0.22, 0.04, 0.04, this.materials.metal, { collide: false, blocker: false });
+        // Interactive Kitchen Faucet water stream reaching down into the basin
+        const waterStream = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.010, 0.014, 0.30, 7),
+            this.materials.water
+        );
+        waterStream.position.set(3.78, 0.87, kSinkZ);
+        waterStream.visible = false;
+        this.scene.add(waterStream);
+        let faucetOn = false;
+        let kWaterLevel = 0; // 0..1
+        this.world.kitchenFaucet = {
+            go: faucetSpout.go,
+            baseGo: faucetBase.go,
+            waterStream,
+            waterPool: kWaterPool,
+            isOn: () => faucetOn,
+            setOn: (v, sound = true) => {
+                faucetOn = !!v;
+                waterStream.visible = faucetOn;
+                if (sound && this.engine?.audioSystem) {
+                    this.engine.audioSystem.playSpatialOneShot('steam_hiss', faucetSpout.go.transform.position, { volume: faucetOn ? 0.45 : 0.18 });
+                }
+            },
+            toggle: () => {
+                this.world.kitchenFaucet.setOn(!faucetOn, true);
+            },
+            update: (dt) => {
+                if (faucetOn) {
+                    kWaterLevel = Math.min(1.0, kWaterLevel + dt * 0.22);
+                    const ripple = 1.0 + Math.sin(performance.now() * 0.025) * 0.12;
+                    waterStream.scale.set(ripple, 1.0, ripple);
+                } else {
+                    kWaterLevel = Math.max(0.0, kWaterLevel - dt * 0.18);
+                }
+                kWaterPool.visible = kWaterLevel > 0.01;
+                kWaterPool.position.y = 0.735 + kWaterLevel * 0.085;
+            }
+        };
         this._currentGroupId = null;
 
         // Small kitchen table against west wall & pickupable Kitchen Stool
@@ -3286,6 +3515,38 @@ export class KhrushchevkaBuilder {
         this.world.wardrobeTablecloth = wardTableclothGO;
         this.world.tableclothHighlight = tableclothHighlight;
 
+        // Kitchen Sponge ("Губка") stored on the hallway wardrobe shelf
+        const spongeGO = new GameObject('WardrobeSponge');
+        spongeGO.transform.position.set(1.68, 1.095, 3.62);
+        const spYellow = new THREE.Mesh(
+            new THREE.BoxGeometry(0.11, 0.032, 0.072),
+            this._ps1Mat({ color: 0xe8c43a, roughness: 0.92 })
+        );
+        const spGreen = new THREE.Mesh(
+            new THREE.BoxGeometry(0.11, 0.010, 0.072),
+            this._ps1Mat({ color: 0x2a6b34, roughness: 0.95 })
+        );
+        spGreen.position.y = 0.021;
+        const spHit = new THREE.Mesh(
+            new THREE.BoxGeometry(0.28, 0.22, 0.24),
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false })
+        );
+        spHit.position.y = 0.04;
+        spongeGO.transform.add(spYellow, spGreen, spHit);
+        this.engine.addGameObject(spongeGO);
+        this.world.wardrobeSponge = spongeGO;
+
+        // Zone inside wardrobe floor to return the empty DecorBox
+        const wardBoxDropGO = new GameObject('WardrobeBoxDropZone');
+        wardBoxDropGO.transform.position.set(1.56, 0.16, 3.76);
+        const wbdHit = new THREE.Mesh(
+            new THREE.BoxGeometry(0.54, 0.36, 0.46),
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false })
+        );
+        wardBoxDropGO.transform.add(wbdHit);
+        this.engine.addGameObject(wardBoxDropGO);
+        this.world.wardrobeBoxDropZone = wardBoxDropGO;
+
         const pantryPivot = new GameObject('PantryDoor');
         pantryPivot.transform.position.set(2.0, 1.05, 2.0);
         const pantryLeaf = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.08, 0.8), this.materials.woodFrame);
@@ -3398,33 +3659,71 @@ export class KhrushchevkaBuilder {
         });
 
         this._currentGroupId = 'group_sink';
-        this._addStaticBox('SinkPedestal', 4.75, 0.35, 1.85, 0.12, 0.70, 0.12, this.materials.fridgeWhite);
+        this._addStaticBox('SinkPedestal', 4.75, 0.35, 1.85, 0.12, 0.70, 0.12, this.materials.ceramicSink);
         const sinkGO = new GameObject('BathroomSink');
         sinkGO.transform.position.set(4.75, 0.78, 1.92);
-        const sBot = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.04, 0.40), this.materials.fridgeWhite);
+        const sBot = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.04, 0.40), this.materials.ceramicSink);
         sBot.position.set(0, -0.07, 0);
-        const sWallN = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.14, 0.05), this.materials.fridgeWhite);
+        const sWallN = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.14, 0.05), this.materials.ceramicSink);
         sWallN.position.set(0, 0.02, -0.175);
-        const sWallS = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.14, 0.05), this.materials.fridgeWhite);
+        const sWallS = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.14, 0.05), this.materials.ceramicSink);
         sWallS.position.set(0, 0.02, 0.175);
-        const sWallW = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.30), this.materials.fridgeWhite);
+        const sWallW = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.30), this.materials.ceramicSink);
         sWallW.position.set(-0.225, 0.02, 0);
-        const sWallE = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.30), this.materials.fridgeWhite);
+        const sWallE = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.30), this.materials.ceramicSink);
         sWallE.position.set(0.225, 0.02, 0);
         const sWater = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.28), this.materials.water);
         sWater.rotation.x = -Math.PI / 2;
         sWater.position.set(0, -0.045, 0);
+        sWater.visible = false;
+        // Drain hole & stainless grate at bottom of bathroom sink
+        const bDrainHole = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.026, 0.026, 0.008, 10),
+            new THREE.MeshBasicMaterial({ color: 0x0a0c0f })
+        );
+        bDrainHole.position.set(0, -0.048, -0.02);
+        const bDrainRing = new THREE.Mesh(new THREE.RingGeometry(0.022, 0.034, 10), this.materials.metal);
+        bDrainRing.rotation.x = -Math.PI / 2;
+        bDrainRing.position.set(0, -0.043, -0.02);
+        const bDrainCross1 = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.004, 0.006), this.materials.metal);
+        bDrainCross1.position.set(0, -0.043, -0.02);
+        const bDrainCross2 = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.004, 0.042), this.materials.metal);
+        bDrainCross2.position.set(0, -0.043, -0.02);
+
         const faucetBase = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.05), this.materials.metal);
         faucetBase.position.set(0, 0.13, -0.15);
         const faucetSpout = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.13), this.materials.metal);
         faucetSpout.position.set(0, 0.18, -0.10);
-        sinkGO.transform.add(sBot, sWallN, sWallS, sWallW, sWallE, sWater, faucetBase, faucetSpout);
+        const bWaterStream = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.012, 0.22, 7), this.materials.water);
+        bWaterStream.position.set(0, 0.06, -0.045);
+        bWaterStream.visible = false;
+        sinkGO.transform.add(sBot, sWallN, sWallS, sWallW, sWallE, sWater, bDrainHole, bDrainRing, bDrainCross1, bDrainCross2, faucetBase, faucetSpout, bWaterStream);
         sinkGO.addComponent(BoxCollider, new THREE.Vector3(0.50, 0.20, 0.40));
         sinkGO.addComponent(RigidBody, { bodyType: 'static' });
         this.engine.addGameObject(sinkGO);
         this._registerEditable(sinkGO.transform, 'BathroomSink', {
-            extra: { gameObject: sinkGO, primaryMesh: sBot, materialKey: 'fridgeWhite', collide: true }
+            extra: { gameObject: sinkGO, primaryMesh: sBot, materialKey: 'ceramicSink', collide: true }
         });
+        let bathFaucetOn = false;
+        let bWaterLevel = 0;
+        this.world.bathroomFaucet = {
+            setOn: (v) => {
+                bathFaucetOn = !!v;
+                bWaterStream.visible = bathFaucetOn;
+            },
+            isOn: () => bathFaucetOn,
+            update: (dt) => {
+                if (bathFaucetOn) {
+                    bWaterLevel = Math.min(1.0, bWaterLevel + dt * 0.28);
+                    const r = 1.0 + Math.sin(performance.now() * 0.025) * 0.12;
+                    bWaterStream.scale.set(r, 1.0, r);
+                } else {
+                    bWaterLevel = Math.max(0.0, bWaterLevel - dt * 0.22);
+                }
+                sWater.visible = bWaterLevel > 0.01;
+                sWater.position.y = -0.046 + bWaterLevel * 0.075;
+            }
+        };
         this.world.bathroomSink = sinkGO;
 
         // Bathroom Mirror ("Зеркало в ванной") with 4-bar hollow perimeter frame + real-time 3D planar reflection
@@ -3475,24 +3774,24 @@ export class KhrushchevkaBuilder {
 
         const toiletGO = new GameObject('BathroomToilet');
         toiletGO.transform.position.set(4.72, 0, 3.18);
-        const tPedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.24, 8), this.materials.fridgeWhite);
+        const tPedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.24, 8), this.materials.ceramicSink);
         tPedestal.position.set(0, 0.12, -0.02);
-        const tBowlBottom = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.04, 0.40), this.materials.fridgeWhite);
+        const tBowlBottom = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.04, 0.40), this.materials.ceramicSink);
         tBowlBottom.position.set(0, 0.24, -0.04);
-        const tRimN = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.14, 0.05), this.materials.fridgeWhite);
+        const tRimN = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.14, 0.05), this.materials.ceramicSink);
         tRimN.position.set(0, 0.33, -0.22);
-        const tRimS = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.14, 0.05), this.materials.fridgeWhite);
+        const tRimS = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.14, 0.05), this.materials.ceramicSink);
         tRimS.position.set(0, 0.33, 0.14);
-        const tRimW = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.32), this.materials.fridgeWhite);
+        const tRimW = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.32), this.materials.ceramicSink);
         tRimW.position.set(-0.155, 0.33, -0.04);
-        const tRimE = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.32), this.materials.fridgeWhite);
+        const tRimE = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.32), this.materials.ceramicSink);
         tRimE.position.set(0.155, 0.33, -0.04);
         const tWater = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.30), this.materials.water);
         tWater.rotation.x = -Math.PI / 2;
         tWater.position.set(0, 0.27, -0.04);
         const tPipe = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.16, 6), this.materials.metal);
         tPipe.position.set(0, 0.46, 0.20);
-        const tTank = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.36, 0.16), this.materials.fridgeWhite);
+        const tTank = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.36, 0.16), this.materials.ceramicSink);
         tTank.position.set(0, 0.70, 0.20);
         const tFlushBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 6), this.materials.metal);
         tFlushBtn.position.set(0, 0.89, 0.20);
@@ -4427,24 +4726,55 @@ export class KhrushchevkaBuilder {
         const bulbGold = new THREE.MeshBasicMaterial({ color: 0xffe478 });
         const bulbRed = new THREE.MeshBasicMaterial({ color: 0xff4242 });
         const bulbBlue = new THREE.MeshBasicMaterial({ color: 0x57b8ff });
-        const boxMat = this._ps1Mat({ color: 0x8f6b47, roughness: 0.92 });
+        const boxMat = this.materials.cardboardBox || this._ps1Mat({ color: 0x8f6b47, roughness: 0.92 });
+        const boxInnerMat = this._ps1Mat({ color: 0x5c422a, roughness: 0.95 });
 
+        // Hollow cardboard DecorBox stored inside the hallway wardrobe (empties as player decorates & must be returned!)
         const boxGO = new GameObject('DecorBox');
-        boxGO.transform.position.set(3.82, 0.0, 3.65);
-        const boxMesh = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.28, 0.36), boxMat);
-        boxMesh.position.y = 0.14;
-        const rimTinsel = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.032, 6, 12), goldTinsel);
+        boxGO.transform.position.set(1.56, 0.0, 3.76);
+        const bw = 0.42, bh = 0.28, bd = 0.36, bt = 0.016;
+        const bBottom = new THREE.Mesh(new THREE.BoxGeometry(bw, bt, bd), boxInnerMat);
+        bBottom.position.y = bt * 0.5;
+        const bFront = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bt), boxMat);
+        bFront.position.set(0, bh * 0.5, -bd * 0.5 + bt * 0.5);
+        const bBack = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bt), boxMat);
+        bBack.position.set(0, bh * 0.5, bd * 0.5 - bt * 0.5);
+        const bLeft = new THREE.Mesh(new THREE.BoxGeometry(bt, bh, bd - bt * 2), boxMat);
+        bLeft.position.set(-bw * 0.5 + bt * 0.5, bh * 0.5, 0);
+        const bRight = new THREE.Mesh(new THREE.BoxGeometry(bt, bh, bd - bt * 2), boxMat);
+        bRight.position.set(bw * 0.5 - bt * 0.5, bh * 0.5, 0);
+        const bFlapL = new THREE.Mesh(new THREE.BoxGeometry(0.11, bt * 0.8, bd - 0.01), boxMat);
+        bFlapL.position.set(-bw * 0.5 - 0.035, bh + 0.02, 0);
+        bFlapL.rotation.z = -0.45;
+        const bFlapR = new THREE.Mesh(new THREE.BoxGeometry(0.11, bt * 0.8, bd - 0.01), boxMat);
+        bFlapR.position.set(bw * 0.5 + 0.035, bh + 0.02, 0);
+        bFlapR.rotation.z = 0.45;
+
+        // Decorations resting inside the hollow box (grouped so they can be hidden when returned empty!)
+        const innerDecorGroup = new THREE.Group();
+        const rimTinsel = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.028, 6, 12), goldTinsel);
         rimTinsel.rotation.x = Math.PI / 2;
-        rimTinsel.position.set(-0.04, 0.29, 0.02);
-        const peekBall1 = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), redTinsel);
-        peekBall1.position.set(0.09, 0.28, -0.05);
-        const peekBall2 = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 5), bulbBlue);
-        peekBall2.position.set(-0.08, 0.28, -0.06);
-        boxGO.transform.add(boxMesh, rimTinsel, peekBall1, peekBall2);
+        rimTinsel.position.set(-0.05, 0.16, -0.02);
+        const redTinselCoil = new THREE.Mesh(new THREE.TorusGeometry(0.095, 0.024, 6, 12), redTinsel);
+        redTinselCoil.rotation.x = Math.PI / 2;
+        redTinselCoil.position.set(0.06, 0.14, 0.04);
+        const innerWreath = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.024, 6, 10), greenPine);
+        innerWreath.rotation.x = Math.PI / 2 - 0.3;
+        innerWreath.position.set(-0.06, 0.11, 0.06);
+        const peekBall1 = new THREE.Mesh(new THREE.SphereGeometry(0.046, 7, 5), redTinsel);
+        peekBall1.position.set(0.09, 0.21, -0.06);
+        const peekBall2 = new THREE.Mesh(new THREE.SphereGeometry(0.042, 7, 5), bulbBlue);
+        peekBall2.position.set(-0.08, 0.22, -0.07);
+        const peekStar = new THREE.Mesh(new THREE.OctahedronGeometry(0.045, 0), bulbGold);
+        peekStar.position.set(0.01, 0.23, -0.04);
+        innerDecorGroup.add(rimTinsel, redTinselCoil, innerWreath, peekBall1, peekBall2, peekStar);
+
+        boxGO.transform.add(bBottom, bFront, bBack, bLeft, bRight, bFlapL, bFlapR, innerDecorGroup);
+        this.world.decorBoxInnerGroup = innerDecorGroup;
         this.engine.addGameObject(boxGO);
         this._registerEditable(boxGO.transform, 'DecorBox', {
             category: 'props',
-            extra: { gameObject: boxGO, primaryMesh: boxMesh, materialKey: 'woodFrame' }
+            extra: { gameObject: boxGO, primaryMesh: bFront, materialKey: 'cardboardBox' }
         });
 
         const addSnowflake = (parent, x, y, z, size = 0.13) => {

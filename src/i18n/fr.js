@@ -301,7 +301,37 @@ export const fr = {
     'light.stairwell': 'Lumière de la cage d\'escalier',
     'light.street': 'Lampadaire',
     'light.neighbor': 'Fenêtre bâtiment №14',
-    'light.house14_porch': 'Lumière du porche bâtiment №14'
+    'light.house14_porch': 'Lumière du porche bâtiment №14',
+
+    // Dialogue UI
+    'ui.dialogue.hint': 'Choisir une réponse [1-5] ou cliquer · [ESC] Terminer',
+    'dlg.common.bye': 'Bon, j\'y vais. Bonne année !',
+    'prompt.go_to_store': '[E] Aller à l\'épicerie « Produits 24 »',
+    'prompt.store_take_olivier': '[E] Prendre les petits pois et la mayonnaise',
+    'prompt.store_take_meat': '[E] Prendre la charcuterie, le fromage et le poulet',
+    'prompt.store_exit_home': '[E] Rentrer à la maison avec les courses',
+    'prompt.store_exit_need_pay': '[E] Sortir (payez d\'abord à la caisse)',
+    'prompt.talk_galya': '[E] Parler à Tante Galia (Caisse)',
+    'prompt.talk_nina': '[E] Parler à Mamie Nina',
+    'prompt.talk_viktor': '[E] Parler à Viktor Petrovitch',
+    'prompt.talk_lyokha': '[E] Parler à Liokha',
+    'prompt.drop_groceries': '[E] Poser le sac de courses sur la table de cuisine',
+    'prompt.cook_olivier': '[E] Couper et préparer la salade Olivier',
+    'prompt.cook_meat': '[E] Trancher la charcuterie et le fromage',
+    'prompt.raw_chicken_pickup': '[E] Prendre le poulet assaisonné pour le four',
+    'prompt.put_chicken_oven': '[E] Mettre le poulet à rôtir au four',
+    'obj.act1.shop_title': 'ACTE I : COURSES AU MAGASIN',
+    'obj.act1.go_store': 'Sortir par la porte d\'entrée vers l\'épicerie « Produits 24 »',
+    'obj.act1.store_olivier_pack': 'Prendre pois et mayonnaise en rayon (discutez avec les voisins)',
+    'obj.act1.store_meat_pack': 'Prendre charcuterie, fromage et poulet au frais',
+    'obj.act1.store_pay': 'Payer les courses à la caisse chez Tante Galia',
+    'obj.act1.store_return_home': 'Quitter le magasin et rentrer à la maison',
+    'obj.act1.unpack_groceries': 'Poser le sac de courses sur la table de la cuisine',
+    'obj.act1.cook_olivier': 'Préparer la salade Olivier sur la table de la cuisine',
+    'obj.act1.cook_meat': 'Trancher le plateau de charcuterie dans la cuisine',
+    'obj.act1.put_chicken_oven': 'Ouvrir le four et enfourner le poulet',
+    'obj.act1.wait_chicken_oven': 'Attendre que le poulet rôtisse au four',
+    'obj.act1.carry_cooked_food': 'Apporter la salade Olivier et la charcuterie sur la table de fête'
 };
 
 export default fr;

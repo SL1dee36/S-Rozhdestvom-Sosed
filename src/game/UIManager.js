@@ -36,6 +36,11 @@ export class UIManager {
             clock: document.getElementById('hud-clock'),
             objectives: document.getElementById('objectives-box'),
             subtitles: document.getElementById('subtitles'),
+            dialogueOverlay: document.getElementById('dialogue-overlay'),
+            dialogueSpeakerName: document.getElementById('dialogue-speaker-name'),
+            dialogueSpeakerRole: document.getElementById('dialogue-speaker-role'),
+            dialogueText: document.getElementById('dialogue-text'),
+            dialogueChoices: document.getElementById('dialogue-choices'),
             stealthPanel: document.getElementById('stealth-panel'),
             noiseFill: document.getElementById('noise-fill'),
             oxygenRow: document.getElementById('oxygen-row'),
@@ -284,6 +289,23 @@ export class UIManager {
         });
 
         window.addEventListener('keydown', (e) => {
+            if (this.isDialogueOpen()) {
+                if (e.code === 'Escape' || e.code === 'KeyQ') {
+                    e.preventDefault();
+                    this.closeDialogue();
+                    return;
+                }
+                const digitMatch = e.code.match(/^Digit([1-9])$/);
+                if (digitMatch) {
+                    const idx = parseInt(digitMatch[1], 10) - 1;
+                    if (this._dialogueChoices && this._dialogueChoices[idx]) {
+                        e.preventDefault();
+                        const ch = this._dialogueChoices[idx];
+                        if (this._onDialogueSelect) this._onDialogueSelect(ch, idx);
+                    }
+                }
+                return;
+            }
             if (this.el.ending1Screen && !this.el.ending1Screen.classList.contains('hidden')) {
                 if (e.code === 'Space') {
                     e.preventDefault();
@@ -496,6 +518,7 @@ export class UIManager {
     }
 
     _hideAllScreens() {
+        this.closeDialogue(true);
         this.stopRollingCredits();
         this.el.mainMenu?.classList.add('hidden');
         this.el.pauseMenu?.classList.add('hidden');
@@ -694,6 +717,56 @@ export class UIManager {
         this._subtitleTimer = setTimeout(() => {
             this.el.subtitles.classList.add('hidden');
         }, durationMs);
+    }
+
+    isDialogueOpen() {
+        return !!(this.el.dialogueOverlay && !this.el.dialogueOverlay.classList.contains('hidden'));
+    }
+
+    openDialogue(speakerName, speakerRole, text, choices, onSelect, onClose = null) {
+        if (!this.el.dialogueOverlay) return;
+        this._onDialogueSelect = onSelect;
+        this._onDialogueClose = onClose;
+        if (this.el.dialogueSpeakerName) this.el.dialogueSpeakerName.textContent = speakerName || '';
+        if (this.el.dialogueSpeakerRole) this.el.dialogueSpeakerRole.textContent = speakerRole || '';
+        this.updateDialogue(text, choices);
+        this.el.dialogueOverlay.classList.remove('hidden');
+        this.el.prompt?.classList.add('hidden');
+        this.el.crosshair?.classList.add('hidden');
+        this.engine.inputManager.isUIOpen = true;
+        this.engine.inputManager.unlock();
+    }
+
+    updateDialogue(text, choices = []) {
+        this._dialogueChoices = choices;
+        if (this.el.dialogueText) this.el.dialogueText.textContent = text || '';
+        if (!this.el.dialogueChoices) return;
+        this.el.dialogueChoices.innerHTML = '';
+        choices.forEach((ch, idx) => {
+            const btn = document.createElement('button');
+            btn.className = `dialogue-choice-btn${ch.primary ? ' primary' : ''}`;
+            btn.textContent = `${idx + 1}. ${ch.label}`;
+            btn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                if (this._onDialogueSelect) this._onDialogueSelect(ch, idx);
+            });
+            this.el.dialogueChoices.appendChild(btn);
+        });
+    }
+
+    closeDialogue(silent = false) {
+        if (!this.el.dialogueOverlay || this.el.dialogueOverlay.classList.contains('hidden')) return;
+        this.el.dialogueOverlay.classList.add('hidden');
+        this._dialogueChoices = [];
+        const cb = this._onDialogueClose;
+        this._onDialogueSelect = null;
+        this._onDialogueClose = null;
+        if (!silent) {
+            this.el.crosshair?.classList.remove('hidden');
+            this.engine.inputManager.isUIOpen = false;
+            this.engine.inputManager.lock();
+            if (cb) cb();
+        }
     }
 
     updateStealthHUD(visible, noise, oxygen, micEnabled, isHidden) {

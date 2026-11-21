@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { Component, RigidBody, BoxCollider } from '../../lumina/index.js';
+import { createGroceryBagModel, createRawChickenTrayModel } from '../world/StoreAndCookingBuilder.js';
 
-const TWO_HANDED_ITEMS = new Set(['table', 'stool', 'decorBox', 'tablecloth']);
+const TWO_HANDED_ITEMS = new Set(['table', 'stool', 'decorBox', 'tablecloth', 'rawChicken', 'dirtyBoard']);
 
 export class PlayerController extends Component {
     constructor(gameObject, world) {
@@ -70,6 +71,28 @@ export class PlayerController extends Component {
         this._treeDecorHandsGroup = null;
         this._treeDecorLeftHand = null;
         this._treeDecorRightHand = null;
+
+        this._cookAnim = null;
+        this._cookHandsGroup = null;
+        this._cookLeftHand = null;
+        this._cookRightHand = null;
+
+        this._spongeWashAnim = null;
+        this._spongeHandsGroup = null;
+        this._spongeLeftHand = null;
+        this._spongeRightHand = null;
+        this._soapBubbles = [];
+
+        this._smokeIntroAnim = null;
+        this._smokeIntroGroup = null;
+        this._smokeLeftHand = null;
+        this._smokeRightHand = null;
+        this._cigPackGroup = null;
+        this._cigPackLid = null;
+        this._cigPackStick = null;
+        this._lighterGroup = null;
+        this._lighterFlame = null;
+        this._mouthCig = null;
     }
 
     start() {
@@ -258,19 +281,74 @@ export class PlayerController extends Component {
         stoolCarryGroup.position.set(0.0, -0.25, -0.50);
         make('stool', stoolCarryGroup);
 
-        // 9. Two-handed Decor Box with tinsel
+        // 9. Two-handed Hollow Cardboard Decor Box with individual removable decorations
         const boxCarryGroup = new THREE.Group();
-        const boxMat = mats.woodFrame || new THREE.MeshStandardMaterial({ color: 0x8f6b47 });
+        const boxMat = mats.cardboardBox || mats.woodFrame || new THREE.MeshStandardMaterial({ color: 0x8f6b47 });
+        const innerMat = new THREE.MeshStandardMaterial({ color: 0x5c422a, roughness: 0.95 });
         const goldMat = new THREE.MeshStandardMaterial({ color: 0xf7d046, emissive: 0x805a10, emissiveIntensity: 0.4 });
         const redMat = new THREE.MeshStandardMaterial({ color: 0xc92222, emissive: 0x550808, emissiveIntensity: 0.4 });
-        const cBox = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 0.28), boxMat);
-        const cTinsel = new THREE.Mesh(new THREE.TorusGeometry(0.10, 0.025, 6, 10), goldMat);
-        cTinsel.rotation.x = Math.PI / 2;
-        cTinsel.position.set(-0.03, 0.11, 0.02);
-        const cBall = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 5), redMat);
-        cBall.position.set(0.07, 0.11, -0.04);
-        boxCarryGroup.add(cBox, cTinsel, cBall);
-        this._attachTwoHands(boxCarryGroup, 0.19, -0.03, 0.10);
+        const blueMat = new THREE.MeshStandardMaterial({ color: 0x4aa8ff, emissive: 0x164478, emissiveIntensity: 0.35 });
+        const greenMat = new THREE.MeshStandardMaterial({ color: 0x1e5c2c, roughness: 0.85 });
+        const snowMat = new THREE.MeshStandardMaterial({ color: 0xf0f6ff, emissive: 0x7a90a8, emissiveIntensity: 0.3 });
+
+        const bw = 0.36, bh = 0.22, bd = 0.30, bt = 0.014;
+        const bBottom = new THREE.Mesh(new THREE.BoxGeometry(bw, bt, bd), innerMat);
+        bBottom.position.y = -bh * 0.5 + bt * 0.5;
+        const bFront = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bt), boxMat);
+        bFront.position.set(0, 0, -bd * 0.5 + bt * 0.5);
+        const bBack = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bt), boxMat);
+        bBack.position.set(0, 0, bd * 0.5 - bt * 0.5);
+        const bLeft = new THREE.Mesh(new THREE.BoxGeometry(bt, bh, bd - bt * 2), boxMat);
+        bLeft.position.set(-bw * 0.5 + bt * 0.5, 0, 0);
+        const bRight = new THREE.Mesh(new THREE.BoxGeometry(bt, bh, bd - bt * 2), boxMat);
+        bRight.position.set(bw * 0.5 - bt * 0.5, 0, 0);
+        // Slightly opened cardboard flaps
+        const flapL = new THREE.Mesh(new THREE.BoxGeometry(0.10, bt * 0.8, bd - 0.01), boxMat);
+        flapL.position.set(-bw * 0.5 - 0.032, bh * 0.5 + 0.018, 0);
+        flapL.rotation.z = -0.45;
+        const flapR = new THREE.Mesh(new THREE.BoxGeometry(0.10, bt * 0.8, bd - 0.01), boxMat);
+        flapR.position.set(bw * 0.5 + 0.032, bh * 0.5 + 0.018, 0);
+        flapR.rotation.z = 0.45;
+        boxCarryGroup.add(bBottom, bFront, bBack, bLeft, bRight, flapL, flapR);
+
+        // 4 removable decoration groups inside the hollow box (empties as player decorates!)
+        const partTree = new THREE.Group();
+        const tBall1 = new THREE.Mesh(new THREE.SphereGeometry(0.038, 7, 5), redMat);
+        tBall1.position.set(-0.08, -0.02, -0.06);
+        const tBall2 = new THREE.Mesh(new THREE.SphereGeometry(0.035, 7, 5), blueMat);
+        tBall2.position.set(-0.01, -0.01, -0.07);
+        const tStar = new THREE.Mesh(new THREE.OctahedronGeometry(0.042, 0), goldMat);
+        tStar.position.set(-0.05, 0.04, -0.04);
+        partTree.add(tBall1, tBall2, tStar);
+
+        const partHall = new THREE.Group();
+        const hTinsel = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.022, 6, 12), goldMat);
+        hTinsel.rotation.x = Math.PI / 2;
+        hTinsel.position.set(0.05, 0.02, -0.03);
+        const hFlake = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.008, 0.07), snowMat);
+        hFlake.position.set(0.07, 0.055, -0.02);
+        partHall.add(hTinsel, hFlake);
+
+        const partKitchen = new THREE.Group();
+        const kTinsel = new THREE.Mesh(new THREE.TorusGeometry(0.078, 0.020, 6, 12), redMat);
+        kTinsel.rotation.x = Math.PI / 2;
+        kTinsel.position.set(-0.06, 0.015, 0.05);
+        const kFlake = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.008, 0.065), snowMat);
+        kFlake.position.set(-0.07, 0.048, 0.06);
+        partKitchen.add(kTinsel, kFlake);
+
+        const partHallway = new THREE.Group();
+        const wWreath = new THREE.Mesh(new THREE.TorusGeometry(0.072, 0.022, 6, 10), greenMat);
+        wWreath.rotation.x = Math.PI / 2 - 0.25;
+        wWreath.position.set(0.06, 0.01, 0.05);
+        const wBow = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.02, 0.03), redMat);
+        wBow.position.set(0.06, 0.04, 0.08);
+        partHallway.add(wWreath, wBow);
+
+        boxCarryGroup.add(partTree, partHall, partKitchen, partHallway);
+        this._decorBoxParts = { tree: partTree, hall: partHall, kitchen: partKitchen, hallway: partHallway };
+
+        this._attachTwoHands(boxCarryGroup, 0.20, -0.03, 0.10);
         boxCarryGroup.position.set(0.0, -0.27, -0.48);
         make('decorBox', boxCarryGroup);
 
@@ -404,6 +482,224 @@ export class PlayerController extends Component {
         this._peepholeHand = peepHand;
         this._peepholeAnim = null;
 
+        // 12c. Grocery Bag held prop (from the store, with detailed textured model)
+        const bagGroup = new THREE.Group();
+        const bagModel = createGroceryBagModel(mats, 0.92);
+        bagModel.position.y = -0.18;
+        bagGroup.add(bagModel);
+        this._attachOneHand(bagGroup, 0.02, 0.04, 0.05);
+        bagGroup.position.set(0.24, -0.27, -0.45);
+        make('groceryBag', bagGroup);
+
+        // 12d. Raw seasoned chicken on tray (two-handed before putting into oven)
+        const rawChickenGroup = new THREE.Group();
+        const rawChickenModel = createRawChickenTrayModel(mats, 0.85);
+        rawChickenModel.position.y = -0.04;
+        rawChickenGroup.add(rawChickenModel);
+        this._attachTwoHands(rawChickenGroup, 0.15, -0.04, 0.08);
+        rawChickenGroup.position.set(0.0, -0.26, -0.48);
+        make('rawChicken', rawChickenGroup);
+
+        // 12d2. Dirty cutting board & knife carried to the kitchen sink to wash
+        const dirtyBoardGroup = new THREE.Group();
+        const dBoard = new THREE.Mesh(
+            new THREE.BoxGeometry(0.28, 0.018, 0.20),
+            mats.cuttingBoard || new THREE.MeshStandardMaterial({ color: 0xc49b6c })
+        );
+        const dBlade = new THREE.Mesh(
+            new THREE.BoxGeometry(0.14, 0.005, 0.026),
+            mats.metal || new THREE.MeshStandardMaterial({ color: 0x8a9299 })
+        );
+        dBlade.position.set(0.04, 0.014, 0.02);
+        dBlade.rotation.y = 0.25;
+        const dHandle = new THREE.Mesh(
+            new THREE.BoxGeometry(0.085, 0.016, 0.020),
+            mats.woodDark || new THREE.MeshStandardMaterial({ color: 0x472514 })
+        );
+        dHandle.position.set(-0.065, 0.016, 0.045);
+        dHandle.rotation.y = 0.25;
+        dirtyBoardGroup.add(dBoard, dBlade, dHandle);
+        this._attachTwoHands(dirtyBoardGroup, 0.15, -0.03, 0.08);
+        dirtyBoardGroup.position.set(0.0, -0.25, -0.46);
+        make('dirtyBoard', dirtyBoardGroup);
+
+        // 12d3. Kitchen Sponge held in right hand (taken from wardrobe)
+        const spongeGroup = new THREE.Group();
+        const spYellow = new THREE.Mesh(
+            new THREE.BoxGeometry(0.095, 0.028, 0.064),
+            new THREE.MeshStandardMaterial({ color: 0xe8c43a, roughness: 0.92 })
+        );
+        const spGreen = new THREE.Mesh(
+            new THREE.BoxGeometry(0.095, 0.009, 0.064),
+            new THREE.MeshStandardMaterial({ color: 0x2a6b34, roughness: 0.95 })
+        );
+        spGreen.position.y = 0.0185;
+        spongeGroup.add(spYellow, spGreen);
+        this._attachOneHand(spongeGroup, 0.02, -0.02, 0.05);
+        spongeGroup.position.set(0.22, -0.22, -0.42);
+        make('sponge', spongeGroup);
+
+        // 12d4. Store Olivier Pack (peas + mayo) visible in hands when picked up in store
+        const olivierPackGroup = new THREE.Group();
+        const opCan = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.044, 0.11, 8), mats.peasLabel || new THREE.MeshStandardMaterial({ color: 0x3a7d3e }));
+        opCan.position.set(-0.045, 0, 0);
+        const opMayo = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.042, 0.10, 8), mats.mayoLabel || new THREE.MeshStandardMaterial({ color: 0xf4f0d8 }));
+        opMayo.position.set(0.048, -0.005, 0.01);
+        olivierPackGroup.add(opCan, opMayo);
+        this._attachOneHand(olivierPackGroup, 0.03, -0.05, 0.06);
+        olivierPackGroup.position.set(0.24, -0.24, -0.45);
+        make('olivierPack', olivierPackGroup);
+
+        // 12d5. Store Meat & Chicken Pack visible in hands when picked up in store
+        const meatPackGroup = new THREE.Group();
+        const mpSaus = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.19, 8), mats.meat || new THREE.MeshStandardMaterial({ color: 0x8f342c }));
+        mpSaus.rotation.z = Math.PI / 2;
+        mpSaus.position.set(-0.02, 0.03, -0.03);
+        const mpBird = new THREE.Mesh(new THREE.SphereGeometry(0.062, 8, 6), new THREE.MeshStandardMaterial({ color: 0xe6b599, roughness: 0.65 }));
+        mpBird.scale.set(1.2, 0.65, 0.9);
+        mpBird.position.set(0.02, -0.01, 0.03);
+        meatPackGroup.add(mpSaus, mpBird);
+        this._attachTwoHands(meatPackGroup, 0.14, -0.04, 0.08);
+        meatPackGroup.position.set(0.0, -0.25, -0.46);
+        make('meatPack', meatPackGroup);
+
+        // 12f. Interactive Sponge Washing Rig (attached to camera, player scrubs with mouse!)
+        const spongeHandsGroup = new THREE.Group();
+        spongeHandsGroup.visible = false;
+        const sLeft = this._makeSleeveArm(true);
+        const sBoard = new THREE.Mesh(
+            new THREE.BoxGeometry(0.24, 0.016, 0.17),
+            mats.cuttingBoard || new THREE.MeshStandardMaterial({ color: 0xc49b6c })
+        );
+        sBoard.position.set(0.08, 0.01, -0.10);
+        sBoard.rotation.set(0.32, 0.15, 0);
+        sLeft.add(sBoard);
+
+        const sRight = this._makeSleeveArm(false);
+        const sSpongeY = new THREE.Mesh(
+            new THREE.BoxGeometry(0.085, 0.026, 0.056),
+            new THREE.MeshStandardMaterial({ color: 0xe8c43a, roughness: 0.92 })
+        );
+        sSpongeY.position.set(0, -0.005, -0.085);
+        const sSpongeG = new THREE.Mesh(
+            new THREE.BoxGeometry(0.085, 0.008, 0.056),
+            new THREE.MeshStandardMaterial({ color: 0x2a6b34, roughness: 0.95 })
+        );
+        sSpongeG.position.set(0, 0.012, -0.085);
+        sRight.add(sSpongeY, sSpongeG);
+
+        // Soap foam bubbles around the scrubbing area
+        const bubGeo = new THREE.SphereGeometry(0.012, 6, 5);
+        const bubMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+        this._soapBubbles = [];
+        for (let i = 0; i < 12; i++) {
+            const b = new THREE.Mesh(bubGeo, bubMat.clone());
+            b.visible = false;
+            b.userData = {
+                ox: (Math.random() - 0.5) * 0.18,
+                oy: (Math.random() - 0.5) * 0.10,
+                phase: Math.random() * Math.PI * 2
+            };
+            spongeHandsGroup.add(b);
+            this._soapBubbles.push(b);
+        }
+        spongeHandsGroup.add(sLeft, sRight);
+        this.camera.add(spongeHandsGroup);
+        this._spongeHandsGroup = spongeHandsGroup;
+        this._spongeLeftHand = sLeft;
+        this._spongeRightHand = sRight;
+
+        // 12g. Balcony Cigarette Lighting Rig (pack, lid, lighter with 3D flame, mouth cigarette)
+        const smokeIntroGroup = new THREE.Group();
+        smokeIntroGroup.visible = false;
+        const smLeft = this._makeSleeveArm(true);
+        const smRight = this._makeSleeveArm(false);
+
+        // Classic red-and-white cigarette pack with flip-top lid
+        const packGroup = new THREE.Group();
+        const packRed = new THREE.MeshStandardMaterial({ color: 0xb82424, roughness: 0.72 });
+        const packWhite = new THREE.MeshStandardMaterial({ color: 0xebe6d8, roughness: 0.78 });
+        const packGold = new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.45 });
+        const packBody = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.068, 0.024), packWhite);
+        const packStripe = new THREE.Mesh(new THREE.BoxGeometry(0.057, 0.022, 0.025), packRed);
+        packStripe.position.y = -0.015;
+        const packLidPivot = new THREE.Group();
+        packLidPivot.position.set(0, 0.034, 0.012);
+        const packLid = new THREE.Mesh(new THREE.BoxGeometry(0.057, 0.024, 0.025), packRed);
+        packLid.position.set(0, 0.012, -0.012);
+        packLidPivot.add(packLid);
+        const packCigStick = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0045, 0.065, 6), new THREE.MeshStandardMaterial({ color: 0xd49b54 }));
+        packCigStick.position.set(0.012, 0.042, 0);
+        packGroup.add(packBody, packStripe, packLidPivot, packCigStick);
+        packGroup.position.set(0.02, 0.02, -0.085);
+        smLeft.add(packGroup);
+
+        // Pocket lighter with flip wheel & animated 3D flame attached to right hand
+        const lighterGroup = new THREE.Group();
+        lighterGroup.visible = false;
+        const lBody = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.068, 0.014), new THREE.MeshStandardMaterial({ color: 0x24528a, roughness: 0.4 }));
+        const lCap = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.018, 0.014), packGold);
+        lCap.position.y = 0.042;
+        const lFlame = new THREE.Mesh(
+            new THREE.ConeGeometry(0.011, 0.036, 7),
+            new THREE.MeshBasicMaterial({ color: 0xffa824, transparent: true, opacity: 0.92 })
+        );
+        lFlame.position.y = 0.068;
+        lFlame.visible = false;
+        lighterGroup.add(lBody, lCap, lFlame);
+        lighterGroup.position.set(-0.01, 0.02, -0.085);
+        smRight.add(lighterGroup);
+
+        // Cigarette held in mouth while lighting
+        const mouthCig = new THREE.Group();
+        mouthCig.visible = false;
+        const mcPaper = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.068, 8), new THREE.MeshStandardMaterial({ color: 0xf4f4ee }));
+        mcPaper.rotation.x = Math.PI / 2;
+        mcPaper.position.z = -0.034;
+        const mcTip = new THREE.Mesh(
+            new THREE.SphereGeometry(0.0062, 7, 6),
+            new THREE.MeshStandardMaterial({ color: 0x2b2b2e, emissive: 0xff3b00, emissiveIntensity: 0.0 })
+        );
+        mcTip.position.z = -0.069;
+        mouthCig.add(mcPaper, mcTip);
+        mouthCig.position.set(0.015, -0.055, -0.14);
+        mouthCig.userData.tipMat = mcTip.material;
+
+        smokeIntroGroup.add(smLeft, smRight, mouthCig);
+        this.camera.add(smokeIntroGroup);
+        this._smokeIntroGroup = smokeIntroGroup;
+        this._smokeLeftHand = smLeft;
+        this._smokeRightHand = smRight;
+        this._cigPackGroup = packGroup;
+        this._cigPackLid = packLidPivot;
+        this._cigPackStick = packCigStick;
+        this._lighterGroup = lighterGroup;
+        this._lighterFlame = lFlame;
+        this._mouthCig = mouthCig;
+
+        // 12e. First-person cooking / chopping hands rig (attached to camera)
+        const cookHandsGroup = new THREE.Group();
+        cookHandsGroup.visible = false;
+        const cLeft = this._makeSleeveArm(true);
+        const cRight = this._makeSleeveArm(false);
+        const knifeHandle = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.013, 0.015, 0.095, 7),
+            new THREE.MeshStandardMaterial({ color: 0x2b1d14, roughness: 0.85 })
+        );
+        knifeHandle.rotation.x = Math.PI / 2;
+        knifeHandle.position.set(0, 0.005, -0.07);
+        const knifeBlade = new THREE.Mesh(
+            new THREE.BoxGeometry(0.004, 0.032, 0.14),
+            new THREE.MeshStandardMaterial({ color: 0xc8d0d8, metalness: 0.65, roughness: 0.25 })
+        );
+        knifeBlade.position.set(0, 0.002, -0.175);
+        cRight.add(knifeHandle, knifeBlade);
+        cookHandsGroup.add(cLeft, cRight);
+        this.camera.add(cookHandsGroup);
+        this._cookHandsGroup = cookHandsGroup;
+        this._cookLeftHand = cLeft;
+        this._cookRightHand = cRight;
+
         // 13. Full Articulated 3D Player Reflection Avatar (visible in real-time planar mirrors)
         const mirrorBody = new THREE.Group();
         mirrorBody.visible = false;
@@ -510,13 +806,20 @@ export class PlayerController extends Component {
         pupilL.position.set(-0.048, 0.145, -0.106);
         const pupilR = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.020, 0.016), pupilMat);
         pupilR.position.set(0.048, 0.145, -0.106);
-        // 3D eyelids that smoothly close over the eyes during face-washing & blinking
-        const eyelidL = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.026, 0.018), skinMat);
-        eyelidL.position.set(-0.048, 0.146, -0.107);
-        eyelidL.scale.y = 0.08;
-        const eyelidR = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.026, 0.018), skinMat);
-        eyelidR.position.set(0.048, 0.146, -0.107);
-        eyelidR.scale.y = 0.08;
+        // 3D eyelids anchored at the TOP edge of each eye so they close downward naturally
+        const eyelidL = new THREE.Group();
+        eyelidL.position.set(-0.048, 0.158, -0.107);
+        const eyelidMeshL = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.026, 0.018), skinMat);
+        eyelidMeshL.position.y = -0.013;
+        eyelidL.add(eyelidMeshL);
+        eyelidL.scale.y = 0.04;
+
+        const eyelidR = new THREE.Group();
+        eyelidR.position.set(0.048, 0.158, -0.107);
+        const eyelidMeshR = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.026, 0.018), skinMat);
+        eyelidMeshR.position.y = -0.013;
+        eyelidR.add(eyelidMeshR);
+        eyelidR.scale.y = 0.04;
 
         headPivot.add(
             neck, head, nose, earL, earR, mouth,
@@ -958,11 +1261,345 @@ export class PlayerController extends Component {
         }
     }
 
+    startCookingAnimation(duration = 2.8, onProgress = null, onComplete = null, lookTarget = null) {
+        if (this._cookAnim) return;
+        this.controlsLocked = true;
+        this.allowLookWhileLocked = false;
+        if (lookTarget) {
+            this.forcedLookTarget = lookTarget.clone();
+            this.forcedLookSpeed = 6.5;
+        }
+        this._handAnchor.visible = false;
+        if (this._cookHandsGroup) {
+            this._cookHandsGroup.visible = true;
+            this._cookLeftHand.position.set(-0.14, -0.24, -0.37);
+            this._cookRightHand.position.set(0.11, -0.20, -0.37);
+        }
+        this._cookAnim = {
+            progress: 0,
+            knifeX: 0.10,
+            knifeY: -0.19,
+            lastSoundProgress: 0,
+            onProgress,
+            onComplete
+        };
+    }
+
+    _updateCookingAnimation(deltaTime) {
+        if (!this._cookAnim) return;
+        const anim = this._cookAnim;
+        const input = this.engine.inputManager;
+        const delta = input.getMouseDelta();
+        const L = this._cookLeftHand;
+        const R = this._cookRightHand;
+
+        // Player directly guides the knife across the food on the cutting board with mouse movement!
+        anim.knifeX = THREE.MathUtils.clamp(anim.knifeX + delta.x * 0.00055, -0.04, 0.22);
+        anim.knifeY = THREE.MathUtils.clamp(anim.knifeY - delta.y * 0.00055, -0.27, -0.10);
+
+        const moveAmt = Math.hypot(delta.x, delta.y);
+        if (moveAmt > 1.2) {
+            anim.progress = Math.min(1.0, anim.progress + moveAmt * 0.00062);
+        }
+
+        // Left hand holds the food steady; right hand slices accurately with the knife
+        L.position.set(-0.13, -0.25, -0.38);
+        L.rotation.set(-0.16, 0.26, 0.14);
+
+        const cutDepth = THREE.MathUtils.clamp((-0.14 - anim.knifeY) / 0.13, 0, 1);
+        R.position.set(anim.knifeX, anim.knifeY, -0.36 - cutDepth * 0.03);
+        R.rotation.set(-0.10 - cutDepth * 0.36, -0.20 + (0.10 - anim.knifeX) * 0.6, -0.08);
+
+        if (anim.progress - anim.lastSoundProgress >= 0.14) {
+            anim.lastSoundProgress = anim.progress;
+            this.engine.audioSystem.playSpatialOneShot('footstep_parquet', this.transform.position, { volume: 0.32 });
+        }
+
+        if (anim.onProgress) anim.onProgress(anim.progress);
+
+        if (anim.progress >= 1.0) {
+            if (this._cookHandsGroup) this._cookHandsGroup.visible = false;
+            this._handAnchor.visible = true;
+            this.forcedLookTarget = null;
+            this.forcedLookSpeed = 5.0;
+            this.controlsLocked = false;
+            const cb = anim.onComplete;
+            this._cookAnim = null;
+            if (cb) cb();
+        }
+    }
+
+    startInteractiveSpongeWash(lookTarget, onProgress = null, onComplete = null) {
+        if (this._spongeWashAnim) return;
+        this.controlsLocked = true;
+        this.allowLookWhileLocked = false;
+        if (lookTarget) {
+            this.forcedLookTarget = lookTarget.clone();
+            this.forcedLookSpeed = 6.5;
+        }
+        this._handAnchor.visible = false;
+        if (this._spongeHandsGroup) {
+            this._spongeHandsGroup.visible = true;
+            this._spongeLeftHand.position.set(-0.14, -0.24, -0.36);
+            this._spongeRightHand.position.set(0.10, -0.20, -0.35);
+        }
+        this._spongeWashAnim = {
+            progress: 0,
+            sx: 0.08,
+            sy: -0.20,
+            lastSoundProgress: 0,
+            onProgress,
+            onComplete
+        };
+    }
+
+    _updateSpongeWashAnimation(deltaTime) {
+        if (!this._spongeWashAnim) return;
+        const anim = this._spongeWashAnim;
+        const delta = this.engine.inputManager.getMouseDelta();
+        const L = this._spongeLeftHand;
+        const R = this._spongeRightHand;
+
+        // Player scrubs the cutting board & knife directly with the sponge using the mouse!
+        anim.sx = THREE.MathUtils.clamp(anim.sx + delta.x * 0.00055, -0.06, 0.22);
+        anim.sy = THREE.MathUtils.clamp(anim.sy - delta.y * 0.00055, -0.28, -0.11);
+
+        const scrubAmt = Math.hypot(delta.x, delta.y);
+        if (scrubAmt > 1.2) {
+            anim.progress = Math.min(1.0, anim.progress + scrubAmt * 0.00055);
+        }
+
+        L.position.set(-0.13, -0.24, -0.37);
+        L.rotation.set(-0.14, 0.24, 0.14);
+        R.position.set(anim.sx, anim.sy, -0.34);
+        R.rotation.set(-0.18, -0.18, -0.08 + Math.sin(anim.progress * 20) * 0.08);
+
+        // Animate soap foam bubbles appearing as player scrubs
+        const now = performance.now() * 0.004;
+        for (let i = 0; i < this._soapBubbles.length; i++) {
+            const b = this._soapBubbles[i];
+            const show = anim.progress > (i / this._soapBubbles.length) * 0.7;
+            b.visible = show;
+            if (show) {
+                b.position.set(
+                    anim.sx * 0.5 + b.userData.ox,
+                    anim.sy * 0.8 + b.userData.oy + Math.sin(now + b.userData.phase) * 0.012,
+                    -0.37
+                );
+                const s = 0.7 + 0.5 * Math.sin(now * 1.4 + b.userData.phase);
+                b.scale.set(s, s, s);
+            }
+        }
+
+        if (anim.progress - anim.lastSoundProgress >= 0.18) {
+            anim.lastSoundProgress = anim.progress;
+            this.engine.audioSystem.playSpatialOneShot('steam_hiss', this.transform.position, { volume: 0.28 });
+        }
+
+        if (anim.onProgress) anim.onProgress(anim.progress);
+
+        if (anim.progress >= 1.0) {
+            if (this._spongeHandsGroup) this._spongeHandsGroup.visible = false;
+            for (const b of this._soapBubbles) b.visible = false;
+            this._handAnchor.visible = true;
+            this.forcedLookTarget = null;
+            this.forcedLookSpeed = 5.0;
+            this.controlsLocked = false;
+            const cb = anim.onComplete;
+            this._spongeWashAnim = null;
+            if (cb) cb();
+        }
+    }
+
+    startBalconySmokeSequence(balconyWindow, onPromptChange = null, onComplete = null) {
+        if (this._smokeIntroAnim) return;
+        this.controlsLocked = true;
+        this.allowLookWhileLocked = false;
+        this._handAnchor.visible = false;
+        if (this._smokeIntroGroup) this._smokeIntroGroup.visible = true;
+        if (this._cigPackGroup) this._cigPackGroup.visible = false;
+        if (this._cigPackLid) this._cigPackLid.rotation.x = 0;
+        if (this._cigPackStick) this._cigPackStick.visible = true;
+        if (this._lighterGroup) this._lighterGroup.visible = false;
+        if (this._lighterFlame) this._lighterFlame.visible = false;
+        if (this._mouthCig) {
+            this._mouthCig.visible = false;
+            if (this._mouthCig.userData.tipMat) this._mouthCig.userData.tipMat.emissiveIntensity = 0;
+        }
+        const needOpenWindow = !!(balconyWindow && !balconyWindow.isOpen());
+        const startPos = this.transform.position.clone();
+        const leanPos = new THREE.Vector3(0.45, 0.05, -4.22);
+
+        this._smokeIntroAnim = {
+            stage: needOpenWindow ? 'open_window' : 'walk_lean',
+            timer: 0,
+            balconyWindow,
+            startPos,
+            leanPos,
+            windowOpened: false,
+            lighterSparked: false,
+            lightHold: 0,
+            onPromptChange,
+            onComplete
+        };
+    }
+
+    _updateBalconySmokeSequence(deltaTime) {
+        if (!this._smokeIntroAnim) return;
+        const a = this._smokeIntroAnim;
+        a.timer += deltaTime;
+        const L = this._smokeLeftHand;
+        const R = this._smokeRightHand;
+        const input = this.engine.inputManager;
+        const lerp = THREE.MathUtils.lerp;
+        const smooth = (u) => { const c = Math.max(0, Math.min(1, u)); return c * c * (3 - 2 * c); };
+
+        // Keep looking out into the snowy courtyard
+        this.forcedLookTarget = new THREE.Vector3(-0.6, 0.4, -18.0);
+        this.forcedLookSpeed = 4.0;
+
+        // Stage 1a: If balcony window is closed, reach out and open it first
+        if (a.stage === 'open_window') {
+            const u = Math.min(1, a.timer / 1.35);
+            const e = smooth(u);
+            L.position.set(-0.30, -0.55, -0.25);
+            R.position.set(lerp(0.24, 0.06, Math.sin(e * Math.PI)), lerp(-0.42, -0.06, Math.sin(e * Math.PI)), lerp(-0.24, -0.44, Math.sin(e * Math.PI)));
+            R.rotation.set(0.18, -0.15, 0);
+            if (!a.windowOpened && u >= 0.45) {
+                a.windowOpened = true;
+                a.balconyWindow?.setOpen(true);
+            }
+            if (u >= 1) {
+                a.stage = 'walk_lean';
+                a.timer = 0;
+            }
+            return;
+        }
+
+        // Stage 1b: Walk up to the open window and lean gently on the sill
+        if (a.stage === 'walk_lean') {
+            const u = Math.min(1, a.timer / 1.25);
+            const e = smooth(u);
+            this.transform.position.lerpVectors(a.startPos, a.leanPos, e);
+            if (this.rb) this.rb.position.copy(this.transform.position);
+            this.eyeHeight = lerp(1.54, 1.44, e);
+            this.targetEyeHeight = this.eyeHeight;
+            L.position.set(-0.30, -0.55, -0.25);
+            R.position.set(0.30, -0.55, -0.25);
+            if (u >= 1) {
+                a.stage = 'pack_open';
+                a.timer = 0;
+                if (this._cigPackGroup) this._cigPackGroup.visible = true;
+            }
+            return;
+        }
+
+        // Stage 2: Left hand pulls pack from pocket, right hand flips lid & puts cigarette in mouth, pack returns to pocket
+        if (a.stage === 'pack_open') {
+            const t = a.timer;
+            if (t < 0.75) {
+                const e = smooth(t / 0.75);
+                L.position.set(lerp(-0.26, -0.12, e), lerp(-0.52, -0.22, e), lerp(-0.22, -0.36, e));
+                L.rotation.set(0.12, 0.25, 0.10);
+                R.position.set(lerp(0.26, 0.08, e), lerp(-0.52, -0.18, e), lerp(-0.22, -0.36, e));
+                R.rotation.set(0.15, -0.22, -0.10);
+            } else if (t < 1.55) {
+                const e = smooth((t - 0.75) / 0.80);
+                if (this._cigPackLid) this._cigPackLid.rotation.x = lerp(0, 1.65, Math.min(1, e * 1.6));
+                R.position.set(lerp(0.08, -0.02, e), lerp(-0.18, -0.11, e), lerp(-0.36, -0.32, e));
+            } else if (t < 2.45) {
+                const e = smooth((t - 1.55) / 0.90);
+                if (this._cigPackStick) this._cigPackStick.visible = false;
+                if (e > 0.55 && this._mouthCig) this._mouthCig.visible = true;
+                // Right hand brings cigarette to mouth; left hand puts pack back in pocket
+                R.position.set(lerp(-0.02, 0.04, e), lerp(-0.11, -0.07, Math.sin(e * Math.PI)), lerp(-0.32, -0.18, Math.sin(e * Math.PI)));
+                L.position.set(lerp(-0.12, -0.28, e), lerp(-0.22, -0.55, e), lerp(-0.36, -0.22, e));
+            } else {
+                if (this._cigPackGroup) this._cigPackGroup.visible = false;
+                if (this._lighterGroup) this._lighterGroup.visible = true;
+                a.stage = 'lighter_ready';
+                a.timer = 0;
+                if (a.onPromptChange) a.onPromptChange('ignite');
+            }
+            return;
+        }
+
+        // Stage 3: Player pulls lighter & MUST spark/hold LMB or F to light the cigarette themselves!
+        if (a.stage === 'lighter_ready') {
+            L.position.set(-0.32, -0.56, -0.22);
+            const sparkDown = input.isKeyDown('KeyF') || (input.isPointerLocked() && input.isMouseButtonDown(0));
+            if (sparkDown) {
+                if (!a.lighterSparked) {
+                    a.lighterSparked = true;
+                    this.engine.audioSystem.playSpatialOneShot('pickup', this.transform.position, { volume: 0.45 });
+                    if (a.onPromptChange) a.onPromptChange('lighting');
+                }
+                a.lightHold = Math.min(1.0, a.lightHold + deltaTime / 1.15);
+            } else if (a.lighterSparked) {
+                a.lightHold = Math.max(0, a.lightHold - deltaTime * 0.5);
+            }
+
+            if (this._lighterFlame) {
+                this._lighterFlame.visible = sparkDown;
+                if (sparkDown) {
+                    const flicker = 0.85 + Math.sin(performance.now() * 0.045) * 0.25;
+                    this._lighterFlame.scale.set(1.0, flicker, 1.0);
+                }
+            }
+
+            const bring = smooth(a.lightHold);
+            R.position.set(lerp(0.14, 0.025, bring), lerp(-0.24, -0.11, bring), lerp(-0.32, -0.20, bring));
+            R.rotation.set(lerp(0.1, 0.28, bring), -0.16, -0.05);
+
+            if (this._mouthCig?.userData.tipMat) {
+                this._mouthCig.userData.tipMat.emissiveIntensity = bring * 2.2;
+            }
+
+            if (a.lightHold >= 1.0) {
+                this.engine.audioSystem.playSpatialOneShot('smoke_puff', null, { volume: 0.72 });
+                if (this._lighterFlame) this._lighterFlame.visible = false;
+                if (a.onPromptChange) a.onPromptChange('');
+                a.stage = 'put_lighter_away';
+                a.timer = 0;
+            }
+            return;
+        }
+
+        // Stage 4: Put lighter back in pocket and hand off to Act II cigarette smoking
+        if (a.stage === 'put_lighter_away') {
+            const u = Math.min(1, a.timer / 0.75);
+            const e = smooth(u);
+            R.position.set(lerp(0.025, 0.28, e), lerp(-0.11, -0.55, e), lerp(-0.20, -0.22, e));
+            if (u >= 1) {
+                if (this._smokeIntroGroup) this._smokeIntroGroup.visible = false;
+                if (this._lighterGroup) this._lighterGroup.visible = false;
+                if (this._mouthCig) this._mouthCig.visible = false;
+                this._handAnchor.visible = true;
+                this.forcedLookTarget = null;
+                this.forcedLookSpeed = 5.0;
+                this.eyeHeight = 1.54;
+                this.targetEyeHeight = 1.54;
+                this.controlsLocked = false;
+                const cb = a.onComplete;
+                this._smokeIntroAnim = null;
+                if (cb) cb();
+            }
+        }
+    }
+
     setHeldItem(itemKey) {
         this.heldItem = itemKey;
         for (const [k, m] of Object.entries(this._handMeshes)) {
             m.visible = (k === itemKey) || (k === 'cigarette' && this.cigaretteActive);
         }
+    }
+
+    setDecorBoxContents({ tree = true, hall = true, kitchen = true, hallway = true } = {}) {
+        if (!this._decorBoxParts) return;
+        this._decorBoxParts.tree.visible = !!tree;
+        this._decorBoxParts.hall.visible = !!hall;
+        this._decorBoxParts.kitchen.visible = !!kitchen;
+        this._decorBoxParts.hallway.visible = !!hallway;
     }
 
     setCigarette(active) {
@@ -1333,6 +1970,7 @@ export class PlayerController extends Component {
 
     _getSurfaceFootstep() {
         const p = this.transform.position;
+        if (p.x > 40) return 'footstep_linoleum';
         if (p.z < -3.5) return 'footstep_snow';
         if (p.x < 2.0 && p.z <= 1.5) return 'footstep_parquet';
         return 'footstep_linoleum';
@@ -1341,6 +1979,9 @@ export class PlayerController extends Component {
     update(deltaTime) {
         this._updateWashFaceAnimation(deltaTime);
         this._updateDecorateTreeAnimation(deltaTime);
+        this._updateCookingAnimation(deltaTime);
+        this._updateSpongeWashAnimation(deltaTime);
+        this._updateBalconySmokeSequence(deltaTime);
         this._updatePeepholeAnimation(deltaTime);
 
         const input = this.engine.inputManager;

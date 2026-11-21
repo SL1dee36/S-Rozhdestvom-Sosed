@@ -17,7 +17,9 @@ export class StoryDirector {
         this.hasCheckpoint = localStorage.getItem('sng_checkpoint_2345') === '1';
         this.ui.setCheckpointAvailable(this.hasCheckpoint);
         onLanguageChange(() => {
-            if (this.act === 1 && this.phase === 'act1') {
+            if (this.act === 0 && this.phase === 'prologue') {
+                this._refreshObjectives();
+            } else if (this.act === 1 && this.phase === 'act1') {
                 this._refreshObjectives();
             } else if (this.act === 4) {
                 this._refreshAct4Objectives();
@@ -36,6 +38,7 @@ export class StoryDirector {
         this._act4LookTarget = new THREE.Vector3();
 
         this.act1Tasks = {};
+        this.prologueTasks = {};
         this.act4Inspected = {};
         this._tableStage = 'on_balcony'; // 'on_balcony' | 'carrying' | 'placed_folded' | 'wing1_open' | 'unfolded'
         this._tableDinnerStep = 0;
@@ -43,6 +46,21 @@ export class StoryDirector {
         this._washFinishTime = 0;
         this._horrorEventsTriggered = new Set();
         this._menuMusicStarted = false;
+
+        this._inStore = false;
+        this._activeNpcId = null;
+        this._storeTransition = null;
+        this._cookingInProgress = false;
+        this._ovenBaking = false;
+        this._ovenBakeTimer = 0;
+        this._ovenBakeDuration = 45.0;
+        this._talkedNPCs = new Set();
+        this._askedDialogTopics = new Set();
+        this._droppedItems = new Set();
+        this._flyingProps = [];
+        this._smokePromptState = '';
+        this._peeState = null;
+        this._peeDecals = [];
 
         this._initAudioManifest();
         this._bindInteractables();
@@ -122,16 +140,22 @@ export class StoryDirector {
         w.frontDoor.go.addComponent(Interactable, {
             maxDistance: 1.75,
             promptText: () => {
+                if (this.act === 0 && this.phase === 'prologue' && !this.prologueTasks.shopDone && !this._inStore) {
+                    return tr('prompt.go_to_store');
+                }
                 if (this.act === 1) return tr('prompt.peephole');
                 if (this.act === 4 && !this.act4Inspected.door) return tr('prompt.inspect_door');
                 return '';
             },
             canInteract: () => (
+                (this.act === 0 && this.phase === 'prologue' && !this.prologueTasks.shopDone && !this._inStore && !this._storeTransition && !this.player.heldItem) ||
                 (this.act === 1 && this.act1Tasks.knockTriggered && !this.player.isPeephole && !this.player._peepholeAnim) ||
                 (this.act === 4 && !this.act4Inspected.door)
             ),
             onInteract: () => {
-                if (this.act === 1) {
+                if (this.act === 0 && this.phase === 'prologue' && !this.prologueTasks.shopDone && !this._inStore) {
+                    this._enterGroceryStore();
+                } else if (this.act === 1) {
                     this._stopDoorKnockAndPlayStairRun();
                     this.player.enterPeephole();
                     if (!this.act1Tasks.peephole) {
@@ -146,28 +170,61 @@ export class StoryDirector {
         });
 
         w.bathroomSink.addComponent(Interactable, {
-            maxDistance: 1.65,
-            promptText: () => tr('prompt.wash_face'),
-            canInteract: () => this.act === 1 && !this.act1Tasks.wash && !this._washingInProgress && this.phase === 'act1',
+            maxDistance: 1.85,
+            promptText: () => {
+                if (this.act === 1 && !this.act1Tasks.wash) return tr('prompt.wash_face');
+                if (this.act === 1 && this.act1Tasks.usedToilet && !this.act1Tasks.washedHandsAfterToilet) {
+                    return tr('prompt.wash_hands');
+                }
+                return '';
+            },
+            canInteract: () => (
+                (this.act === 1 && !this.act1Tasks.wash && !this._washingInProgress && this.phase === 'act1') ||
+                (this.act === 1 && this.act1Tasks.usedToilet && !this.act1Tasks.washedHandsAfterToilet && !this._washingInProgress && this.phase === 'act1')
+            ),
             onInteract: () => {
-                this._washingInProgress = true;
-                this.engine.audioSystem.playSpatialOneShot('steam_hiss', w.bathroomSink.transform.position, { volume: 0.5 });
-                this.player.startWashFaceAnimation(() => {
-                    this._washingInProgress = false;
-                    this.act1Tasks.wash = true;
-                    this._washFinishTime = this.phaseTimer;
-                    this.ui.showSubtitle(tr('sub.wash_done'), 3200);
-                    this._refreshObjectives();
-                });
+                if (!this.act1Tasks.wash) {
+                    this._washingInProgress = true;
+                    w.bathroomFaucet?.setOn(true);
+                    this.engine.audioSystem.playSpatialOneShot('steam_hiss', w.bathroomSink.transform.position, { volume: 0.5 });
+                    this.player.startWashFaceAnimation(() => {
+                        this._washingInProgress = false;
+                        w.bathroomFaucet?.setOn(false);
+                        this.act1Tasks.wash = true;
+                        this._washFinishTime = this.phaseTimer;
+                        this.ui.showSubtitle(tr('sub.wash_done'), 3200);
+                        this._refreshObjectives();
+                    });
+                } else if (this.act1Tasks.usedToilet && !this.act1Tasks.washedHandsAfterToilet) {
+                    // Secret unmarked task: washing hands after using the toilet!
+                    this._washingInProgress = true;
+                    w.bathroomFaucet?.setOn(true);
+                    this.engine.audioSystem.playSpatialOneShot('steam_hiss', w.bathroomSink.transform.position, { volume: 0.5 });
+                    setTimeout(() => {
+                        this._washingInProgress = false;
+                        w.bathroomFaucet?.setOn(false);
+                        this.act1Tasks.washedHandsAfterToilet = true;
+                        this.ui.showSubtitle(tr('sub.wash_hands_secret_done'), 4200);
+                    }, 1800);
+                }
             }
         });
 
         if (w.toilet) {
             w.toilet.addComponent(Interactable, {
-                maxDistance: 1.65,
-                promptText: () => tr('prompt.flush_toilet'),
+                maxDistance: 1.85,
+                promptText: () => {
+                    if (this.act === 1 && this.act1Tasks.watchTv && this.act1Tasks.pourDrink && !this.act1Tasks.usedToilet) {
+                        return tr('prompt.use_toilet');
+                    }
+                    return tr('prompt.flush_toilet');
+                },
                 canInteract: () => (this.act === 1 || this.act === 2) && this.phase === 'act1',
                 onInteract: () => {
+                    if (this.act === 1 && this.act1Tasks.watchTv && this.act1Tasks.pourDrink && !this.act1Tasks.usedToilet) {
+                        this._startToiletPeeSequence();
+                        return;
+                    }
                     this.engine.audioSystem.playSpatialOneShot('steam_hiss', w.toilet.transform.position, { volume: 0.45 });
                     this.ui.showSubtitle(tr('sub.toilet_flush'), 2600);
                 }
@@ -203,7 +260,7 @@ export class StoryDirector {
                 return '';
             },
             canInteract: () => (
-                (this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.garland && !this._treeDecoratingInProgress) ||
+                (this.act === 1 && this.act1Tasks.stool && this.act1Tasks.decorBox && !this.act1Tasks.garland && !this._treeDecoratingInProgress) ||
                 (this.act === 4 && !this.act4Inspected.tree)
             ),
             onInteract: () => {
@@ -226,13 +283,13 @@ export class StoryDirector {
                             w.garlandOn = true;
                             this.engine.audioSystem.playSpatialOneShot('pickup', w.treeGO.transform.position);
                             const t = this.act1Tasks;
+                            this._syncDecorBoxVisuals();
                             if (t.decorHall && t.decorKitchen && t.decorHallway && t.garland) {
                                 t.decorate = true;
-                                if (this.player.heldItem === 'decorBox') {
-                                    this.player.setHeldItem(null);
-                                }
+                                this.ui.showSubtitle(tr('sub.decor_box_empty_return'), 4200);
+                            } else {
+                                this.ui.showSubtitle(tr('sub.tree_done'), 3400);
                             }
-                            this.ui.showSubtitle(tr('sub.tree_done'), 3400);
                             this._refreshObjectives();
                             this._checkAct1IndoorCompletion();
                         }
@@ -262,13 +319,16 @@ export class StoryDirector {
             });
         }
 
-        // Stool pickup in Kitchen & placement zone in Hall
+        // Stool pickup in Kitchen & placement zone in Hall (only after table + tablecloth are done)
         if (w.kitchenStool) {
             w.kitchenStool.addComponent(Interactable, {
-                maxDistance: 1.7,
+                maxDistance: 2.35,
                 promptText: () => tr('prompt.stool_pickup'),
-                canInteract: () => this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.stoolPicked && !this.player.heldItem,
+                canInteract: () => (this._droppedItems.has('stool') || (this.act === 1 && this.act1Tasks.table)) && !this.act1Tasks.stoolPicked && !this.player.heldItem,
                 onInteract: () => {
+                    this._droppedItems.delete('stool');
+                    this._removeFlyingProp(w.kitchenStool);
+                    w.kitchenStool.transform.rotation.set(0, 0, 0);
                     w.kitchenStool.transform.visible = false;
                     this.act1Tasks.stoolPicked = true;
                     this.player.setHeldItem('stool');
@@ -320,16 +380,15 @@ export class StoryDirector {
         if (w.wardrobeTablecloth) {
             const wardSpot = w.hidingSpots.find(s => s.id === 'wardrobe');
             w.wardrobeTablecloth.addComponent(Interactable, {
-                maxDistance: 2.05,
+                maxDistance: 2.35,
                 promptText: () => (
                     this.player.heldItem
                         ? tr('prompt.tablecloth_hands_full')
                         : tr('prompt.tablecloth_pickup')
                 ),
                 canInteract: () => (
-                    this.act === 1 &&
-                    !this.act1Tasks.tableclothPicked &&
-                    (!wardSpot || !wardSpot.isDoorClosed())
+                    (this._droppedItems.has('tablecloth') || (this.act === 1 && this._tableStage === 'unfolded_bare' && (!wardSpot || !wardSpot.isDoorClosed()))) &&
+                    !this.act1Tasks.tableclothPicked
                 ),
                 onInteract: () => {
                     if (!this.act1Tasks.peephole) {
@@ -340,6 +399,9 @@ export class StoryDirector {
                         this.ui.showSubtitle(tr('sub.tablecloth_hands_full'), 3000);
                         return;
                     }
+                    this._droppedItems.delete('tablecloth');
+                    this._removeFlyingProp(w.wardrobeTablecloth);
+                    w.wardrobeTablecloth.transform.rotation.set(0, 0, 0);
                     w.wardrobeTablecloth.transform.visible = false;
                     this.act1Tasks.tableclothPicked = true;
                     this.player.setHeldItem('tablecloth');
@@ -464,7 +526,19 @@ export class StoryDirector {
                 if (this._tableStage === 'unfolded') {
                     if (this.player.heldItem && this._isFoodOrTableItem(this.player.heldItem)) {
                         const item = this.player.heldItem;
-                        if (w.itemsOnTable[item]) w.itemsOnTable[item].visible = true;
+                        const propObj = w.itemsOnTable[item];
+                        if (propObj) {
+                            // Free placement: place dish exactly where player is aiming on the tabletop!
+                            const hit = this.engine.interactionSystem.currentHitPoint;
+                            if (hit) {
+                                const localPt = w.table.go.transform.worldToLocal(hit.clone());
+                                propObj.position.x = THREE.MathUtils.clamp(localPt.x, -0.58, 0.58);
+                                propObj.position.z = THREE.MathUtils.clamp(localPt.z, -0.28, 0.28);
+                            }
+                            propObj.visible = true;
+                        }
+                        if (w.tablePlaceMarker) w.tablePlaceMarker.visible = false;
+                        this._droppedItems.delete(item);
                         this.act1Tasks[item] = true;
                         this.player.setHeldItem(null);
                         this.engine.audioSystem.playSpatialOneShot('pickup', w.table.go.transform.position);
@@ -487,79 +561,87 @@ export class StoryDirector {
         });
 
         w.sideboardCrystal.addComponent(Interactable, {
-            maxDistance: 1.65,
+            maxDistance: 2.35,
             promptText: () => tr('prompt.crystal_pickup'),
-            canInteract: () => this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.crystal && !this.player.heldItem,
+            canInteract: () => (this._droppedItems.has('crystal') || (this.act === 1 && this.act1Tasks.decorBoxReturned)) && !this.act1Tasks.crystal && !this.player.heldItem,
             onInteract: () => {
-                w.sideboardCrystal.transform.visible = false;
-                this.player.setHeldItem('crystal');
-                this.engine.audioSystem.playSpatialOneShot('pickup', w.sideboardCrystal.transform.position);
+                this._pickupWorldItem('crystal', w.sideboardCrystal);
             }
         });
 
         w.pantryPickles.addComponent(Interactable, {
-            maxDistance: 1.65,
+            maxDistance: 2.35,
             promptText: () => tr('prompt.pickles_pickup'),
-            canInteract: () => this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.pickles && !this.player.heldItem,
+            canInteract: () => (this._droppedItems.has('pickles') || (this.act === 1 && this.act1Tasks.crystal)) && !this.act1Tasks.pickles && !this.player.heldItem,
             onInteract: () => {
-                w.pantryPickles.transform.visible = false;
-                this.player.setHeldItem('pickles');
-                this.engine.audioSystem.playSpatialOneShot('pickup', w.pantryPickles.transform.position);
+                this._pickupWorldItem('pickles', w.pantryPickles);
             }
         });
 
         w.fridgeOlivier.addComponent(Interactable, {
-            maxDistance: 1.65,
+            maxDistance: 2.35,
             promptText: () => tr('prompt.olivier_pickup'),
-            canInteract: () => this.act === 1 && this.act1Tasks.peephole && w.fridge.isOpen() && !this.act1Tasks.olivier && !this.player.heldItem,
+            canInteract: () => (this._droppedItems.has('olivier') || (this.act === 1 && this.act1Tasks.pickles && w.fridge.isOpen())) && w.fridgeOlivier.transform.visible && !this.act1Tasks.olivier && !this.player.heldItem,
             onInteract: () => {
-                w.fridgeOlivier.transform.visible = false;
-                this.player.setHeldItem('olivier');
-                this.engine.audioSystem.playSpatialOneShot('pickup', w.fridgeOlivier.transform.position);
+                this._pickupWorldItem('olivier', w.fridgeOlivier);
             }
         });
 
         w.fridgeMeat.addComponent(Interactable, {
-            maxDistance: 1.65,
+            maxDistance: 2.35,
             promptText: () => tr('prompt.meat_pickup'),
-            canInteract: () => this.act === 1 && this.act1Tasks.peephole && w.fridge.isOpen() && !this.act1Tasks.meat && !this.player.heldItem,
+            canInteract: () => (this._droppedItems.has('meat') || (this.act === 1 && this.act1Tasks.pickles && w.fridge.isOpen())) && w.fridgeMeat.transform.visible && !this.act1Tasks.meat && !this.player.heldItem,
             onInteract: () => {
-                w.fridgeMeat.transform.visible = false;
-                this.player.setHeldItem('meat');
-                this.engine.audioSystem.playSpatialOneShot('pickup', w.fridgeMeat.transform.position);
+                this._pickupWorldItem('meat', w.fridgeMeat);
             }
         });
 
         w.ovenChicken.addComponent(Interactable, {
-            maxDistance: 1.65,
+            maxDistance: 2.35,
             promptText: () => tr('prompt.chicken_pickup'),
-            canInteract: () => this.act === 1 && this.act1Tasks.peephole && w.stove.isOpen() && !this.act1Tasks.chicken && !this.player.heldItem,
+            canInteract: () => (
+                (this._droppedItems.has('chicken') || (this.act === 1 && this.act1Tasks.olivier && this.act1Tasks.meat && w.stove.isOpen())) &&
+                w.ovenChicken.transform.visible &&
+                !this.act1Tasks.chicken &&
+                !this.player.heldItem
+            ),
             onInteract: () => {
-                w.ovenChicken.transform.visible = false;
-                this.player.setHeldItem('chicken');
-                this.engine.audioSystem.playSpatialOneShot('pickup', w.ovenChicken.transform.position);
+                this._pickupWorldItem('chicken', w.ovenChicken);
                 this.ui.showSubtitle(tr('sub.chicken_pickup'), 3500);
             }
         });
 
+        this._bindStoreAndCookingInteractables();
+
         w.champagneBottle.addComponent(Interactable, {
-            maxDistance: 1.75,
+            maxDistance: 2.35,
             promptText: () => tr('prompt.champagne_pickup'),
-            canInteract: () => this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.champagne && !this.player.heldItem,
+            canInteract: () => (this._droppedItems.has('champagne') || (this.act === 1 && this._isIndoorChoresDone())) && !this.act1Tasks.champagne && !this.player.heldItem,
             onInteract: () => {
-                w.champagneBottle.transform.visible = false;
-                this.engine.audioSystem.playSpatialOneShot('pickup', w.champagneBottle.transform.position);
-                this.player.setHeldItem('champagne');
+                this._pickupWorldItem('champagne', w.champagneBottle);
                 this.ui.showSubtitle(tr('sub.champagne_pickup'), 3400);
                 this._refreshObjectives();
             }
         });
 
         w.tvGameObject.addComponent(Interactable, {
-            maxDistance: 1.75,
-            promptText: () => tr('prompt.tv_news'),
-            canInteract: () => this.act === 4 && !this.act4Inspected.tv,
+            maxDistance: 1.95,
+            promptText: () => {
+                if (this.act === 4 && !this.act4Inspected.tv) return tr('prompt.tv_news');
+                if (this.act === 0 || this.act === 1) return tr('prompt.tv_switch_channel');
+                return '';
+            },
+            canInteract: () => (
+                (this.act === 4 && !this.act4Inspected.tv) ||
+                ((this.act === 0 || this.act === 1) && !this.player.isHidden && !this.player.isPeephole)
+            ),
             onInteract: () => {
+                if (this.act === 0 || this.act === 1) {
+                    const ch = w.crtTV.nextChannel();
+                    this.engine.audioSystem.playSpatialOneShot('pickup', w.tvGameObject.transform.position, { volume: 0.45 });
+                    this.ui.showSubtitle(tr(`sub.tv_channel_${ch}`), 2600);
+                    return;
+                }
                 const countOthers = ['door', 'table', 'tree'].filter(k => this.act4Inspected[k]).length;
                 if (countOthers < 3) {
                     this.ui.showSubtitle(tr('sub.act4_inspect_first'), 3000);
@@ -625,19 +707,53 @@ export class StoryDirector {
         }
 
         if (w.decorQuest) {
+            const wardSpot = w.hidingSpots.find(s => s.id === 'wardrobe');
             w.decorQuest.box.addComponent(Interactable, {
-                maxDistance: 1.7,
+                maxDistance: 2.35,
                 promptText: () => tr('prompt.decor_box_pickup'),
-                canInteract: () => this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks.decorBox && !this.player.heldItem,
+                canInteract: () => (
+                    (this._droppedItems.has('decorBox') || (this.act === 1 && this.act1Tasks.stool && (!wardSpot || !wardSpot.isDoorClosed()))) &&
+                    !this.act1Tasks.decorBox &&
+                    !this.player.heldItem
+                ),
                 onInteract: () => {
+                    this._droppedItems.delete('decorBox');
+                    this._removeFlyingProp(w.decorQuest.box);
+                    w.decorQuest.box.transform.rotation.set(0, 0, 0);
                     this.act1Tasks.decorBox = true;
                     w.decorQuest.box.transform.visible = false;
                     this.player.setHeldItem('decorBox');
+                    this._syncDecorBoxVisuals();
                     this.engine.audioSystem.playSpatialOneShot('pickup', w.decorQuest.box.transform.position, { volume: 0.45 });
                     this.ui.showSubtitle(tr('sub.decor_box_pickup'), 3800);
                     this._refreshObjectives();
                 }
             });
+
+            if (w.wardrobeBoxDropZone) {
+                w.wardrobeBoxDropZone.addComponent(Interactable, {
+                    maxDistance: 2.2,
+                    promptText: () => tr('prompt.return_empty_box'),
+                    canInteract: () => (
+                        this.act === 1 &&
+                        this.act1Tasks.decorate &&
+                        this.act1Tasks.garland &&
+                        !this.act1Tasks.decorBoxReturned &&
+                        this.player.heldItem === 'decorBox' &&
+                        (!wardSpot || !wardSpot.isDoorClosed())
+                    ),
+                    onInteract: () => {
+                        this.act1Tasks.decorBoxReturned = true;
+                        this.player.setHeldItem(null);
+                        w.decorQuest.box.transform.position.set(1.56, 0.0, 3.76);
+                        w.decorQuest.box.transform.visible = true;
+                        if (w.decorBoxInnerGroup) w.decorBoxInnerGroup.visible = false;
+                        this.engine.audioSystem.playSpatialOneShot('pickup', w.wardrobeBoxDropZone.transform.position, { volume: 0.5 });
+                        this.ui.showSubtitle(tr('sub.decor_box_returned'), 3400);
+                        this._refreshObjectives();
+                    }
+                });
+            }
 
             const roomSpecs = [
                 { key: 'hall', taskKey: 'decorHall', promptKey: 'prompt.decor_hall', quoteKey: 'sub.decor_hall_done' },
@@ -650,7 +766,7 @@ export class StoryDirector {
                     maxDistance: 1.85,
                     promptText: () => (this.act1Tasks.decorBox ? tr(spec.promptKey) : tr('prompt.decor_need_box')),
                     holdDuration: () => (this.act1Tasks.decorBox ? 1.8 : 0),
-                    canInteract: () => this.act === 1 && this.act1Tasks.peephole && !this.act1Tasks[spec.taskKey],
+                    canInteract: () => this.act === 1 && this.act1Tasks.garland && this.act1Tasks.decorBox && !this.act1Tasks[spec.taskKey],
                     onInteract: () => {
                         if (!this.act1Tasks.decorBox) {
                             this.ui.showSubtitle(tr('sub.decor_need_box'), 3200);
@@ -661,18 +777,16 @@ export class StoryDirector {
                         if (w.decorQuest.highlights?.[spec.key]) {
                             w.decorQuest.highlights[spec.key].visible = false;
                         }
+                        this._syncDecorBoxVisuals();
                         this.engine.audioSystem.playSpatialOneShot('pickup', spotGO.transform.position, { volume: 0.45 });
                         const t = this.act1Tasks;
                         if (t.decorHall && t.decorKitchen && t.decorHallway) {
                             t.decorate = true;
-                            if (t.garland && this.player.heldItem === 'decorBox') {
-                                this.player.setHeldItem(null);
-                            }
                             this.ui.showSubtitle(
                                 t.garland
-                                    ? tr('sub.decor_all_done')
+                                    ? tr('sub.decor_box_empty_return')
                                     : tr('sub.decor_rooms_done'),
-                                3600
+                                3800
                             );
                         } else {
                             this.ui.showSubtitle(tr(spec.quoteKey), 3000);
@@ -689,6 +803,528 @@ export class StoryDirector {
                 this._startAct2ZoomSequence();
             }
         };
+    }
+
+    _bindStoreAndCookingInteractables() {
+        const w = this.world;
+
+        // --- STORE INTERACTABLES (Prologue: act === 0) ---
+        if (w.store) {
+            w.store.olivierPackGO.addComponent(Interactable, {
+                maxDistance: 2.65,
+                promptText: () => tr('prompt.store_take_olivier'),
+                canInteract: () => (this._droppedItems.has('olivierPack') || (this.act === 0 && this._inStore)) && !this.prologueTasks.shopOlivierPack,
+                onInteract: () => {
+                    this._droppedItems.delete('olivierPack');
+                    this._removeFlyingProp(w.store.olivierPackGO);
+                    w.store.olivierPackGO.transform.rotation.set(0, 0, 0);
+                    this.prologueTasks.shopOlivierPack = true;
+                    w.store.olivierPackGO.transform.visible = false;
+                    w.store.olivierPackHighlight.visible = false;
+                    this.player.setHeldItem('olivierPack');
+                    this.engine.audioSystem.playSpatialOneShot('pickup', w.store.olivierPackGO.transform.position);
+                    this.ui.showSubtitle(tr('sub.store_got_olivier'), 3400);
+                    this._refreshObjectives();
+                }
+            });
+
+            w.store.meatPackGO.addComponent(Interactable, {
+                maxDistance: 2.65,
+                promptText: () => tr('prompt.store_take_meat'),
+                canInteract: () => (this._droppedItems.has('meatPack') || (this.act === 0 && this._inStore)) && !this.prologueTasks.shopMeatPack,
+                onInteract: () => {
+                    this._droppedItems.delete('meatPack');
+                    this._removeFlyingProp(w.store.meatPackGO);
+                    w.store.meatPackGO.transform.rotation.set(0, 0, 0);
+                    this.prologueTasks.shopMeatPack = true;
+                    w.store.meatPackGO.transform.visible = false;
+                    w.store.meatPackHighlight.visible = false;
+                    this.player.setHeldItem('meatPack');
+                    this.engine.audioSystem.playSpatialOneShot('pickup', w.store.meatPackGO.transform.position);
+                    this.ui.showSubtitle(tr('sub.store_got_meat'), 3400);
+                    this._refreshObjectives();
+                }
+            });
+
+            w.store.exitDoor.addComponent(Interactable, {
+                maxDistance: 2.4,
+                promptText: () => (
+                    this.prologueTasks.shopPaid
+                        ? tr('prompt.store_exit_home')
+                        : tr('prompt.store_exit_need_pay')
+                ),
+                canInteract: () => this.act === 0 && this._inStore && !this._storeTransition,
+                onInteract: () => {
+                    if (!this.prologueTasks.shopPaid) {
+                        this.ui.showSubtitle(tr('sub.store_need_pay'), 3600);
+                        return;
+                    }
+                    this._exitGroceryStore();
+                }
+            });
+
+            for (const npc of w.store.npcs) {
+                npc.go.addComponent(Interactable, {
+                    maxDistance: 2.8,
+                    promptText: () => tr(`prompt.talk_${npc.id}`),
+                    canInteract: () => this.act === 0 && this._inStore && !this.ui.isDialogueOpen(),
+                    onInteract: () => {
+                        this._openNPCDialogue(npc.id);
+                    }
+                });
+            }
+        }
+
+        // --- KITCHEN COOKING, FRIDGE STORAGE, WASHING & NAP INTERACTABLES (Prologue: act === 0) ---
+        if (w.cooking) {
+            const c = w.cooking;
+
+            // 1. Drop grocery bag on kitchen table
+            c.dropZone.addComponent(Interactable, {
+                maxDistance: 1.9,
+                promptText: () => tr('prompt.drop_groceries'),
+                canInteract: () => (
+                    this.act === 0 &&
+                    this.prologueTasks.shopDone &&
+                    !this.prologueTasks.groceriesPlaced &&
+                    this.player.heldItem === 'groceryBag'
+                ),
+                onInteract: () => {
+                    this.prologueTasks.groceriesPlaced = true;
+                    this.player.setHeldItem(null);
+                    c.dropHighlight.visible = false;
+                    c.bagMesh.visible = true;
+                    c.boardGO.transform.visible = true;
+                    c.olivierPrep.visible = true;
+                    c.meatPrep.visible = false;
+                    c.rawChickenGO.transform.visible = true;
+                    this.engine.audioSystem.playSpatialOneShot('pickup', c.dropZone.transform.position, { volume: 0.55 });
+                    this.ui.showSubtitle(tr('sub.groceries_unpacked'), 4400);
+                    this._refreshObjectives();
+                }
+            });
+
+            // 2. Cutting board: Interactive mouse-driven slicing for Olivier & Meat, AND picking up the board with knife to wash in the sink!
+            c.boardGO.addComponent(Interactable, {
+                maxDistance: 2.35,
+                promptText: () => {
+                    const p = this.prologueTasks;
+                    if (!p.cookOlivier) return tr('prompt.cook_olivier');
+                    if (!p.cookMeat) return tr('prompt.cook_meat');
+                    if (!p.boardPicked) return tr('prompt.board_pickup_wash');
+                    return '';
+                },
+                canInteract: () => {
+                    const p = this.prologueTasks;
+                    if (this._cookingInProgress) return false;
+                    if (this._droppedItems.has('dirtyBoard') && !p.boardPicked) return true;
+                    if (this.act !== 0 || !p.groceriesPlaced) return false;
+                    if (!p.cookOlivier || !p.cookMeat) {
+                        return !this.player.heldItem;
+                    }
+                    // After chicken is in oven and Olivier & Meat are stored in the fridge, player can pick up the cutting board & knife to wash!
+                    if (p.chickenInOven && p.olivierInFridge && p.meatInFridge && !p.boardPicked && !p.kitchenCleaned) {
+                        return !this.player.heldItem || this.player.heldItem === 'sponge';
+                    }
+                    return false;
+                },
+                onInteract: () => {
+                    const p = this.prologueTasks;
+                    const boardTarget = c.boardGO.transform.position.clone().add(new THREE.Vector3(0, 0.04, 0));
+                    if (!p.cookOlivier) {
+                        this._cookingInProgress = true;
+                        this.ui.showSubtitle(tr('sub.cooking_olivier_mouse'), 4500);
+                        this.player.startCookingAnimation(
+                            2.7,
+                            (r) => this.ui.setHoldProgress(r),
+                            () => {
+                                this.ui.setHoldProgress(0);
+                                this._cookingInProgress = false;
+                                p.cookOlivier = true;
+                                c.olivierPrep.visible = false;
+                                c.cookedOlivierGO.transform.visible = true;
+                                if (!p.cookMeat) c.meatPrep.visible = true;
+                                this.engine.audioSystem.playSpatialOneShot('pickup', c.boardGO.transform.position);
+                                this.ui.showSubtitle(tr('sub.cooked_olivier_done'), 3600);
+                                this._refreshObjectives();
+                            },
+                            boardTarget
+                        );
+                    } else if (!p.cookMeat) {
+                        this._cookingInProgress = true;
+                        this.ui.showSubtitle(tr('sub.cooking_meat_mouse'), 4500);
+                        this.player.startCookingAnimation(
+                            2.4,
+                            (r) => this.ui.setHoldProgress(r),
+                            () => {
+                                this.ui.setHoldProgress(0);
+                                this._cookingInProgress = false;
+                                p.cookMeat = true;
+                                c.meatPrep.visible = false;
+                                c.cookedMeatGO.transform.visible = true;
+                                this.engine.audioSystem.playSpatialOneShot('pickup', c.boardGO.transform.position);
+                                this.ui.showSubtitle(tr('sub.cooked_meat_done'), 3600);
+                                this._refreshObjectives();
+                            },
+                            boardTarget
+                        );
+                    } else if (!p.boardPicked) {
+                        this._droppedItems.delete('dirtyBoard');
+                        this._removeFlyingProp(c.boardGO);
+                        c.boardGO.transform.rotation.set(0, 0, 0);
+                        p.boardPicked = true;
+                        p.boardInSink = false;
+                        c.boardGO.transform.visible = false;
+                        c.cookHighlight.visible = false;
+                        this.player.setHeldItem('dirtyBoard');
+                        this.engine.audioSystem.playSpatialOneShot('pickup', c.boardGO.transform.position);
+                        this.ui.showSubtitle(
+                            p.spongePicked ? tr('sub.board_picked_to_wash') : tr('sub.board_picked_need_sponge'),
+                            4000
+                        );
+                        this._refreshObjectives();
+                    }
+                }
+            });
+
+            // 3. Pick up freshly cooked Olivier from kitchen table (only after chicken is in oven)
+            c.cookedOlivierGO.addComponent(Interactable, {
+                maxDistance: 2.35,
+                promptText: () => tr('prompt.olivier_pickup'),
+                canInteract: () => (
+                    (this._droppedItems.has('olivier') || (this.act === 0 && this.prologueTasks.chickenInOven && this.prologueTasks.cookOlivier)) &&
+                    c.cookedOlivierGO.transform.visible &&
+                    !this.prologueTasks.olivierInFridge &&
+                    !this.player.heldItem
+                ),
+                onInteract: () => {
+                    this._pickupWorldItem('olivier', c.cookedOlivierGO);
+                    this.ui.showSubtitle(tr('sub.put_in_fridge_hint'), 3200);
+                }
+            });
+
+            // 4. Pick up freshly sliced Meat & Cheese platter from kitchen table (only after chicken is in oven)
+            c.cookedMeatGO.addComponent(Interactable, {
+                maxDistance: 2.35,
+                promptText: () => tr('prompt.meat_pickup'),
+                canInteract: () => (
+                    (this._droppedItems.has('meat') || (this.act === 0 && this.prologueTasks.chickenInOven && this.prologueTasks.cookMeat)) &&
+                    c.cookedMeatGO.transform.visible &&
+                    !this.prologueTasks.meatInFridge &&
+                    !this.player.heldItem
+                ),
+                onInteract: () => {
+                    this._pickupWorldItem('meat', c.cookedMeatGO);
+                    this.ui.showSubtitle(tr('sub.put_in_fridge_hint'), 3200);
+                }
+            });
+
+            // 5. Put Olivier or Meat platter into the open Fridge
+            c.fridgeDropGO.addComponent(Interactable, {
+                maxDistance: 1.8,
+                promptText: () => (
+                    this.player.heldItem === 'olivier'
+                        ? tr('prompt.put_olivier_fridge')
+                        : tr('prompt.put_meat_fridge')
+                ),
+                canInteract: () => (
+                    this.act === 0 &&
+                    w.fridge.isOpen() &&
+                    (this.player.heldItem === 'olivier' || this.player.heldItem === 'meat')
+                ),
+                onInteract: () => {
+                    if (this.player.heldItem === 'olivier') {
+                        this.prologueTasks.olivierInFridge = true;
+                        w.fridgeOlivier.transform.visible = true;
+                    } else if (this.player.heldItem === 'meat') {
+                        this.prologueTasks.meatInFridge = true;
+                        w.fridgeMeat.transform.visible = true;
+                    }
+                    this.player.setHeldItem(null);
+                    this.engine.audioSystem.playSpatialOneShot('pickup', c.fridgeDropGO.transform.position);
+                    if (this.prologueTasks.olivierInFridge && this.prologueTasks.meatInFridge) {
+                        this.ui.showSubtitle(tr('sub.fridge_food_stored'), 3800);
+                    }
+                    this._refreshObjectives();
+                }
+            });
+
+            // 6. Pick up raw seasoned chicken tray to put into oven (only after Olivier & Meat are prepared)
+            c.rawChickenGO.addComponent(Interactable, {
+                maxDistance: 2.35,
+                promptText: () => tr('prompt.raw_chicken_pickup'),
+                canInteract: () => (
+                    (this._droppedItems.has('rawChicken') || (this.act === 0 && this.prologueTasks.cookOlivier && this.prologueTasks.cookMeat)) &&
+                    c.rawChickenGO.transform.visible &&
+                    !this.prologueTasks.chickenInOven &&
+                    !this.player.heldItem
+                ),
+                onInteract: () => {
+                    this._pickupWorldItem('rawChicken', c.rawChickenGO);
+                    this.ui.showSubtitle(tr('sub.raw_chicken_pickup'), 3600);
+                    this._refreshObjectives();
+                }
+            });
+
+            // 7. Place raw chicken inside open oven -> starts long baking timer
+            c.ovenBakeZoneGO.addComponent(Interactable, {
+                maxDistance: 1.8,
+                promptText: () => tr('prompt.put_chicken_oven'),
+                canInteract: () => (
+                    this.act === 0 &&
+                    w.stove.isOpen() &&
+                    !this.prologueTasks.chickenInOven &&
+                    this.player.heldItem === 'rawChicken'
+                ),
+                onInteract: () => {
+                    this.player.setHeldItem(null);
+                    this.prologueTasks.chickenInOven = true;
+                    c.ovenRawChicken.visible = true;
+                    this._ovenBaking = true;
+                    this._ovenBakeTimer = 0;
+                    w.stove.setOpen(false, true, false);
+                    this.engine.audioSystem.playSpatialOneShot('steam_hiss', c.ovenBakeZoneGO.transform.position, { volume: 0.45 });
+                    this.ui.showSubtitle(tr('sub.chicken_baking_long'), 4600);
+                    this._refreshObjectives();
+                }
+            });
+
+            // 7b. Interactive Kitchen Faucet (open/close water stream at any time)
+            if (w.kitchenFaucet?.go) {
+                w.kitchenFaucet.go.addComponent(Interactable, {
+                    maxDistance: 1.85,
+                    promptText: () => (w.kitchenFaucet.isOn() ? tr('prompt.faucet_close') : tr('prompt.faucet_open')),
+                    canInteract: () => !this.player.isHidden && !this.player.isPeephole && !this._cookingInProgress,
+                    onInteract: () => {
+                        w.kitchenFaucet.toggle();
+                    }
+                });
+            }
+
+            // 7c. Kitchen Sponge in Hallway Wardrobe (taken after food is in fridge)
+            if (w.wardrobeSponge) {
+                const wardSpot = w.hidingSpots.find(s => s.id === 'wardrobe');
+                w.wardrobeSponge.addComponent(Interactable, {
+                    maxDistance: 2.35,
+                    promptText: () => tr('prompt.sponge_pickup'),
+                    canInteract: () => (
+                        (this._droppedItems.has('sponge') || (
+                            this.act === 0 &&
+                            this.prologueTasks.chickenInOven &&
+                            this.prologueTasks.olivierInFridge &&
+                            this.prologueTasks.meatInFridge &&
+                            (!wardSpot || !wardSpot.isDoorClosed())
+                        )) &&
+                        !this.prologueTasks.spongePicked &&
+                        (!this.player.heldItem || this.player.heldItem === 'dirtyBoard')
+                    ),
+                    onInteract: () => {
+                        this._droppedItems.delete('sponge');
+                        this._removeFlyingProp(w.wardrobeSponge);
+                        w.wardrobeSponge.transform.rotation.set(0, 0, 0);
+                        this.prologueTasks.spongePicked = true;
+                        w.wardrobeSponge.transform.visible = false;
+                        this.player.setHeldItem('sponge');
+                        this.engine.audioSystem.playSpatialOneShot('pickup', w.wardrobeSponge.transform.position);
+                        this.ui.showSubtitle(
+                            this.prologueTasks.boardPicked ? tr('sub.sponge_picked') : tr('sub.sponge_picked_need_board'),
+                            3800
+                        );
+                        this._refreshObjectives();
+                    }
+                });
+            }
+
+            // 8. Kitchen Sink: Place dirty board in sink OR wash cutting board & knife with sponge
+            if (w.kitchenSinkGO) {
+                w.kitchenSinkGO.addComponent(Interactable, {
+                    maxDistance: 2.35,
+                    targetMeshes: w.kitchenSinkMeshes || null,
+                    promptText: () => {
+                        const p = this.prologueTasks;
+                        if (p.boardPicked && !p.spongePicked && !p.boardInSink) {
+                            return tr('prompt.put_board_in_sink');
+                        }
+                        if (!p.boardPicked && p.spongePicked) {
+                            return tr('prompt.wash_need_board');
+                        }
+                        return w.kitchenFaucet && !w.kitchenFaucet.isOn()
+                            ? tr('prompt.wash_need_faucet')
+                            : tr('prompt.wash_board_sink');
+                    },
+                    canInteract: () => {
+                        const p = this.prologueTasks;
+                        if (this.act !== 0 || p.kitchenCleaned || this._cookingInProgress) return false;
+                        if (p.boardPicked && p.spongePicked) return true;
+                        if (p.boardPicked && !p.spongePicked && !p.boardInSink) return true;
+                        if (!p.boardPicked && p.spongePicked) return true;
+                        return false;
+                    },
+                    onInteract: () => {
+                        const p = this.prologueTasks;
+                        if (p.boardPicked && !p.spongePicked) {
+                            p.boardInSink = true;
+                            this.player.setHeldItem(null);
+                            c.boardGO.transform.position.set(3.75, 0.74, -1.25);
+                            c.boardGO.transform.rotation.set(0, 0.25, 0);
+                            c.boardGO.transform.visible = true;
+                            this.engine.audioSystem.playSpatialOneShot('pickup', w.kitchenSinkGO.transform.position);
+                            this.ui.showSubtitle(tr('sub.board_in_sink_get_sponge'), 4200);
+                            this._refreshObjectives();
+                            return;
+                        }
+                        if (!p.boardPicked && p.spongePicked) {
+                            this.ui.showSubtitle(tr('sub.wash_need_board_first'), 3600);
+                            return;
+                        }
+                        if (w.kitchenFaucet && !w.kitchenFaucet.isOn()) {
+                            w.kitchenFaucet.setOn(true, true);
+                        }
+                        c.boardGO.transform.visible = false;
+                        this._cookingInProgress = true;
+                        this.ui.showSubtitle(tr('sub.washing_sponge_mouse'), 4800);
+                        const sinkTarget = new THREE.Vector3(3.76, 0.86, -1.25);
+                        this.player.startInteractiveSpongeWash(
+                            sinkTarget,
+                            (r) => this.ui.setHoldProgress(r),
+                            () => {
+                                this.ui.setHoldProgress(0);
+                                this._cookingInProgress = false;
+                                this.player.setHeldItem(null);
+                                this.prologueTasks.kitchenCleaned = true;
+                                c.bagMesh.visible = false;
+                                c.boardGO.transform.visible = false;
+                                c.sinkHighlight.visible = false;
+                                if (w.kitchenFaucet) w.kitchenFaucet.setOn(false, true);
+                                this.ui.showSubtitle(tr('sub.kitchen_cleaned_nap'), 5200);
+                                this._refreshObjectives();
+                            }
+                        );
+                    }
+                });
+            }
+
+            // 9. Living room Sofa: lie down for a nap while chicken bakes -> transitions to classic Act I (23:30)!
+            if (w.sofaNapGO) {
+                w.sofaNapGO.addComponent(Interactable, {
+                    maxDistance: 2.0,
+                    promptText: () => tr('prompt.sofa_nap'),
+                    canInteract: () => (
+                        this.act === 0 &&
+                        this.phase === 'prologue' &&
+                        this.prologueTasks.kitchenCleaned &&
+                        !this.prologueTasks.napped &&
+                        !this.player.heldItem
+                    ),
+                    onInteract: () => {
+                        this._startPrologueNap();
+                    }
+                });
+            }
+        }
+    }
+
+    _startPrologueNap() {
+        this.prologueTasks.napped = true;
+        this.phase = 'prologue_falling_asleep';
+        this.phaseTimer = 0;
+        if (this.world.cooking?.sofaHighlight) this.world.cooking.sofaHighlight.visible = false;
+        this.player.controlsLocked = true;
+        this.player.allowLookWhileLocked = false;
+        const sp = this.world.playerSpawn || { position: new THREE.Vector3(-2.65, 0.05, -1.0), yaw: -Math.PI / 2, pitch: -0.05 };
+        this.player.setPose(sp.position.clone(), sp.yaw, sp.pitch);
+        this.player.eyeHeight = 0.92;
+        this.player.targetEyeHeight = 0.92;
+        this.engine.audioSystem.playSpatialOneShot('wood_creak', sp.position, { volume: 0.45 });
+        this.ui.showSubtitle(tr('sub.nap_falling_asleep'), 3000);
+        this.ui.setObjectives('', []);
+    }
+
+    _enterGroceryStore() {
+        if (this._storeTransition || this._inStore) return;
+        this.player.controlsLocked = true;
+        this.engine.audioSystem.playSpatialOneShot('door_open', this.world.frontDoor.go.transform.position, { volume: 0.6 });
+        this._storeTransition = { target: 'store', timer: 0, switched: false };
+    }
+
+    _exitGroceryStore() {
+        if (this._storeTransition || !this._inStore) return;
+        this.player.controlsLocked = true;
+        this.engine.audioSystem.playSpatialOneShot('door_open', this.world.store.exitDoor.transform.position, { volume: 0.6 });
+        this._storeTransition = { target: 'home', timer: 0, switched: false };
+    }
+
+    _syncDecorBoxVisuals() {
+        const t = this.act1Tasks || {};
+        this.player.setDecorBoxContents?.({
+            tree: !t.garland,
+            hall: !t.decorHall,
+            kitchen: !t.decorKitchen,
+            hallway: !t.decorHallway
+        });
+    }
+
+    _openNPCDialogue(npcId) {
+        this._activeNpcId = npcId;
+        this._talkedNPCs.add(npcId);
+        this.player.controlsLocked = true;
+
+        const speakerName = tr(`npc.${npcId}.name`);
+        const buildChoices = () => {
+            const choices = [];
+            if (npcId === 'galya' && !this.prologueTasks.shopPaid) {
+                const hasItems = this.prologueTasks.shopOlivierPack && this.prologueTasks.shopMeatPack;
+                choices.push({
+                    id: 'pay',
+                    primary: true,
+                    label: hasItems ? tr('dlg.galya.opt_pay_ready') : tr('dlg.galya.opt_pay_empty')
+                });
+            }
+            for (const tid of ['t1', 't2', 't3']) {
+                if (!this._askedDialogTopics.has(`${npcId}:${tid}`)) {
+                    choices.push({ id: tid, label: tr(`dlg.${npcId}.opt${tid.slice(1)}`) });
+                }
+            }
+            choices.push({ id: 'bye', label: tr('dlg.common.bye') });
+            return choices;
+        };
+
+        const greetingKey = (npcId === 'galya' && this.prologueTasks.shopPaid)
+            ? 'dlg.galya.greeting_paid'
+            : `dlg.${npcId}.greeting`;
+
+        this.ui.openDialogue(
+            speakerName,
+            tr(`npc.${npcId}.role`),
+            tr(greetingKey),
+            buildChoices(),
+            (choice) => {
+                if (choice.id === 'bye') {
+                    this.ui.closeDialogue();
+                    return;
+                }
+                if (choice.id === 'pay') {
+                    if (this.prologueTasks.shopOlivierPack && this.prologueTasks.shopMeatPack) {
+                        this.prologueTasks.shopPaid = true;
+                        this.player.setHeldItem('groceryBag');
+                        this.engine.audioSystem.playSpatialOneShot('pickup', this.player.transform.position, { volume: 0.55 });
+                        this._refreshObjectives();
+                        this.ui.updateDialogue(tr('dlg.galya.reply_paid'), buildChoices());
+                    } else {
+                        this.ui.updateDialogue(tr('dlg.galya.reply_need_items'), buildChoices());
+                    }
+                    return;
+                }
+                // Stay in dialogue, hide this specific asked option, and show the NPC's reply
+                this._askedDialogTopics.add(`${npcId}:${choice.id}`);
+                const replyKey = `dlg.${npcId}.reply_${choice.id}`;
+                this.ui.updateDialogue(tr(replyKey), buildChoices());
+            },
+            () => {
+                this._activeNpcId = null;
+                this.player.controlsLocked = false;
+            }
+        );
     }
 
     _isFoodOrTableItem(key) {
@@ -714,6 +1350,7 @@ export class StoryDirector {
             t.wash &&
             t.garland &&
             t.decorate &&
+            t.decorBoxReturned &&
             t.table &&
             t.stool &&
             t.crystal &&
@@ -900,6 +1537,38 @@ export class StoryDirector {
         this._endingTriggered = false;
         this._washingInProgress = false;
         this._treeDecoratingInProgress = false;
+        this._cookingInProgress = false;
+        this._inStore = false;
+        this._activeNpcId = null;
+        this._storeTransition = null;
+        this._ovenBaking = false;
+        this._ovenBakeTimer = 0;
+        this._talkedNPCs.clear();
+        this._askedDialogTopics.clear();
+        this._droppedItems.clear();
+        this._flyingProps = [];
+        this._smokePromptState = '';
+        const scene = this.engine.renderer?.scene;
+        if (this._peeState?.streamMeshes && scene) {
+            for (const m of this._peeState.streamMeshes) {
+                scene.remove(m);
+            }
+        }
+        if (this._peeState?.streamLine && scene) {
+            scene.remove(this._peeState.streamLine);
+        }
+        this._peeState = null;
+        if (this._peeDecals?.length && scene) {
+            for (const d of this._peeDecals) {
+                scene.remove(d);
+            }
+            this._peeDecals = [];
+        }
+        w.bathroomFaucet?.setOn(false);
+        w.kitchenFaucet?.setOn(false, false);
+        if (w.tablePlaceMarker) w.tablePlaceMarker.visible = false;
+        this.player.setDecorBoxContents?.({ tree: true, hall: true, kitchen: true, hallway: true });
+        this.ui.closeDialogue(true);
         this._knockTurnedToRun = false;
         this._knockRepeatTimer = 0;
         if (this._stairRunTimers) {
@@ -930,10 +1599,31 @@ export class StoryDirector {
         if (!fromCheckpoint) {
             w.sideboardCrystal.transform.visible = true;
             w.pantryPickles.transform.visible = true;
-            w.fridgeOlivier.transform.visible = true;
-            w.fridgeMeat.transform.visible = true;
-            w.ovenChicken.transform.visible = true;
+            // In a fresh run, Olivier, Meat platter & Chicken come from Store + Cooking stage
+            w.fridgeOlivier.transform.visible = false;
+            w.fridgeMeat.transform.visible = false;
+            w.ovenChicken.transform.visible = false;
             w.champagneBottle.transform.visible = true;
+            if (w.store) {
+                w.store.olivierPackGO.transform.visible = true;
+                w.store.meatPackGO.transform.visible = true;
+                w.store.olivierPackHighlight.visible = true;
+                w.store.meatPackHighlight.visible = true;
+            }
+            if (w.cooking) {
+                w.cooking.dropHighlight.visible = false;
+                w.cooking.bagMesh.visible = false;
+                w.cooking.boardGO.transform.position.set(2.40, 0.768, -2.44);
+                w.cooking.boardGO.transform.rotation.set(0, 0, 0);
+                w.cooking.boardGO.transform.visible = false;
+                w.cooking.cookHighlight.visible = false;
+                w.cooking.olivierPrep.visible = false;
+                w.cooking.meatPrep.visible = false;
+                w.cooking.cookedOlivierGO.transform.visible = false;
+                w.cooking.cookedMeatGO.transform.visible = false;
+                w.cooking.rawChickenGO.transform.visible = false;
+                w.cooking.ovenRawChicken.visible = false;
+            }
             if (w.wardrobeTablecloth) w.wardrobeTablecloth.transform.visible = true;
             if (w.kitchenStool) w.kitchenStool.transform.visible = true;
             if (w.placedHallStool) w.placedHallStool.transform.visible = false;
@@ -975,6 +1665,18 @@ export class StoryDirector {
             w.fridgeMeat.transform.visible = false;
             w.ovenChicken.transform.visible = false;
             w.champagneBottle.transform.visible = false;
+            if (w.cooking) {
+                w.cooking.dropHighlight.visible = false;
+                w.cooking.bagMesh.visible = false;
+                w.cooking.boardGO.transform.position.set(2.40, 0.768, -2.44);
+                w.cooking.boardGO.transform.rotation.set(0, 0, 0);
+                w.cooking.boardGO.transform.visible = false;
+                w.cooking.cookHighlight.visible = false;
+                w.cooking.cookedOlivierGO.transform.visible = false;
+                w.cooking.cookedMeatGO.transform.visible = false;
+                w.cooking.rawChickenGO.transform.visible = false;
+                w.cooking.ovenRawChicken.visible = false;
+            }
             if (w.wardrobeTablecloth) w.wardrobeTablecloth.transform.visible = false;
             if (w.kitchenStool) w.kitchenStool.transform.visible = false;
             if (w.placedHallStool) w.placedHallStool.transform.visible = true;
@@ -1025,11 +1727,30 @@ export class StoryDirector {
 
     startNewGame() {
         this._resetWorldForRun(false);
-        this.act = 1;
-        this.phase = 'act1_wake_sitting';
+        this.act = 0;
+        this.phase = 'prologue';
         this.phaseTimer = 0;
-        this.clockMinutes = 0;
-        this.world.setClockTime(0);
+        // Start in the evening at 21:10 (-140 minutes before 23:30)
+        this.clockMinutes = -140;
+        this.world.setClockTime(-140);
+
+        this.prologueTasks = {
+            shopOlivierPack: false,
+            shopMeatPack: false,
+            shopPaid: false,
+            shopDone: false,
+            groceriesPlaced: false,
+            cookOlivier: false,
+            cookMeat: false,
+            chickenInOven: false,
+            olivierInFridge: false,
+            meatInFridge: false,
+            boardPicked: false,
+            boardInSink: false,
+            spongePicked: false,
+            kitchenCleaned: false,
+            napped: false
+        };
 
         this.act1Tasks = {
             wash: false,
@@ -1048,6 +1769,7 @@ export class StoryDirector {
             decorKitchen: false,
             decorHallway: false,
             decorate: false,
+            decorBoxReturned: false,
             crystal: false,
             pickles: false,
             olivier: false,
@@ -1055,10 +1777,13 @@ export class StoryDirector {
             chicken: false,
             champagne: false,
             watchTv: false,
-            pourDrink: false
+            pourDrink: false,
+            usedToilet: false,
+            washedHandsAfterToilet: false
         };
 
-        // Player wakes up sitting on the sofa facing the TV across the room
+        // Game starts sitting on the sofa watching TV in the evening (21:10)!
+        this.phase = 'prologue_tv_sitting';
         const sp = this.world.playerSpawn || { position: new THREE.Vector3(-2.65, 0.05, -1.0), yaw: -Math.PI / 2, pitch: -0.05 };
         this.player.controlsLocked = true;
         this.player.allowLookWhileLocked = true;
@@ -1070,9 +1795,14 @@ export class StoryDirector {
         this.player.lookYawLimit = 1.25;
         this.player.lookPitchMin = -0.55;
         this.player.lookPitchMax = 0.45;
+        if (this.world.roomLights.hall) this.world.roomLights.hall.setOn(true);
+        if (this.world.crtTV) this.world.crtTV.setMode('movie', false);
+        if (this.world.wardrobeSponge) this.world.wardrobeSponge.transform.visible = true;
+        if (this.world.decorBoxInnerGroup) this.world.decorBoxInnerGroup.visible = true;
+        if (this.world.kitchenFaucet) this.world.kitchenFaucet.setOn(false, false);
 
         this._fadeVal = 0.0;
-        this.engine.renderer.setPostProcessParams({ fade: 0.0, wakeVignette: 1.0 });
+        this.engine.renderer.setPostProcessParams({ fade: 0.0, wakeVignette: 0.0 });
 
         const a = this.engine.audioSystem;
         a.startSpatialLoop('tv_audio', 'ogonyok_waltz', new THREE.Vector3(1.58, 0.94, -1.0), {
@@ -1086,7 +1816,6 @@ export class StoryDirector {
             refDistance: 0.9,
             maxDistance: 7.0
         });
-        // Kitchen clock with tight 3D spatial attenuation and wall occlusion
         a.startSpatialLoop('clock_tick', 'clock_tick', new THREE.Vector3(2.90, 2.25, -0.71), {
             volume: 0.24,
             refDistance: 0.45,
@@ -1100,7 +1829,57 @@ export class StoryDirector {
             maxDistance: 16
         });
 
-        // Clean screen on wake: no objectives, no subtitles, no crosshair until standing up
+        this.ui.showGameplayHUD(false);
+        this.ui.setClockText('21:10');
+        this.ui.setWakePrompt(tr('ui.hud.stand_sofa_tv'), false);
+        this.ui.showSubtitle(tr('sub.prologue_tv_start'), 5400);
+        this.ui.setObjectives('', []);
+    }
+
+    _startClassicAct1FromNap() {
+        const w = this.world;
+        this.act = 1;
+        this.phase = 'act1_wake_sitting';
+        this.phaseTimer = 0;
+        this.clockMinutes = 0;
+        this.world.setClockTime(0);
+
+        // Chicken has finished roasting while napping; Olivier & Meat are chilled in the fridge!
+        this._ovenBaking = false;
+        if (w.cooking) {
+            w.cooking.ovenRawChicken.visible = false;
+            w.cooking.bagMesh.visible = false;
+            w.cooking.boardGO.transform.visible = false;
+            w.cooking.cookedOlivierGO.transform.visible = false;
+            w.cooking.cookedMeatGO.transform.visible = false;
+            w.cooking.rawChickenGO.transform.visible = false;
+            w.cooking.dropHighlight.visible = false;
+            w.cooking.cookHighlight.visible = false;
+            w.cooking.sinkHighlight.visible = false;
+            w.cooking.sofaHighlight.visible = false;
+        }
+        w.fridgeOlivier.transform.visible = true;
+        w.fridgeMeat.transform.visible = true;
+        w.ovenChicken.transform.visible = true;
+        w.fridge.setOpen(false, false, true);
+        w.stove.setOpen(false, false, true);
+        if (w.roomLights.hall) w.roomLights.hall.setOn(false);
+
+        // Player wakes up sitting on the sofa facing the TV across the room (classic Act I!)
+        const sp = w.playerSpawn || { position: new THREE.Vector3(-2.65, 0.05, -1.0), yaw: -Math.PI / 2, pitch: -0.05 };
+        this.player.controlsLocked = true;
+        this.player.allowLookWhileLocked = true;
+        this.player.isCrouching = false;
+        this.player.eyeHeight = 0.92;
+        this.player.targetEyeHeight = 0.92;
+        this.player.setPose(sp.position.clone(), sp.yaw, sp.pitch);
+        this.player.lookYawCenter = sp.yaw;
+        this.player.lookYawLimit = 1.25;
+        this.player.lookPitchMin = -0.55;
+        this.player.lookPitchMax = 0.45;
+
+        this._fadeVal = 0.0;
+        this.engine.renderer.setPostProcessParams({ fade: 0.0, wakeVignette: 1.0 });
         this.ui.showGameplayHUD(true);
         this.ui.setClockText('23:30');
         this.ui.setWakePrompt(tr('ui.hud.wake_prompt'), false);
@@ -1144,19 +1923,32 @@ export class StoryDirector {
 
     _transitionToAct2() {
         this.act = 2;
-        this.phase = 'act2_smoke';
+        this.phase = 'act2_lighting';
         this.phaseTimer = 0;
+        this._smokePromptState = '';
         this.clockMinutes = 13;
         this.world.setClockTime(13);
         this.ui.setClockText('23:43');
-        this.player.setCigarette(true);
-        this.world.cigSmokeEmitter.setActive(true);
-        if (this.world.courtyardStroller) {
-            this.world.courtyardStroller.visible = true;
-            this.world.courtyardStroller.position.set(-14.0, -6.5, -17.5);
-        }
         this.ui.setObjectives(tr('obj.act2.title'), [{ text: tr('obj.act2.smoke'), done: false }]);
         this.ui.showSubtitle(tr('sub.act2_balcony'), 4200);
+
+        this.player.startBalconySmokeSequence(
+            this.world.balconyWindow,
+            (state) => {
+                this._smokePromptState = state;
+            },
+            () => {
+                this._smokePromptState = '';
+                this.phase = 'act2_smoke';
+                this.phaseTimer = 0;
+                this.player.setCigarette(true);
+                this.world.cigSmokeEmitter.setActive(true);
+                if (this.world.courtyardStroller) {
+                    this.world.courtyardStroller.visible = true;
+                    this.world.courtyardStroller.position.set(-14.0, -6.5, -17.5);
+                }
+            }
+        );
     }
 
     _startAct2ZoomSequence() {
@@ -1281,6 +2073,42 @@ export class StoryDirector {
     }
 
     _refreshObjectives() {
+        // PROLOGUE: Store trip -> Cooking -> Put in fridge -> Wash board -> Nap on sofa
+        if (this.act === 0 && this.phase === 'prologue') {
+            const p = this.prologueTasks;
+            if (!p.shopDone) {
+                if (!this._inStore) {
+                    this.ui.setObjectives(tr('obj.act1.shop_title'), [
+                        { text: tr('obj.act1.go_store'), done: false }
+                    ]);
+                } else {
+                    this.ui.setObjectives(tr('obj.act1.shop_title'), [
+                        { text: tr('obj.act1.store_olivier_pack'), done: !!p.shopOlivierPack },
+                        { text: tr('obj.act1.store_meat_pack'), done: !!p.shopMeatPack },
+                        { text: tr('obj.act1.store_pay'), done: !!p.shopPaid },
+                        { text: tr('obj.act1.store_return_home'), done: false }
+                    ]);
+                }
+                return;
+            }
+            const cookList = [
+                { text: tr('obj.act1.unpack_groceries'), done: !!p.groceriesPlaced },
+                { text: tr('obj.act1.cook_olivier'), done: !!p.cookOlivier },
+                { text: tr('obj.act1.cook_meat'), done: !!p.cookMeat },
+                { text: tr('obj.act1.put_chicken_oven'), done: !!p.chickenInOven },
+                { text: tr('obj.prologue.store_in_fridge'), done: !!(p.olivierInFridge && p.meatInFridge) },
+                {
+                    text: !p.boardPicked
+                        ? tr('obj.prologue.take_board_wash')
+                        : (!p.spongePicked ? tr('obj.prologue.get_sponge') : tr('obj.prologue.wash_board_sink')),
+                    done: !!p.kitchenCleaned
+                },
+                { text: tr('obj.prologue.nap_sofa'), done: !!p.napped }
+            ];
+            this.ui.setObjectives(tr('obj.prologue.cook_title'), cookList);
+            return;
+        }
+
         if (this.act !== 1) return;
         if (this.phase === 'act1_wake_sitting' || this.phase === 'act1_standing_up' || this.phase === 'act1_look_around') {
             this.ui.setObjectives('', []);
@@ -1310,7 +2138,7 @@ export class StoryDirector {
             return;
         }
 
-        // Step 3: Main New Year preparation chores
+        // Step 3: Classic New Year preparation chores
         const decorDoneCount = (t.decorHall ? 1 : 0) + (t.decorKitchen ? 1 : 0) + (t.decorHallway ? 1 : 0);
         let tableTaskText = tr('obj.act1.table_balcony');
         if (this._tableStage === 'carrying') {
@@ -1345,6 +2173,7 @@ export class StoryDirector {
                     : tr('obj.act1.decor_get_box', { done: decorDoneCount }),
                 done: !!t.decorate
             },
+            { text: tr('obj.act1.return_empty_box'), done: !!t.decorBoxReturned },
             { text: tr('obj.act1.crystal'), done: !!t.crystal },
             { text: tr('obj.act1.pickles'), done: !!t.pickles },
             { text: tr('obj.act1.fridge'), done: !!(t.olivier && t.meat) },
@@ -1357,7 +2186,11 @@ export class StoryDirector {
             } else {
                 list.push({ text: tr('obj.act1.sit_table'), done: !!(t.watchTv && t.pourDrink) });
                 if (t.watchTv && t.pourDrink) {
-                    list.push({ text: tr('obj.act1.go_smoke'), done: false });
+                    if (!t.usedToilet) {
+                        list.push({ text: tr('obj.act1.use_toilet'), done: false });
+                    } else {
+                        list.push({ text: tr('obj.act1.go_smoke'), done: false });
+                    }
                 }
             }
         }
@@ -1382,6 +2215,8 @@ export class StoryDirector {
         this.phaseTimer += deltaTime;
 
         if (this._fadeVal < 1.0 &&
+            !this._storeTransition &&
+            this.phase !== 'prologue_falling_asleep' &&
             this.phase !== 'act1_wake_sitting' &&
             this.phase !== 'act4_midnight' &&
             this.phase !== 'act3_escape_run' &&
@@ -1393,10 +2228,25 @@ export class StoryDirector {
         this.world.crtTV.update(deltaTime);
         if (this.world.neighborWindowCanvas) this.world.neighborWindowCanvas.update(deltaTime);
         this._updateLightsAndClocks(deltaTime);
+        this._updateFlyingProps(deltaTime);
         this._updateTableHighlightZones(deltaTime);
         this._updatePromptHUD();
 
-        if (this.act === 1) {
+        // Handle dropping any held item (except heavy table / cigarette) with [R]
+        if (this.engine.inputManager.wasKeyJustPressed('KeyR') &&
+            !this.player.controlsLocked &&
+            !this.player.isHidden &&
+            !this.player.isPeephole &&
+            !this.ui.isDialogueOpen() &&
+            this.player.heldItem &&
+            this.player.heldItem !== 'table' &&
+            this.player.heldItem !== 'cigarette') {
+            this._dropHeldItem();
+        }
+
+        if (this.act === 0) {
+            this._updatePrologue(deltaTime);
+        } else if (this.act === 1) {
             this._updateAct1(deltaTime);
         } else if (this.act === 2) {
             this._updateAct2(deltaTime);
@@ -1461,6 +2311,29 @@ export class StoryDirector {
             w.tableclothHighlight,
             this.act === 1 && this.act1Tasks?.peephole && !this.act1Tasks?.tableclothPicked
         );
+        if (w.cooking) {
+            const p = this.prologueTasks || {};
+            updateDecorFrame(
+                w.cooking.dropHighlight,
+                this.act === 0 && p.shopDone && !p.groceriesPlaced && this.player.heldItem === 'groceryBag'
+            );
+            updateDecorFrame(
+                w.cooking.cookHighlight,
+                this.act === 0 && p.groceriesPlaced && !this._cookingInProgress && (!p.cookOlivier || !p.cookMeat || (p.chickenInOven && p.olivierInFridge && p.meatInFridge && !p.boardPicked))
+            );
+            updateDecorFrame(
+                w.cooking.sinkHighlight,
+                this.act === 0 && (p.boardPicked && p.spongePicked) && !p.kitchenCleaned
+            );
+            updateDecorFrame(
+                w.cooking.sofaHighlight,
+                this.act === 0 && this.phase === 'prologue' && p.kitchenCleaned && !p.napped
+            );
+        }
+        if (w.store && this._inStore) {
+            updateDecorFrame(w.store.olivierPackHighlight, !this.prologueTasks?.shopOlivierPack);
+            updateDecorFrame(w.store.meatPackHighlight, !this.prologueTasks?.shopMeatPack);
+        }
 
         // Animate wing unfolding or tablecloth spreading in real time while the player holds KeyE on the table
         if (this.act === 1 && w.table) {
@@ -1473,6 +2346,26 @@ export class StoryDirector {
             } else if (this._tableStage === 'unfolded_bare' && this.act1Tasks.tableclothPicked) {
                 w.table.setTableclothProgress(ratio);
             }
+
+            // Free table placement preview marker
+            if (w.tablePlaceMarker) {
+                const showMarker = (
+                    this._tableStage === 'unfolded' &&
+                    isTargetingTable &&
+                    this.player.heldItem &&
+                    this._isFoodOrTableItem(this.player.heldItem) &&
+                    inter.currentHitPoint
+                );
+                w.tablePlaceMarker.visible = !!showMarker;
+                if (showMarker) {
+                    const localPt = w.table.go.transform.worldToLocal(inter.currentHitPoint.clone());
+                    w.tablePlaceMarker.position.x = THREE.MathUtils.clamp(localPt.x, -0.58, 0.58);
+                    w.tablePlaceMarker.position.z = THREE.MathUtils.clamp(localPt.z, -0.28, 0.28);
+                    w.tablePlaceMarker.rotation.z += deltaTime * 2.5;
+                }
+            }
+        } else if (w.tablePlaceMarker) {
+            w.tablePlaceMarker.visible = false;
         }
     }
 
@@ -1501,6 +2394,514 @@ export class StoryDirector {
                 });
             }, delayMs);
             this._stairRunTimers.push(timerId);
+        }
+    }
+
+    _pickupWorldItem(key, go) {
+        this._droppedItems.delete(key);
+        this._removeFlyingProp(go);
+        if (go) {
+            go.transform.rotation.set(0, 0, 0);
+            go.transform.visible = false;
+        }
+        this.player.setHeldItem(key);
+        this.engine.audioSystem.playSpatialOneShot('pickup', go ? go.transform.position : this.player.transform.position);
+    }
+
+    _removeFlyingProp(go) {
+        if (!go || !this._flyingProps?.length) return;
+        this._flyingProps = this._flyingProps.filter(p => p.go !== go);
+    }
+
+    _dropHeldItem() {
+        const item = this.player.heldItem;
+        if (!item || item === 'table' || item === 'cigarette') return;
+        const w = this.world;
+
+        // HL2-style physics throw: launch forward along camera look direction with upward arc & spin
+        const cam = this.engine.renderer.camera;
+        const origin = new THREE.Vector3();
+        cam.getWorldPosition(origin);
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize();
+        const startPos = origin.clone().addScaledVector(dir, 0.44);
+        startPos.y = Math.max(0.25, startPos.y - 0.14);
+
+        const throwVel = dir.clone().multiplyScalar(4.8);
+        throwVel.y += 1.55;
+
+        let targetGO = null;
+        let floorY = 0.06;
+
+        if (item === 'crystal') {
+            targetGO = w.sideboardCrystal;
+            floorY = 0.08;
+        } else if (item === 'pickles') {
+            targetGO = w.pantryPickles;
+            floorY = 0.08;
+        } else if (item === 'olivier') {
+            targetGO = this.act === 0 ? w.cooking?.cookedOlivierGO : w.fridgeOlivier;
+            floorY = 0.06;
+        } else if (item === 'meat') {
+            targetGO = this.act === 0 ? w.cooking?.cookedMeatGO : w.fridgeMeat;
+            floorY = 0.03;
+        } else if (item === 'chicken') {
+            targetGO = w.ovenChicken;
+            floorY = 0.06;
+        } else if (item === 'champagne') {
+            targetGO = w.champagneBottle;
+            floorY = 0.08;
+        } else if (item === 'stool') {
+            this.act1Tasks.stoolPicked = false;
+            targetGO = w.kitchenStool;
+            floorY = 0.0;
+        } else if (item === 'tablecloth') {
+            this.act1Tasks.tableclothPicked = false;
+            targetGO = w.wardrobeTablecloth;
+            floorY = 0.05;
+        } else if (item === 'decorBox') {
+            this.act1Tasks.decorBox = false;
+            targetGO = w.decorQuest?.box;
+            floorY = 0.0;
+        } else if (item === 'rawChicken') {
+            targetGO = w.cooking?.rawChickenGO;
+            floorY = 0.02;
+        } else if (item === 'dirtyBoard') {
+            this.prologueTasks.boardPicked = false;
+            this.prologueTasks.boardInSink = false;
+            targetGO = w.cooking?.boardGO;
+            floorY = 0.02;
+        } else if (item === 'sponge') {
+            this.prologueTasks.spongePicked = false;
+            targetGO = w.wardrobeSponge;
+            floorY = 0.04;
+        } else if (item === 'olivierPack' && this._inStore) {
+            this.prologueTasks.shopOlivierPack = false;
+            targetGO = w.store?.olivierPackGO;
+            floorY = 0.02;
+        } else if (item === 'meatPack' && this._inStore) {
+            this.prologueTasks.shopMeatPack = false;
+            targetGO = w.store?.meatPackGO;
+            floorY = 0.02;
+        } else {
+            return;
+        }
+
+        if (!targetGO) return;
+
+        this._droppedItems.add(item);
+        this._removeFlyingProp(targetGO);
+        targetGO.transform.position.copy(startPos);
+        targetGO.transform.rotation.set(0, this.player.yaw, 0);
+        targetGO.transform.visible = true;
+
+        this._flyingProps.push({
+            go: targetGO,
+            vel: throwVel,
+            angVel: new THREE.Vector3(
+                (Math.random() - 0.5) * 7.5,
+                (Math.random() - 0.5) * 6.5,
+                (Math.random() - 0.5) * 7.5
+            ),
+            floorY,
+            radius: 0.14,
+            bounces: 0,
+            settled: false
+        });
+
+        this.player.setHeldItem(null);
+        this.engine.audioSystem.playSpatialOneShot('pickup', startPos, { volume: 0.32 });
+        this._refreshObjectives();
+    }
+
+    _updateFlyingProps(deltaTime) {
+        if (!this._flyingProps?.length) return;
+        const dt = Math.min(deltaTime, 0.05);
+        const bodies = this.engine.physicsEngine?.rigidBodies || [];
+        const propBox = new THREE.Box3();
+        const halfVec = new THREE.Vector3();
+
+        for (let i = this._flyingProps.length - 1; i >= 0; i--) {
+            const p = this._flyingProps[i];
+            if (!p.go || !p.go.transform.visible) {
+                this._flyingProps.splice(i, 1);
+                continue;
+            }
+            const pos = p.go.transform.position;
+            p.vel.y -= 11.2 * dt;
+
+            const prevPos = pos.clone();
+            pos.addScaledVector(p.vel, dt);
+
+            // Check collisions against static world AABBs (walls, cabinets, tables)
+            halfVec.set(p.radius, p.radius, p.radius);
+            propBox.setFromCenterAndSize(pos, halfVec.clone().multiplyScalar(2));
+            for (let b = 0; b < bodies.length; b++) {
+                const rb = bodies[b];
+                if (rb.bodyType !== 'static' || !rb.collider || !rb.collider.enabled) continue;
+                const box = rb.collider.getBox(rb.position);
+                if (propBox.intersectsBox(box)) {
+                    // Determine primary penetration axis from previous position
+                    const hitX = (prevPos.x + p.radius <= box.min.x + 0.04) || (prevPos.x - p.radius >= box.max.x - 0.04);
+                    const hitZ = (prevPos.z + p.radius <= box.min.z + 0.04) || (prevPos.z - p.radius >= box.max.z - 0.04);
+                    const hitY = (prevPos.y - p.radius >= box.max.y - 0.06);
+
+                    if (hitY && p.vel.y < 0) {
+                        pos.y = box.max.y + p.radius * 0.5;
+                        if (Math.abs(p.vel.y) > 0.85) {
+                            this.engine.audioSystem.playSpatialOneShot('footstep_parquet', pos, { volume: Math.min(0.45, Math.abs(p.vel.y) * 0.09) });
+                        }
+                        p.vel.y *= -0.28;
+                        p.vel.x *= 0.72;
+                        p.vel.z *= 0.72;
+                        p.angVel.multiplyScalar(0.55);
+                        p.bounces++;
+                    } else if (hitX) {
+                        pos.x = prevPos.x;
+                        p.vel.x *= -0.45;
+                        p.vel.z *= 0.8;
+                        this.engine.audioSystem.playSpatialOneShot('footstep_parquet', pos, { volume: 0.28 });
+                    } else if (hitZ) {
+                        pos.z = prevPos.z;
+                        p.vel.z *= -0.45;
+                        p.vel.x *= 0.8;
+                        this.engine.audioSystem.playSpatialOneShot('footstep_parquet', pos, { volume: 0.28 });
+                    } else {
+                        pos.copy(prevPos);
+                        p.vel.multiplyScalar(-0.35);
+                    }
+                    break;
+                }
+            }
+
+            // Floor collision & bounce
+            if (pos.y <= p.floorY) {
+                pos.y = p.floorY;
+                if (Math.abs(p.vel.y) > 0.9) {
+                    this.engine.audioSystem.playSpatialOneShot('footstep_parquet', pos, { volume: Math.min(0.48, Math.abs(p.vel.y) * 0.09) });
+                    p.vel.y *= -0.34;
+                    p.vel.x *= 0.74;
+                    p.vel.z *= 0.74;
+                    p.angVel.multiplyScalar(0.58);
+                    p.bounces++;
+                } else {
+                    p.vel.y = 0;
+                    p.vel.x *= Math.pow(0.18, dt);
+                    p.vel.z *= Math.pow(0.18, dt);
+                    p.angVel.multiplyScalar(Math.pow(0.08, dt));
+                }
+            }
+
+            p.go.transform.rotation.x += p.angVel.x * dt;
+            p.go.transform.rotation.y += p.angVel.y * dt;
+            p.go.transform.rotation.z += p.angVel.z * dt;
+
+            // Settle nicely upright-ish when stopped
+            if (pos.y <= p.floorY + 0.015 && p.vel.lengthSq() < 0.015 && p.angVel.lengthSq() < 0.05) {
+                p.go.transform.rotation.x *= 0.25;
+                p.go.transform.rotation.z *= 0.25;
+                this._flyingProps.splice(i, 1);
+            }
+        }
+    }
+
+    _startToiletPeeSequence() {
+        const scene = this.engine.renderer.scene;
+        this.phase = 'act1_peeing';
+        this.phaseTimer = 0;
+        this.player.controlsLocked = true;
+        this.player.allowLookWhileLocked = true;
+        this.player.isCrouching = false;
+        this.player.eyeHeight = 1.54;
+        this.player.targetEyeHeight = 1.54;
+        // Stand in front of the toilet (toilet is at 4.72, 0, 3.18) facing +Z (yaw = PI)
+        this.player.setPose(new THREE.Vector3(4.68, 0.05, 2.56), Math.PI, -0.58);
+        this.player.lookYawCenter = Math.PI;
+        this.player.lookYawLimit = 0.95;
+        this.player.lookPitchMin = -1.18;
+        this.player.lookPitchMax = 0.22;
+
+        // Build stream droplet segments + continuous stream line
+        const streamMat = new THREE.MeshBasicMaterial({
+            color: 0xf2d83a,
+            transparent: true,
+            opacity: 0.88
+        });
+        const streamGeo = new THREE.SphereGeometry(0.016, 6, 5);
+        const streamMeshes = [];
+        const segCount = 22;
+        for (let i = 0; i < segCount; i++) {
+            const m = new THREE.Mesh(streamGeo, streamMat);
+            scene.add(m);
+            streamMeshes.push(m);
+        }
+
+        const linePositions = new Float32Array((segCount + 1) * 3);
+        const lineGeo = new THREE.BufferGeometry();
+        lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+        const streamLine = new THREE.Line(
+            lineGeo,
+            new THREE.LineBasicMaterial({ color: 0xffe44d, transparent: true, opacity: 0.85 })
+        );
+        streamLine.frustumCulled = false;
+        scene.add(streamLine);
+
+        this._peeState = {
+            duration: 15.0,
+            elapsed: 0,
+            decalCooldown: 0,
+            soundTimer: 0,
+            streamMeshes,
+            streamLine,
+            linePositions
+        };
+
+        this.engine.audioSystem.playSpatialOneShot('steam_hiss', new THREE.Vector3(4.72, 0.35, 3.14), { volume: 0.38 });
+        this.ui.showSubtitle(tr('sub.toilet_peeing_hint'), 5500);
+    }
+
+    _updateToiletPeeSequence(deltaTime) {
+        const st = this._peeState;
+        if (!st) return;
+        const scene = this.engine.renderer.scene;
+        st.elapsed += deltaTime;
+        const progress = Math.min(1, st.elapsed / st.duration);
+        this.ui.setHoldProgress(progress);
+
+        st.soundTimer += deltaTime;
+        if (st.soundTimer >= 1.65 && st.elapsed < st.duration - 0.5) {
+            st.soundTimer = 0;
+            this.engine.audioSystem.playSpatialOneShot('steam_hiss', new THREE.Vector3(4.72, 0.35, 3.14), { volume: 0.28 });
+        }
+
+        // Compute parabolic urine stream from hip along player's aim direction
+        const p = this.player.transform.position;
+        const origin = new THREE.Vector3(p.x, 0.88, p.z);
+        const yaw = this.player.yaw;
+        const pitch = this.player.pitch;
+        const dir = new THREE.Vector3(
+            -Math.sin(yaw) * Math.cos(pitch),
+            Math.sin(pitch) * 0.75 - 0.12,
+            -Math.cos(yaw) * Math.cos(pitch)
+        ).normalize();
+
+        const speed = 2.15;
+        const g = -7.6;
+        let hitPos = null;
+        let hitNormal = new THREE.Vector3(0, 1, 0);
+        let hitInBowlWater = false;
+
+        const bowlCenterX = 4.72;
+        const bowlCenterZ = 3.14;
+
+        st.linePositions[0] = origin.x;
+        st.linePositions[1] = origin.y;
+        st.linePositions[2] = origin.z;
+        let lastX = origin.x, lastY = origin.y, lastZ = origin.z;
+
+        for (let i = 0; i < st.streamMeshes.length; i++) {
+            const m = st.streamMeshes[i];
+            if (hitPos) {
+                m.visible = false;
+                st.linePositions[(i + 1) * 3] = lastX;
+                st.linePositions[(i + 1) * 3 + 1] = lastY;
+                st.linePositions[(i + 1) * 3 + 2] = lastZ;
+                continue;
+            }
+            const t = (i + 1) * 0.028;
+            const sx = origin.x + dir.x * speed * t;
+            const sy = origin.y + dir.y * speed * t + 0.5 * g * t * t;
+            const sz = origin.z + dir.z * speed * t;
+
+            // Check bathroom walls / toilet tank / toilet bowl / floor
+            const dBowl = Math.hypot(sx - bowlCenterX, sz - bowlCenterZ);
+            if (sz >= 3.29 && Math.abs(sx - 4.72) <= 0.19 && sy >= 0.42 && sy <= 0.89) {
+                // Toilet cistern tank front
+                hitPos = new THREE.Vector3(sx, sy, 3.295);
+                hitNormal.set(0, 0, -1);
+            } else if (dBowl < 0.13 && sy <= 0.34) {
+                hitPos = new THREE.Vector3(sx, 0.275, sz);
+                hitNormal.set(0, 1, 0);
+                hitInBowlWater = true;
+            } else if (dBowl < 0.22 && sy <= 0.405 && sy >= 0.31) {
+                // Toilet rim
+                hitPos = new THREE.Vector3(sx, 0.402, sz);
+                hitNormal.set(0, 1, 0);
+            } else if (sx <= 4.31) {
+                hitPos = new THREE.Vector3(4.305, Math.max(0.03, sy), sz);
+                hitNormal.set(1, 0, 0);
+            } else if (sx >= 5.21) {
+                hitPos = new THREE.Vector3(5.20, Math.max(0.03, sy), sz);
+                hitNormal.set(-1, 0, 0);
+            } else if (sz >= 3.40) {
+                hitPos = new THREE.Vector3(sx, Math.max(0.03, sy), 3.395);
+                hitNormal.set(0, 0, -1);
+            } else if (sy <= 0.015) {
+                hitPos = new THREE.Vector3(sx, 0.012, sz);
+                hitNormal.set(0, 1, 0);
+            }
+
+            m.visible = true;
+            const jitter = Math.sin(st.elapsed * 34 + i * 1.7) * 0.004;
+            const px = hitPos ? hitPos.x : (sx + jitter);
+            const py = hitPos ? hitPos.y : Math.max(0.015, sy);
+            const pz = hitPos ? hitPos.z : (sz + jitter);
+            m.position.set(px, py, pz);
+            lastX = px;
+            lastY = py;
+            lastZ = pz;
+            st.linePositions[(i + 1) * 3] = px;
+            st.linePositions[(i + 1) * 3 + 1] = py;
+            st.linePositions[(i + 1) * 3 + 2] = pz;
+        }
+        st.streamLine.geometry.attributes.position.needsUpdate = true;
+
+        // Leave persistent yellow urine stain / puddle decals wherever the stream hits!
+        st.decalCooldown -= deltaTime;
+        if (hitPos && st.decalCooldown <= 0 && this._peeDecals.length < 130) {
+            st.decalCooldown = hitInBowlWater ? 0.32 : 0.12;
+            const radius = hitInBowlWater ? (0.024 + Math.random() * 0.025) : (0.035 + Math.random() * 0.042);
+            const decalMat = new THREE.MeshBasicMaterial({
+                color: hitInBowlWater ? 0xe8d448 : 0xd9c226,
+                transparent: true,
+                opacity: hitInBowlWater ? 0.45 : 0.72,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+                polygonOffset: true,
+                polygonOffsetFactor: -2,
+                polygonOffsetUnits: -2
+            });
+            const decal = new THREE.Mesh(new THREE.CircleGeometry(radius, 8), decalMat);
+            decal.renderOrder = 3;
+            decal.position.copy(hitPos).addScaledVector(hitNormal, 0.004 + (this._peeDecals.length % 9) * 0.0004);
+            if (Math.abs(hitNormal.y) > 0.5) {
+                decal.rotation.x = -Math.PI / 2;
+            } else if (hitNormal.x > 0.5) {
+                decal.rotation.y = Math.PI / 2;
+            } else if (hitNormal.x < -0.5) {
+                decal.rotation.y = -Math.PI / 2;
+            } else if (hitNormal.z < -0.5) {
+                decal.rotation.y = Math.PI;
+            }
+            scene.add(decal);
+            this._peeDecals.push(decal);
+        }
+
+        if (st.elapsed >= st.duration) {
+            for (const m of st.streamMeshes) {
+                scene.remove(m);
+            }
+            if (st.streamLine) {
+                scene.remove(st.streamLine);
+            }
+            this._peeState = null;
+            this.ui.setHoldProgress(0);
+            this.player.controlsLocked = false;
+            this.player.allowLookWhileLocked = false;
+            this.player.lookYawCenter = null;
+            this.act1Tasks.usedToilet = true;
+            this.phase = 'act1';
+            this.engine.audioSystem.playSpatialOneShot('steam_hiss', new THREE.Vector3(4.72, 0.45, 3.18), { volume: 0.42 });
+            this.ui.showSubtitle(tr('sub.toilet_done_smoke'), 4600);
+            this._refreshObjectives();
+        }
+    }
+
+    _updatePrologue(deltaTime) {
+        const input = this.engine.inputManager;
+
+        // 0. Prologue start: sitting on the sofa watching TV programs (can switch channels with E, stand up with Space)
+        if (this.phase === 'prologue_tv_sitting') {
+            if (input.wasKeyJustPressed('KeyE') && this.world.crtTV) {
+                const ch = this.world.crtTV.nextChannel();
+                this.engine.audioSystem.playSpatialOneShot('pickup', this.world.tvGameObject.transform.position, { volume: 0.45 });
+                this.ui.showSubtitle(tr(`sub.tv_channel_${ch}`), 2800);
+            }
+            if (this.phaseTimer >= 2.2) {
+                this.ui.setWakePrompt(tr('ui.hud.stand_sofa_tv'), true);
+            }
+            if (this.phaseTimer >= 1.4 && input.wasKeyJustPressed('Space')) {
+                this.ui.setWakePrompt('', false);
+                this.player.controlsLocked = false;
+                this.player.allowLookWhileLocked = false;
+                this.player.lookYawCenter = null;
+                this.player.eyeHeight = 1.54;
+                this.player.targetEyeHeight = 1.54;
+                const sp = this.world.playerSpawn || { position: new THREE.Vector3(-2.65, 0.05, -1.0), yaw: -Math.PI / 2 };
+                this.player.setPose(new THREE.Vector3(sp.position.x + 0.55, 0.05, sp.position.z), sp.yaw, 0);
+                this.engine.audioSystem.playSpatialOneShot('wood_creak', this.player.transform.position, { volume: 0.45 });
+                this.phase = 'prologue';
+                this.phaseTimer = 0;
+                this.ui.showSubtitle(tr('sub.prologue_start'), 5200);
+                this._refreshObjectives();
+            }
+            return;
+        }
+
+        // Falling asleep on the sofa -> fade to black -> wake up at 23:30 in classic Act I!
+        if (this.phase === 'prologue_falling_asleep') {
+            const dur = 3.1;
+            const u = Math.min(1, this.phaseTimer / dur);
+            const ease = u * u * (3 - 2 * u);
+            this._fadeVal = Math.max(0, 1.0 - ease);
+            this.engine.renderer.setPostProcessParams({
+                fade: this._fadeVal,
+                wakeVignette: ease
+            });
+            if (u >= 1.0) {
+                this._startClassicAct1FromNap();
+            }
+            return;
+        }
+
+        // Smooth fade transition between apartment and grocery store («Продукты 24»)
+        if (this._storeTransition) {
+            const trState = this._storeTransition;
+            trState.timer += deltaTime;
+            const half = 0.55;
+            if (trState.timer < half) {
+                this._fadeVal = Math.max(0, 1.0 - trState.timer / half);
+                this.engine.renderer.setPostProcessParams({ fade: this._fadeVal });
+            } else {
+                if (!trState.switched) {
+                    trState.switched = true;
+                    if (trState.target === 'store') {
+                        this._inStore = true;
+                        const sp = this.world.store.spawnPos;
+                        this.player.setPose(sp, this.world.store.spawnYaw, 0);
+                        this.ui.showSubtitle(tr('sub.store_entered'), 5200);
+                        this._refreshObjectives();
+                    } else {
+                        this._inStore = false;
+                        this.prologueTasks.shopDone = true;
+                        this.clockMinutes = -110; // ~21:40
+                        this.world.setClockTime(-110);
+                        this.ui.setClockText('21:40');
+                        this.player.setPose(new THREE.Vector3(3.08, 0.05, 3.82), 0, 0);
+                        this.ui.showSubtitle(tr('sub.store_returned_home'), 4800);
+                        this._refreshObjectives();
+                    }
+                }
+                const u = Math.min(1, (trState.timer - half) / half);
+                this._fadeVal = u;
+                this.engine.renderer.setPostProcessParams({ fade: this._fadeVal });
+                if (u >= 1.0) {
+                    this._storeTransition = null;
+                    this.player.controlsLocked = false;
+                }
+            }
+            return;
+        }
+
+        // Keep Store NPCs animated when inside the shop
+        if (this._inStore && this.world.store?.updateNPCs) {
+            this.world.store.updateNPCs(deltaTime, this.player.transform.position, this._activeNpcId);
+            return;
+        }
+
+        // Oven glow while chicken is slowly baking during prologue
+        if (this._ovenBaking && this.world.lights?.ovenLight && !this.world.powerOut) {
+            this._ovenBakeTimer += deltaTime;
+            this.world.lights.ovenLight.intensity = 1.15 + Math.sin(this._ovenBakeTimer * 6.0) * 0.15;
         }
     }
 
@@ -1639,10 +3040,10 @@ export class StoryDirector {
                 if (this._tableDinnerTimer >= 9.4 && !this._dinnerSmokeQuoteShown) {
                     this._dinnerSmokeQuoteShown = true;
                     this.act1Tasks.watchTv = true;
-                    this.ui.showSubtitle(tr('sub.dinner_done'), 4200);
+                    this.ui.showSubtitle(tr('sub.dinner_need_toilet'), 4600);
                     this.ui.setWakePrompt(tr('ui.hud.wake_table_prompt'), true);
                     this.ui.setObjectives(tr('obj.act1.prep_title'), [
-                        { text: tr('obj.act1.stand_smoke'), done: false }
+                        { text: tr('obj.act1.use_toilet'), done: false }
                     ]);
                 }
                 if (this._tableDinnerTimer >= 9.4 && (input.wasKeyJustPressed('Space') || input.wasKeyJustPressed('KeyE') || input.wasKeyJustPressed('KeyQ'))) {
@@ -1664,6 +3065,12 @@ export class StoryDirector {
                     this._refreshObjectives();
                 }
             }
+            return;
+        }
+
+        // 4b. Post-dinner 15-second interactive toilet sequence
+        if (this.phase === 'act1_peeing') {
+            this._updateToiletPeeSequence(deltaTime);
             return;
         }
 
@@ -1707,7 +3114,7 @@ export class StoryDirector {
             this.ui.setClockText(`23:${30 + this.clockMinutes}`);
         }
 
-        if (this._isIndoorChoresDone() && this.act1Tasks.champagne && this.act1Tasks.watchTv && this.act1Tasks.pourDrink) {
+        if (this._isIndoorChoresDone() && this.act1Tasks.champagne && this.act1Tasks.watchTv && this.act1Tasks.pourDrink && this.act1Tasks.usedToilet) {
             const p = this.player.transform.position;
             if (p.z < -3.65 && p.x > -2.1 && p.x < 2.1) {
                 this._transitionToAct2();
@@ -1719,6 +3126,11 @@ export class StoryDirector {
         if (this.world.updateDoors) {
             this.world.updateDoors(deltaTime);
         }
+        if (this.world.updateClocks) {
+            this.world.updateClocks(deltaTime);
+        }
+        this.world.kitchenFaucet?.update?.(deltaTime);
+        this.world.bathroomFaucet?.update?.(deltaTime);
         const t = performance.now() * 0.001;
         const w = this.world;
 
@@ -1753,8 +3165,22 @@ export class StoryDirector {
     }
 
     _updatePromptHUD() {
-        if (this.phase === 'act1_wake_sitting' || this.phase === 'act1_standing_up') {
+        if (this.phase === 'prologue_tv_sitting') {
+            this.ui.setPrompt(tr('prompt.tv_switch_channel'), 0);
+            return;
+        }
+        if (this.phase === 'act1_peeing' || this.phase === 'act1_wake_sitting' || this.phase === 'act1_standing_up' || this.phase === 'prologue_falling_asleep' || this.ui.isDialogueOpen() || this._storeTransition || this._cookingInProgress) {
             this.ui.setPrompt('', 0);
+            return;
+        }
+        if (this.phase === 'act2_lighting') {
+            if (this._smokePromptState === 'ignite') {
+                this.ui.setPrompt(tr('prompt.lighter_ignite'), 0);
+            } else if (this._smokePromptState === 'lighting') {
+                this.ui.setPrompt(tr('prompt.lighter_hold'), 0);
+            } else {
+                this.ui.setPrompt('', 0);
+            }
             return;
         }
         if (this.phase === 'act1_sitting_table') {

@@ -28,7 +28,6 @@
 | `snow.jpg` | [File:Gfp-snow-texture.jpg](https://commons.wikimedia.org/wiki/File%3AGfp-snow-texture.jpg) | Yinan Chen | Public Domain |
 | `tiles_bathroom.jpg` | [File:Ceramic tiles 01.jpg](https://commons.wikimedia.org/wiki/File%3ACeramic_tiles_01.jpg) | Houss 2020 | CC0 |
 | `food_olivier.jpg` | [File:Russian Salad..JPG](https://commons.wikimedia.org/wiki/File%3ARussian_Salad..JPG) | Miansari66 | CC0 |
-| `linoleum.png` | [File:Linoleum brown (Rob Tuytel via Poly Haven).png](https://commons.wikimedia.org/wiki/File%3ALinoleum_brown_(Rob_Tuytel_via_Poly_Haven).png) | Rob Tuytel | CC0 |
 | `champagne.jpg` | [File:SowjetischerChampagner.JPG](https://commons.wikimedia.org/wiki/File%3ASowjetischerChampagner.JPG) | Benutzer:Wefo | Public domain |
 | `food_chicken.jpg` | [File:Baked chicken.jpg](https://commons.wikimedia.org/wiki/File%3ABaked_chicken.jpg) | Daniel Sone (Photographer) | Public domain |
 | `pickles.jpg` | [File:PicklingCucumbers.jpg](https://commons.wikimedia.org/wiki/File%3APicklingCucumbers.jpg) | The original Uploader was Gruepig at English Wikipedia | Public domain |

@@ -39,8 +39,7 @@ const GROUP_LABELS = {
 };
 
 const MATERIAL_LABELS = {
-    parquet: 'Паркет (Зал)',
-    linoleum: 'Линолеум (Кухня/Коридор)',
+    parquet: 'Паркет',
     carpet: 'Ковёр',
     tiles: 'Плитка (Ванная)',
     dermantine: 'Дерматин (Дверь)',

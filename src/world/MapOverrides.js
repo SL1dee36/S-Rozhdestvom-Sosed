@@ -1,6 +1,6 @@
 export const MAP_OVERRIDES = {
     "version": 1,
-    "updatedAt": "2026-11-18T22:59:52.571Z",
+    "updatedAt": "2026-11-21T15:10:33.035Z",
     "modifiedObjects": {
         "StairS_WinR": {
             "position": [
@@ -495,6 +495,20 @@ export const MAP_OVERRIDES = {
                 0,
                 0,
                 0.074
+            ]
+        },
+        "WallClock": {
+            "position": [
+                2.9,
+                2.424,
+                -0.71
+            ]
+        },
+        "KitchenSwitch": {
+            "position": [
+                3.534,
+                1.25,
+                -0.69
             ]
         }
     },
