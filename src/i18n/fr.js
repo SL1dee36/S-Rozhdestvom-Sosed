@@ -36,6 +36,8 @@ export const fr = {
     'ui.settings.mic_testing': 'Microphone connecté ! Test du niveau sonore (5 s)...',
     'ui.settings.mic_menu_denied': 'Accès au microphone refusé — mode « Sans micro » activé. Cliquez sur le bouton ci-dessus pour réessayer.',
     'ui.settings.ps1_jitter': 'Tremblement des polygones PS1 (Vertex Jitter)',
+    'ui.settings.camera_tilt': 'Inclinaison de la caméra en mouvement',
+    'ui.settings.motion_blur': 'Flou de mouvement (Motion Blur)',
     'ui.settings.vhs_intensity': 'Grain et netteté PS1',
     'ui.settings.volume': 'Volume principal',
     'ui.settings.sensitivity': 'Sensibilité de la souris',
@@ -331,7 +333,17 @@ export const fr = {
     'obj.act1.cook_meat': 'Trancher le plateau de charcuterie dans la cuisine',
     'obj.act1.put_chicken_oven': 'Ouvrir le four et enfourner le poulet',
     'obj.act1.wait_chicken_oven': 'Attendre que le poulet rôtisse au four',
-    'obj.act1.carry_cooked_food': 'Apporter la salade Olivier et la charcuterie sur la table de fête'
+    'obj.act1.carry_cooked_food': 'Apporter la salade Olivier et la charcuterie sur la table de fête',
+
+    // Horror & Reworked Monster AI Additions
+    'tv.horror_ticker': '★ IL EST DÉJÀ DANS L\'ESCALIER ★ N\'OUVRE PAS LA PORTE ★ REGARDE PAR LE JUDAS ★',
+    'tv.horror_weather': 'DANS L\'APPARTEMENT 34 ATTENDEZ-VOUS À...',
+    'sub.peephole_stalker': 'Quelqu\'un se tient dans l\'obscurité sur le palier... et fixe directement le judas.',
+    'sub.peephole_gone_scratch': 'Disparu... Mais il y a une entaille fraîche de couteau sur la porte à l\'extérieur.',
+    'sub.peephole_act3_scare': 'IL EST JUSTE DERRIÈRE LA PORTE ! Cours te cacher !',
+    'sub.act3_hiding_inspect': 'Il s\'est arrêté juste devant ma cachette... Il écoute attentivement !',
+    'sub.act3_heard_something': 'Il a entendu ce bruit et va vérifier !..',
+    'sub.act3_alarm_ring': 'Le téléphone du salon sonne soudainement !.. Le bruit l\'a distrait !'
 };
 
 export default fr;

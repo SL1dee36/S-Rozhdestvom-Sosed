@@ -97,10 +97,13 @@ async function startServer() {
             if (req.method === 'POST' && pathname === '/api/save-map') {
                 const raw = await readRequestBody(req);
                 const parsed = JSON.parse(raw);
-                const normalized = normalizeMapOverrides(parsed);
+                const freshMod = await import(`${pathToFileURL(OVERRIDES_JS_PATH).href}?t=${Date.now()}`);
+                const normFn = freshMod.normalizeMapOverrides || normalizeMapOverrides;
+                const serFn = freshMod.serializeMapOverridesToJS || serializeMapOverridesToJS;
+                const normalized = normFn(parsed);
                 normalized.updatedAt = new Date().toISOString();
 
-                const jsCode = serializeMapOverridesToJS(normalized);
+                const jsCode = serFn(normalized);
                 await fsp.mkdir(path.dirname(OVERRIDES_JS_PATH), { recursive: true });
                 await fsp.writeFile(OVERRIDES_JS_PATH, jsCode, 'utf8');
 

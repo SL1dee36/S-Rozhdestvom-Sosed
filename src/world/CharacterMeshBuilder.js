@@ -1,4 +1,18 @@
 import * as THREE from 'three';
+import { TextureManager } from './TextureManager.js';
+
+let _sharedCharTextures = null;
+export function getSharedCharacterTextures() {
+    if (!_sharedCharTextures && typeof document !== 'undefined') {
+        const tm = new TextureManager();
+        _sharedCharTextures = {
+            skin: tm.createSkinTexture(),
+            hair: tm.createHairTexture(),
+            cloth: tm.createClothTexture()
+        };
+    }
+    return _sharedCharTextures;
+}
 
 /**
  * Builds an articulated NPC human matching the original classic blocky PS1 style
@@ -23,22 +37,26 @@ export function buildArticulatedHuman(options = {}) {
         matFactory = null
     } = options;
 
-    const makeMat = (color, roughness = 0.88, metalness = 0.04) => {
+    const tex = getSharedCharacterTextures();
+
+    const makeMat = (color, roughness = 0.88, metalness = 0.04, map = null) => {
+        const cfg = { color, roughness, metalness };
+        if (map) cfg.map = map;
         if (typeof matFactory === 'function') {
-            return matFactory({ color, roughness, metalness });
+            return matFactory(cfg);
         }
-        return new THREE.MeshStandardMaterial({ color, roughness, metalness });
+        return new THREE.MeshStandardMaterial(cfg);
     };
 
-    const topMat = makeMat(coatColor ?? sweaterColor, 0.88);
-    const collarMat = makeMat(collarColor, 0.90);
-    const pantsMat = makeMat(pantsColor, 0.92);
-    const shoeMat = makeMat(shoeColor, 0.85);
-    const skinMat = makeMat(skinColor, 0.76);
-    const hairMat = makeMat(hairColor, 0.90);
+    const topMat = makeMat(coatColor ?? sweaterColor, 0.88, 0.04, tex?.cloth);
+    const collarMat = makeMat(collarColor, 0.90, 0.04, tex?.cloth);
+    const pantsMat = makeMat(pantsColor, 0.92, 0.04, tex?.cloth);
+    const shoeMat = makeMat(shoeColor, 0.85, 0.06, tex?.cloth);
+    const skinMat = makeMat(skinColor, 0.76, 0.03, tex?.skin);
+    const hairMat = makeMat(hairColor, 0.90, 0.03, tex?.hair);
     const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xf0eee9 });
     const pupilMat = new THREE.MeshBasicMaterial({ color: 0x181c22 });
-    const lipMat = makeMat(0xb07c6a, 0.80);
+    const lipMat = makeMat(0xb07c6a, 0.80, 0.03, tex?.skin);
 
     const root = new THREE.Group();
     root.scale.set(buildWidth, heightScale, buildWidth);
@@ -84,14 +102,14 @@ export function buildArticulatedHuman(options = {}) {
     torsoPivot.add(torsoLower, torsoChest, collar);
 
     if (apronColor !== null) {
-        const apronMat = makeMat(apronColor, 0.88);
+        const apronMat = makeMat(apronColor, 0.88, 0.04, tex?.cloth);
         const apronFront = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.56, 0.03), apronMat);
         apronFront.position.set(0, 0.24, -0.125);
         torsoPivot.add(apronFront);
     }
 
     if (scarfColor !== null) {
-        const scarfMat = makeMat(scarfColor, 0.94);
+        const scarfMat = makeMat(scarfColor, 0.94, 0.03, tex?.cloth);
         const scarfWrap = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.08, 0.24), scarfMat);
         scarfWrap.position.set(0, 0.59, 0);
         const scarfTail = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.22, 0.035), scarfMat);
@@ -170,7 +188,7 @@ export function buildArticulatedHuman(options = {}) {
         browL, browR, eyeWhiteL, eyeWhiteR, pupilL, pupilR, eyelidL, eyelidR
     );
 
-    const hatMat = makeMat(hatColor, 0.92);
+    const hatMat = makeMat(hatColor, 0.92, 0.04, tex?.cloth);
     if (hatStyle === 'none' || hatStyle === 'bun') {
         const hairTop = new THREE.Mesh(new THREE.BoxGeometry(0.216, 0.075, 0.226), hairMat);
         hairTop.position.set(0, 0.225, 0.004);

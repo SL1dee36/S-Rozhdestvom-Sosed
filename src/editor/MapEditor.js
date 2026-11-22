@@ -19,6 +19,7 @@ const CATEGORY_LABELS = {
     stairwell: 'Подъезд',
     balcony: 'Балкон',
     courtyard: 'Двор',
+    store: 'Подъезд №2 / Улица / Магазин',
     activated: 'Событийные (Акт)',
     gameplay: 'Геймплей',
     custom: 'Добавлено',
@@ -47,6 +48,7 @@ const MATERIAL_LABELS = {
     concrete: 'Бетон',
     stairwellWall: 'Стена подъезда',
     snow: 'Снег',
+    dirtySnow: 'Грязный снег (Тропинка)',
     wallpaperHall: 'Обои (Зал)',
     wallpaperKitchen: 'Обои (Кухня/Прихожая)',
     ceiling: 'Потолок / Штукатурка',
@@ -68,6 +70,13 @@ const MATERIAL_LABELS = {
     santaHatRed: 'Красный бархат',
     santaHatFur: 'Белый мех',
     darkSilhouette: 'Тёмный силуэт',
+    storeFloor: 'Плитка (Магазин)',
+    storeWallLow: 'Стена низ (Магазин)',
+    storeWallHigh: 'Стена верх (Магазин)',
+    storeCeiling: 'Потолок (Магазин)',
+    storeWood: 'Дерево (Магазин)',
+    storeEnamel: 'Эмаль (Магазин)',
+    storeTileBacksplash: 'Плитка-фартук (Магазин)',
     custom: 'Без текстуры (Цвет)'
 };
 
@@ -117,7 +126,7 @@ const FACTORY_GAMEPLAY = {
     ]
 };
 
-const CEILING_NAMES = new Set(['AptCeilingMain', 'AptCeilingSouth', 'StairwellCeiling']);
+const CEILING_NAMES = new Set(['AptCeilingMain', 'AptCeilingSouth', 'StairwellCeiling', 'StorePodiezdCeiling', 'StoreCeiling']);
 
 const ROOM_PRESETS = {
     hall: { pos: [-0.2, 2.1, -0.8], look: [-1.5, 0.8, 0.5] },
@@ -127,6 +136,10 @@ const ROOM_PRESETS = {
     balcony: { pos: [-3.9, 1.9, -1.0], look: [-3.9, 1.0, 1.2] },
     stairwell: { pos: [3.3, 2.4, 7.6], look: [3.1, 1.1, 4.8] },
     courtyard: { pos: [-1.5, 4.5, -14.0], look: [-1.3, 1.2, -25.0] },
+    podiezd_in: { pos: [96.0, 2.0, 54.6], look: [96.0, 1.3, 50.0] },
+    podiezd_out: { pos: [94.8, 2.6, 44.2], look: [96.0, 1.5, 50.0] },
+    street: { pos: [82.0, 10.5, 34.0], look: [74.0, 1.0, 21.0] },
+    store: { pos: [60.0, 2.3, 4.8], look: [60.0, 1.2, -3.5] },
     overview: { pos: [0.5, 13.5, 9.0], look: [1.0, 0.0, 0.0] }
 };
 
@@ -222,6 +235,27 @@ class MapEditor {
             startX: 0,
             startY: 0,
             el: document.getElementById('marquee-box')
+        };
+
+        this._trailBrush = {
+            width: 1.8,
+            painting: false,
+            erase: false,
+            lastPoint: null,
+            currentStroke: null,
+            strokeUndoSnap: null,
+            previewMesh: this._createTrailBrushPreview()
+        };
+
+        this._landscapeBrush = {
+            mode: 'raise',
+            radius: 3.0,
+            strength: 0.35,
+            sculpting: false,
+            activeObj: null,
+            flattenTargetY: 0,
+            strokeUndoSnap: null,
+            dirty: false
         };
 
         this.undoStack = [];
@@ -329,6 +363,202 @@ class MapEditor {
         g.add(grid, axes);
         this.scene.add(g);
         return g;
+    }
+
+    _createTrailBrushPreview() {
+        const g = new THREE.Group();
+        g.name = '__EditorTrailBrushPreview';
+        const ring = new THREE.Mesh(
+            new THREE.RingGeometry(0.46, 0.5, 24),
+            new THREE.MeshBasicMaterial({ color: 0xf59e0b, side: THREE.DoubleSide, transparent: true, opacity: 0.9, depthWrite: false })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        const disc = new THREE.Mesh(
+            new THREE.CircleGeometry(0.46, 24),
+            new THREE.MeshBasicMaterial({ color: 0x8b7e6a, side: THREE.DoubleSide, transparent: true, opacity: 0.35, depthWrite: false })
+        );
+        disc.rotation.x = -Math.PI / 2;
+        g.add(disc, ring);
+        g.visible = false;
+        g.renderOrder = 920;
+        this.scene.add(g);
+        return g;
+    }
+
+    _raycastTrailGround(clientX, clientY) {
+        const rect = this.canvas.getBoundingClientRect();
+        const ndc = new THREE.Vector2(
+            ((clientX - rect.left) / rect.width) * 2 - 1,
+            -((clientY - rect.top) / rect.height) * 2 + 1
+        );
+        const cam = this.camMode === 'top' ? this.orthoCam : this.perspectiveCam;
+        this._raycaster.setFromCamera(ndc, cam);
+        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const hit = new THREE.Vector3();
+        if (this._raycaster.ray.intersectPlane(plane, hit)) {
+            return hit;
+        }
+        return null;
+    }
+
+    _finishTrailStroke() {
+        const tb = this._trailBrush;
+        if (!tb.painting) return;
+        tb.painting = false;
+        tb.lastPoint = null;
+        const hadStroke = !!tb.currentStroke && tb.currentStroke.pts.length > 0;
+        tb.currentStroke = null;
+        if (hadStroke && tb.strokeUndoSnap) {
+            if (!this.overrides.modifiedObjects.StoreCityGround) {
+                this.overrides.modifiedObjects.StoreCityGround = {};
+            }
+            this.overrides.modifiedObjects.StoreCityGround.streetTrailStrokes = this.overrides.streetTrailStrokes;
+            this._pushUndo(tb.strokeUndoSnap);
+            this._updateStatusCounts();
+            saveOverridesToLocalStorage(this.overrides);
+        }
+        tb.strokeUndoSnap = null;
+    }
+
+    _raycastLandscape(clientX, clientY) {
+        const rect = this.canvas.getBoundingClientRect();
+        const ndc = new THREE.Vector2(
+            ((clientX - rect.left) / rect.width) * 2 - 1,
+            -((clientY - rect.top) / rect.height) * 2 + 1
+        );
+        const cam = this.camMode === 'top' ? this.orthoCam : this.perspectiveCam;
+        this._raycaster.setFromCamera(ndc, cam);
+        const targets = [];
+        for (const obj of this.builder.editableObjects) {
+            if (!obj.visible || obj.userData.deleted || !obj.userData.landscape) continue;
+            const m = obj.userData.primaryMesh || (obj.isMesh ? obj : null);
+            if (m) targets.push({ obj, mesh: m });
+        }
+        if (targets.length === 0) return null;
+        const hits = this._raycaster.intersectObjects(targets.map(t => t.mesh), false);
+        if (hits.length === 0) return null;
+        const h = hits[0];
+        const entry = targets.find(t => t.mesh === h.object);
+        return entry ? { obj: entry.obj, mesh: entry.mesh, point: h.point } : null;
+    }
+
+    _applyLandscapeBrush(hit, effectiveMode) {
+        const { obj, mesh, point } = hit;
+        if (!obj.userData.landscapeData) {
+            this.builder.applyLandscapeToObject(obj, true, null);
+        }
+        const ld = obj.userData.landscapeData;
+        if (!ld) return;
+
+        const { segX, segZ, heights } = ld;
+        const [w, h, d] = obj.userData.boxSize || [1, 0.2, 1];
+        const halfW = w * 0.5;
+        const halfD = d * 0.5;
+        const topY = h * 0.5;
+
+        const localPt = obj.worldToLocal(point.clone());
+        const rad = this._landscapeBrush.radius;
+        const str = this._landscapeBrush.strength;
+        const cols = segX + 1;
+
+        let changed = false;
+        const smoothCopy = effectiveMode === 'smooth' ? new Float32Array(heights) : null;
+
+        for (let iz = 0; iz <= segZ; iz++) {
+            const vz = -halfD + (iz / segZ) * d;
+            const dz = vz - localPt.z;
+            if (Math.abs(dz) > rad) continue;
+            for (let ix = 0; ix <= segX; ix++) {
+                const vx = -halfW + (ix / segX) * w;
+                const dx = vx - localPt.x;
+                const dist = Math.hypot(dx, dz);
+                if (dist >= rad) continue;
+
+                const t = 1 - dist / rad;
+                const falloff = t * t * (3 - 2 * t); // smoothstep
+                const idx = iz * cols + ix;
+
+                if (effectiveMode === 'raise') {
+                    heights[idx] += str * 0.35 * falloff;
+                } else if (effectiveMode === 'lower') {
+                    heights[idx] -= str * 0.35 * falloff;
+                } else if (effectiveMode === 'flatten') {
+                    const target = this._landscapeBrush.flattenTargetY;
+                    heights[idx] += (target - heights[idx]) * Math.min(1, str * 0.85 * falloff);
+                } else if (effectiveMode === 'smooth') {
+                    let sum = smoothCopy[idx];
+                    let cnt = 1;
+                    if (ix > 0) { sum += smoothCopy[idx - 1]; cnt++; }
+                    if (ix < segX) { sum += smoothCopy[idx + 1]; cnt++; }
+                    if (iz > 0) { sum += smoothCopy[idx - cols]; cnt++; }
+                    if (iz < segZ) { sum += smoothCopy[idx + cols]; cnt++; }
+                    const avg = sum / cnt;
+                    heights[idx] += (avg - heights[idx]) * Math.min(1, str * 0.85 * falloff);
+                }
+                changed = true;
+            }
+        }
+
+        if (!changed) return;
+        const pos = mesh.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+            if (pos.getY(i) > -topY + 0.001) {
+                const vx = pos.getX(i);
+                const vz = pos.getZ(i);
+                const ix = Math.max(0, Math.min(segX, Math.round(((vx + halfW) / w) * segX)));
+                const iz = Math.max(0, Math.min(segZ, Math.round(((vz + halfD) / d) * segZ)));
+                pos.setY(i, topY + heights[iz * cols + ix]);
+            }
+        }
+        pos.needsUpdate = true;
+        mesh.geometry.computeVertexNormals();
+        if (obj.name === 'StoreCityGround') {
+            this.builder.syncTrailOverlayToGround?.();
+        }
+        this._landscapeBrush.dirty = true;
+    }
+
+    _commitLandscapeToOverrides(obj) {
+        if (!obj || !obj.userData) return;
+        const ld = obj.userData.landscapeData;
+        const serialized = ld
+            ? { segX: ld.segX, segZ: ld.segZ, heights: Array.from(ld.heights, v => round3(v)) }
+            : null;
+
+        if (obj.userData.isAdded) {
+            const cfg = this.overrides.addedObjects.find(c => c.name === obj.name);
+            if (cfg) {
+                cfg.landscape = !!obj.userData.landscape;
+                if (serialized) cfg.landscapeData = serialized;
+                else delete cfg.landscapeData;
+            }
+        } else {
+            if (!this.overrides.modifiedObjects[obj.name]) {
+                this.overrides.modifiedObjects[obj.name] = {};
+            }
+            this.overrides.modifiedObjects[obj.name].landscape = !!obj.userData.landscape;
+            if (serialized) this.overrides.modifiedObjects[obj.name].landscapeData = serialized;
+            else delete this.overrides.modifiedObjects[obj.name].landscapeData;
+        }
+    }
+
+    _finishLandscapeStroke() {
+        const lb = this._landscapeBrush;
+        if (!lb.sculpting) return;
+        lb.sculpting = false;
+        const obj = lb.activeObj;
+        const wasDirty = lb.dirty;
+        lb.activeObj = null;
+        lb.dirty = false;
+        if (wasDirty && obj) {
+            this._commitLandscapeToOverrides(obj);
+            if (lb.strokeUndoSnap) {
+                this._pushUndo(lb.strokeUndoSnap);
+            }
+            this._updateStatusCounts();
+            saveOverridesToLocalStorage(this.overrides);
+        }
+        lb.strokeUndoSnap = null;
     }
 
     _populateMaterialDropdown() {
@@ -689,6 +919,11 @@ class MapEditor {
             if (l.userData.isAddedLight) this._removeAddedLightFromRuntime(l);
             else this._restoreBuiltInLightToInitial(l);
         }
+        const restoredStrokes = (Array.isArray(this.overrides.streetTrailStrokes) && this.overrides.streetTrailStrokes.length > 0)
+            ? this.overrides.streetTrailStrokes
+            : (this.overrides.modifiedObjects?.StoreCityGround?.streetTrailStrokes || []);
+        this.overrides.streetTrailStrokes = restoredStrokes;
+        this.builder.redrawStreetTrail?.(restoredStrokes);
 
         const wasAct4 = this.act4Preview;
         if (wasAct4) {
@@ -2406,6 +2641,41 @@ class MapEditor {
                 return;
             }
             if (e.button === 0) {
+                if (this.toolMode === 'landscape') {
+                    const hit = this._raycastLandscape(e.clientX, e.clientY);
+                    if (hit) {
+                        const lb = this._landscapeBrush;
+                        lb.strokeUndoSnap = this._cloneOverrides();
+                        lb.sculpting = true;
+                        lb.activeObj = hit.obj;
+                        lb.dirty = false;
+                        const localPt = hit.obj.worldToLocal(hit.point.clone());
+                        const [, h] = hit.obj.userData.boxSize || [1, 0.2, 1];
+                        lb.flattenTargetY = localPt.y - h * 0.5;
+                        const effMode = (e.shiftKey && lb.mode === 'raise') ? 'lower' : lb.mode;
+                        this._applyLandscapeBrush(hit, effMode);
+                    }
+                    return;
+                }
+                if (this.toolMode === 'trail') {
+                    const hit = this._raycastTrailGround(e.clientX, e.clientY);
+                    if (hit) {
+                        const tb = this._trailBrush;
+                        tb.strokeUndoSnap = this._cloneOverrides();
+                        tb.painting = true;
+                        tb.erase = !!e.shiftKey;
+                        tb.lastPoint = hit.clone();
+                        const rad = round3(tb.width * 0.5);
+                        const pt = [round3(hit.x), round3(hit.z)];
+                        tb.currentStroke = { r: rad, erase: tb.erase, pts: [pt] };
+                        if (!Array.isArray(this.overrides.streetTrailStrokes)) {
+                            this.overrides.streetTrailStrokes = [];
+                        }
+                        this.overrides.streetTrailStrokes.push(tb.currentStroke);
+                        this.builder.paintStreetTrailSegment?.(hit.x, hit.z, hit.x, hit.z, rad, tb.erase);
+                    }
+                    return;
+                }
                 this.gizmo.handlePointerDown(e.clientX, e.clientY);
                 if (!this.gizmo.isDragging && (this.toolMode === 'select' || e.shiftKey)) {
                     this._marquee.canStart = true;
@@ -2477,6 +2747,58 @@ class MapEditor {
                 return;
             }
 
+            if (this.toolMode === 'landscape' && !fcs.isLooking && !fcs.isPanning) {
+                const lb = this._landscapeBrush;
+                if (lb.sculpting && !(e.buttons & 1)) {
+                    this._finishLandscapeStroke();
+                }
+                const hit = this._raycastLandscape(e.clientX, e.clientY);
+                if (hit) {
+                    const prev = this._trailBrush.previewMesh;
+                    prev.visible = true;
+                    prev.position.set(hit.point.x, hit.point.y + 0.05, hit.point.z);
+                    prev.scale.set(lb.radius * 2, 1, lb.radius * 2);
+                    if (lb.sculpting) {
+                        const effMode = (e.shiftKey && lb.mode === 'raise') ? 'lower' : lb.mode;
+                        this._applyLandscapeBrush(hit, effMode);
+                    }
+                } else {
+                    this._trailBrush.previewMesh.visible = false;
+                }
+                this.canvas.style.cursor = 'crosshair';
+                return;
+            }
+
+            if (this.toolMode === 'trail' && !fcs.isLooking && !fcs.isPanning) {
+                const tb = this._trailBrush;
+                if (tb.painting && !(e.buttons & 1)) {
+                    this._finishTrailStroke();
+                }
+                const hit = this._raycastTrailGround(e.clientX, e.clientY);
+                if (hit) {
+                    const prev = tb.previewMesh;
+                    prev.visible = true;
+                    prev.position.set(hit.x, 0.045, hit.z);
+                    prev.scale.set(tb.width, 1, tb.width);
+                    if (tb.painting && tb.lastPoint && tb.currentStroke) {
+                        if (hit.distanceTo(tb.lastPoint) >= 0.14) {
+                            const rad = tb.currentStroke.r;
+                            this.builder.paintStreetTrailSegment?.(
+                                tb.lastPoint.x, tb.lastPoint.z,
+                                hit.x, hit.z,
+                                rad, tb.erase
+                            );
+                            tb.currentStroke.pts.push([round3(hit.x), round3(hit.z)]);
+                            tb.lastPoint = hit.clone();
+                        }
+                    }
+                } else {
+                    tb.previewMesh.visible = false;
+                }
+                this.canvas.style.cursor = 'crosshair';
+                return;
+            }
+
             const hovered = this.gizmo.handlePointerMove(e.clientX, e.clientY);
             this.canvas.style.cursor = hovered ? 'pointer' : 'crosshair';
         });
@@ -2490,6 +2812,14 @@ class MapEditor {
                 fcs.isPanning = false;
             }
             if (e.button === 0) {
+                if (this._landscapeBrush.sculpting) {
+                    this._finishLandscapeStroke();
+                    return;
+                }
+                if (this._trailBrush.painting) {
+                    this._finishTrailStroke();
+                    return;
+                }
                 if (this._marquee.active) {
                     const x1 = Math.min(this._marquee.startX, e.clientX);
                     const y1 = Math.min(this._marquee.startY, e.clientY);
@@ -2537,6 +2867,11 @@ class MapEditor {
                 }
             }
         }, { passive: false });
+
+        window.addEventListener('blur', () => {
+            this._finishTrailStroke();
+            this._finishLandscapeStroke();
+        });
 
         document.addEventListener('pointerlockchange', () => {
             this._walkState.locked = document.pointerLockElement === this.canvas;
@@ -2600,6 +2935,8 @@ class MapEditor {
                 else if (e.code === 'KeyW') this.setToolMode('translate');
                 else if (e.code === 'KeyE') this.setToolMode('rotate');
                 else if (e.code === 'KeyR') this.setToolMode('scale');
+                else if (e.code === 'KeyB') this.setToolMode(this.toolMode === 'trail' ? 'translate' : 'trail');
+                else if (e.code === 'KeyL') this.setToolMode(this.toolMode === 'landscape' ? 'translate' : 'landscape');
                 else if (e.code === 'KeyX') this.toggleSpace();
                 else if (e.code === 'KeyG') this.toggleGroupMode();
                 else if (e.code === 'KeyF') this.focusSelected();
@@ -2607,7 +2944,10 @@ class MapEditor {
                 else if (e.code === 'Digit2') this.setCameraMode('top');
                 else if (e.code === 'Digit3') this.setCameraMode('walk');
                 else if (e.code === 'Delete' || e.code === 'Backspace') this.deleteSelected();
-                else if (e.code === 'Escape') this.selectEntity(null);
+                else if (e.code === 'Escape') {
+                    if (this.toolMode === 'trail' || this.toolMode === 'landscape') this.setToolMode('translate');
+                    else this.selectEntity(null);
+                }
             }
         });
 
@@ -2617,9 +2957,25 @@ class MapEditor {
     }
 
     setToolMode(mode) {
+        if (this._trailBrush?.painting) this._finishTrailStroke();
+        if (this._landscapeBrush?.sculpting) this._finishLandscapeStroke();
+        if ((mode === 'trail' || mode === 'landscape') && this.toolMode === mode) mode = 'translate';
         this.toolMode = mode;
         for (const btn of document.querySelectorAll('[data-tool]')) {
             btn.classList.toggle('active', btn.dataset.tool === mode);
+        }
+        if (this._trailBrush?.previewMesh) {
+            this._trailBrush.previewMesh.visible = false;
+        }
+        if (mode === 'trail') {
+            this.gizmo.detach();
+            this._showToast('Тропинка: ЛКМ — рисовать, Shift+ЛКМ — стереть, Ctrl+Z — откат, Esc/B — выход');
+            return;
+        }
+        if (mode === 'landscape') {
+            this.gizmo.detach();
+            this._showToast('Ландшафт: ЛКМ — лепить, Shift+ЛКМ — вдавливать, Ctrl+Z — откат, Esc/L — выход');
+            return;
         }
         if (mode !== 'select') this.gizmo.setMode(mode);
         this._attachGizmoToSelection();
@@ -2969,6 +3325,8 @@ class MapEditor {
             const anyGO = objs.some(o => !!o.userData.gameObject);
             document.getElementById('wrap-collide').classList.toggle('hidden', !anyGO);
             document.getElementById('prop-collide').checked = objs.every(o => !!o.userData.collide);
+            const propLand = document.getElementById('prop-landscape');
+            if (propLand) propLand.checked = objs.every(o => !!o.userData.landscape);
             document.getElementById('prop-blocker').checked = objs.every(o => o.userData.blocker !== false);
             document.getElementById('prop-cast-shadow').checked = objs.every(o => !!o.userData.castShadow);
             document.getElementById('prop-receive-shadow').checked = objs.every(o => o.userData.receiveShadow !== false);
@@ -3025,6 +3383,8 @@ class MapEditor {
             const hasGO = !!obj.userData.gameObject;
             document.getElementById('wrap-collide').classList.toggle('hidden', !hasGO);
             document.getElementById('prop-collide').checked = !!obj.userData.collide;
+            const propLand = document.getElementById('prop-landscape');
+            if (propLand) propLand.checked = !!obj.userData.landscape;
             document.getElementById('prop-blocker').checked = obj.userData.blocker !== false;
             document.getElementById('prop-cast-shadow').checked = !!obj.userData.castShadow;
             document.getElementById('prop-receive-shadow').checked = obj.userData.receiveShadow !== false;
@@ -4208,6 +4568,31 @@ class MapEditor {
         for (const btn of document.querySelectorAll('[data-tool]')) {
             btn.addEventListener('click', () => this.setToolMode(btn.dataset.tool));
         }
+        document.getElementById('select-trail-width')?.addEventListener('change', (e) => {
+            this._trailBrush.width = parseFloat(e.target.value) || 1.8;
+        });
+        document.getElementById('select-land-mode')?.addEventListener('change', (e) => {
+            this._landscapeBrush.mode = e.target.value || 'raise';
+        });
+        document.getElementById('select-land-radius')?.addEventListener('change', (e) => {
+            this._landscapeBrush.radius = parseFloat(e.target.value) || 3.0;
+        });
+        document.getElementById('select-land-strength')?.addEventListener('change', (e) => {
+            this._landscapeBrush.strength = parseFloat(e.target.value) || 0.35;
+        });
+        document.getElementById('prop-landscape')?.addEventListener('change', (e) => {
+            const objs = this._getSelectedObjects();
+            if (objs.length === 0) return;
+            const enabled = !!e.target.checked;
+            this._pushUndo();
+            for (const obj of objs) {
+                this.builder.applyLandscapeToObject(obj, enabled, null);
+                this._commitLandscapeToOverrides(obj);
+            }
+            this._updateStatusCounts();
+            saveOverridesToLocalStorage(this.overrides);
+            this._showToast(enabled ? 'Поверхность помечена как Ландшафт (можно лепить клавишей L)' : 'Режим Ландшафта выключен');
+        });
         document.getElementById('btn-space').addEventListener('click', () => this.toggleSpace());
         document.getElementById('btn-group-mode').addEventListener('click', () => this.toggleGroupMode());
 

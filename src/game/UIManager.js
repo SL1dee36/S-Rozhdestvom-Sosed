@@ -2,6 +2,8 @@ import { t, getLanguage, setLanguage, applyDOMTranslations, onLanguageChange } f
 
 const ENDINGS_STORAGE_KEY = 'zarechnoe_unlocked_endings';
 const SENSITIVITY_STORAGE_KEY = 'zarechnoe_mouse_sensitivity';
+const CAMERA_TILT_STORAGE_KEY = 'zarechnoe_camera_tilt';
+const MOTION_BLUR_STORAGE_KEY = 'zarechnoe_motion_blur';
 
 const ENDINGS_CATALOG = [
     { id: 1, titleKey: 'ui.ending1.title', descKey: 'ui.ending1.desc' },
@@ -85,6 +87,8 @@ export class UIManager {
             micTestFill: document.getElementById('mic-test-fill'),
             micStatus: document.getElementById('mic-status'),
             chkPs1: document.getElementById('opt-ps1-jitter'),
+            chkCameraTilt: document.getElementById('opt-camera-tilt'),
+            chkMotionBlur: document.getElementById('opt-motion-blur'),
             rngVhs: document.getElementById('opt-vhs-intensity'),
             rngVol: document.getElementById('opt-volume'),
             rngSens: document.getElementById('opt-sensitivity'),
@@ -97,7 +101,8 @@ export class UIManager {
             onResume: null,
             onQuitToMenu: null,
             onEnterMainMenu: null,
-            onSensitivityChange: null
+            onSensitivityChange: null,
+            onCameraTiltChange: null
         };
 
         this._micStatusKey = 'ui.settings.mic_note_default';
@@ -120,6 +125,35 @@ export class UIManager {
         });
         this.applyVHSIntensity(this.el.rngVhs ? parseFloat(this.el.rngVhs.value) : 0.2);
         this.applySensitivity(this._loadSavedSensitivity());
+        this.applyCameraTilt(this._loadSavedBool(CAMERA_TILT_STORAGE_KEY, true));
+        this.applyMotionBlur(this._loadSavedBool(MOTION_BLUR_STORAGE_KEY, true));
+    }
+
+    _loadSavedBool(key, defaultVal = true) {
+        try {
+            const raw = localStorage.getItem(key);
+            if (raw === '0' || raw === 'false') return false;
+            if (raw === '1' || raw === 'true') return true;
+        } catch (e) {}
+        return defaultVal;
+    }
+
+    isCameraTiltEnabled() {
+        return this._cameraTiltEnabled !== false;
+    }
+
+    applyCameraTilt(enabled) {
+        this._cameraTiltEnabled = !!enabled;
+        if (this.el.chkCameraTilt) this.el.chkCameraTilt.checked = this._cameraTiltEnabled;
+        try { localStorage.setItem(CAMERA_TILT_STORAGE_KEY, this._cameraTiltEnabled ? '1' : '0'); } catch (e) {}
+        if (this.callbacks.onCameraTiltChange) this.callbacks.onCameraTiltChange(this._cameraTiltEnabled);
+    }
+
+    applyMotionBlur(enabled) {
+        this._motionBlurEnabled = !!enabled;
+        if (this.el.chkMotionBlur) this.el.chkMotionBlur.checked = this._motionBlurEnabled;
+        try { localStorage.setItem(MOTION_BLUR_STORAGE_KEY, this._motionBlurEnabled ? '1' : '0'); } catch (e) {}
+        this.engine.renderer?.setMotionBlur?.(this._motionBlurEnabled);
     }
 
     _setMicStatus(key) {
@@ -272,6 +306,14 @@ export class UIManager {
 
         this.el.chkPs1?.addEventListener('change', (e) => {
             this.engine.renderer.setPS1Jitter(e.target.checked);
+        });
+
+        this.el.chkCameraTilt?.addEventListener('change', (e) => {
+            this.applyCameraTilt(e.target.checked);
+        });
+
+        this.el.chkMotionBlur?.addEventListener('change', (e) => {
+            this.applyMotionBlur(e.target.checked);
         });
 
         this.el.rngVhs?.addEventListener('input', (e) => {
@@ -575,10 +617,7 @@ export class UIManager {
         this.engine.setSimulationPaused(false);
         this.engine.inputManager.lock();
         this.setCleanIntroMode(cleanIntro);
-        if (!cleanIntro && !this._shownBaseControlsHint) {
-            this._shownBaseControlsHint = true;
-            this.showControlsHint(t('ui.hud.controls_base'), 5000);
-        }
+        this.el.controlsHint?.classList.add('controls-hint-hidden');
     }
 
     setCleanIntroMode(clean) {
@@ -731,6 +770,9 @@ export class UIManager {
         if (this.el.dialogueSpeakerRole) this.el.dialogueSpeakerRole.textContent = speakerRole || '';
         this.updateDialogue(text, choices);
         this.el.dialogueOverlay.classList.remove('hidden');
+        this.el.hud?.classList.add('dialogue-open');
+        this.el.subtitles?.classList.add('hidden');
+        this.el.wakePrompt?.classList.add('hidden');
         this.el.prompt?.classList.add('hidden');
         this.el.crosshair?.classList.add('hidden');
         this.engine.inputManager.isUIOpen = true;
@@ -757,6 +799,7 @@ export class UIManager {
     closeDialogue(silent = false) {
         if (!this.el.dialogueOverlay || this.el.dialogueOverlay.classList.contains('hidden')) return;
         this.el.dialogueOverlay.classList.add('hidden');
+        this.el.hud?.classList.remove('dialogue-open');
         this._dialogueChoices = [];
         const cb = this._onDialogueClose;
         this._onDialogueSelect = null;

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Component, RigidBody, BoxCollider } from '../../lumina/index.js';
-import { createGroceryBagModel, createRawChickenTrayModel } from '../world/StoreAndCookingBuilder.js';
+import { createGroceryBagModel, createRawChickenTrayModel, createShoppingBasketModel } from '../world/StoreAndCookingBuilder.js';
 
 const TWO_HANDED_ITEMS = new Set(['table', 'stool', 'decorBox', 'tablecloth', 'rawChicken', 'dirtyBoard']);
 
@@ -41,6 +41,10 @@ export class PlayerController extends Component {
         this.cigPuffAnim = 0;
         this.cinematicBobOffset = 0;
         this.cinematicRollOffset = 0;
+        this.cameraTiltEnabled = true;
+        this._dynamicTiltRoll = 0;
+        this._motionBlurX = 0;
+        this._motionBlurY = 0;
 
         this._bobTime = 0;
         this._stepTimer = 0;
@@ -114,9 +118,12 @@ export class PlayerController extends Component {
 
     _makeSleeveArm(isLeft = false) {
         const armGroup = new THREE.Group();
-        const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x2f3d4c, roughness: 0.88 });
-        const cuffMat = new THREE.MeshStandardMaterial({ color: 0x222c38, roughness: 0.9 });
-        const skinMat = new THREE.MeshStandardMaterial({ color: 0xd4aa8c, roughness: 0.78 });
+        const mats = this.world?.materials || {};
+        const clothMap = mats.cloth?.map || null;
+        const skinMap = mats.skin?.map || null;
+        const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x3b4d5e, map: clothMap, roughness: 0.88 });
+        const cuffMat = new THREE.MeshStandardMaterial({ color: 0x2c3a47, map: clothMap, roughness: 0.9 });
+        const skinMat = new THREE.MeshStandardMaterial({ color: 0xd8b094, map: skinMap, roughness: 0.78 });
 
         const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.28), sleeveMat);
         forearm.position.set(0, 0, 0.14);
@@ -539,29 +546,19 @@ export class PlayerController extends Component {
         spongeGroup.position.set(0.22, -0.22, -0.42);
         make('sponge', spongeGroup);
 
-        // 12d4. Store Olivier Pack (peas + mayo) visible in hands when picked up in store
-        const olivierPackGroup = new THREE.Group();
-        const opCan = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.044, 0.11, 8), mats.peasLabel || new THREE.MeshStandardMaterial({ color: 0x3a7d3e }));
-        opCan.position.set(-0.045, 0, 0);
-        const opMayo = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.042, 0.10, 8), mats.mayoLabel || new THREE.MeshStandardMaterial({ color: 0xf4f0d8 }));
-        opMayo.position.set(0.048, -0.005, 0.01);
-        olivierPackGroup.add(opCan, opMayo);
-        this._attachOneHand(olivierPackGroup, 0.03, -0.05, 0.06);
-        olivierPackGroup.position.set(0.24, -0.24, -0.45);
-        make('olivierPack', olivierPackGroup);
+        // 12d4. Store Shopping Basket held in right hand (populates with Olivier & Meat packs as picked up in store!)
+        const shoppingBasketGroup = new THREE.Group();
+        const basketModel = createShoppingBasketModel(mats, 0.94);
+        basketModel.position.y = -0.11;
+        shoppingBasketGroup.add(basketModel);
+        this._attachOneHand(shoppingBasketGroup, 0.02, 0.03, 0.06);
+        shoppingBasketGroup.position.set(0.24, -0.25, -0.45);
+        this._shoppingBasketSlots = basketModel.userData;
+        make('shoppingBasket', shoppingBasketGroup);
 
-        // 12d5. Store Meat & Chicken Pack visible in hands when picked up in store
-        const meatPackGroup = new THREE.Group();
-        const mpSaus = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.19, 8), mats.meat || new THREE.MeshStandardMaterial({ color: 0x8f342c }));
-        mpSaus.rotation.z = Math.PI / 2;
-        mpSaus.position.set(-0.02, 0.03, -0.03);
-        const mpBird = new THREE.Mesh(new THREE.SphereGeometry(0.062, 8, 6), new THREE.MeshStandardMaterial({ color: 0xe6b599, roughness: 0.65 }));
-        mpBird.scale.set(1.2, 0.65, 0.9);
-        mpBird.position.set(0.02, -0.01, 0.03);
-        meatPackGroup.add(mpSaus, mpBird);
-        this._attachTwoHands(meatPackGroup, 0.14, -0.04, 0.08);
-        meatPackGroup.position.set(0.0, -0.25, -0.46);
-        make('meatPack', meatPackGroup);
+        // Keep legacy keys mapped to the basket for compatibility
+        this._handMeshes.olivierPack = shoppingBasketGroup;
+        this._handMeshes.meatPack = shoppingBasketGroup;
 
         // 12f. Interactive Sponge Washing Rig (attached to camera, player scrubs with mouse!)
         const spongeHandsGroup = new THREE.Group();
@@ -703,15 +700,18 @@ export class PlayerController extends Component {
         // 13. Full Articulated 3D Player Reflection Avatar (visible in real-time planar mirrors)
         const mirrorBody = new THREE.Group();
         mirrorBody.visible = false;
-        const sweaterMat = new THREE.MeshStandardMaterial({ color: 0x3b4d5e, roughness: 0.88 });
-        const collarMat = new THREE.MeshStandardMaterial({ color: 0x2c3a47, roughness: 0.9 });
-        const pantsMat = new THREE.MeshStandardMaterial({ color: 0x22262e, roughness: 0.92 });
-        const shoeMat = new THREE.MeshStandardMaterial({ color: 0x1a1715, roughness: 0.85 });
-        const skinMat = new THREE.MeshStandardMaterial({ color: 0xd8b094, roughness: 0.76 });
-        const hairMat = new THREE.MeshStandardMaterial({ color: 0x2b1e16, roughness: 0.9 });
+        const clothMap = mats.cloth?.map || null;
+        const skinMap = mats.skin?.map || null;
+        const hairMap = mats.hair?.map || null;
+        const sweaterMat = new THREE.MeshStandardMaterial({ color: 0x3b4d5e, map: clothMap, roughness: 0.88 });
+        const collarMat = new THREE.MeshStandardMaterial({ color: 0x2c3a47, map: clothMap, roughness: 0.9 });
+        const pantsMat = new THREE.MeshStandardMaterial({ color: 0x22262e, map: clothMap, roughness: 0.92 });
+        const shoeMat = new THREE.MeshStandardMaterial({ color: 0x1a1715, map: clothMap, roughness: 0.85 });
+        const skinMat = new THREE.MeshStandardMaterial({ color: 0xd8b094, map: skinMap, roughness: 0.76 });
+        const hairMat = new THREE.MeshStandardMaterial({ color: 0x2b1e16, map: hairMap, roughness: 0.9 });
         const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xf0eee9 });
         const pupilMat = new THREE.MeshBasicMaterial({ color: 0x181c22 });
-        const lipMat = new THREE.MeshStandardMaterial({ color: 0xb07c6a, roughness: 0.8 });
+        const lipMat = new THREE.MeshStandardMaterial({ color: 0xb07c6a, map: skinMap, roughness: 0.8 });
 
         const pelvisGroup = new THREE.Group();
         pelvisGroup.position.set(0, 0.78, 0);
@@ -851,7 +851,7 @@ export class PlayerController extends Component {
         this._mirrorEyeClose = 0;
     }
 
-    startWashFaceAnimation(onComplete) {
+    startWashFaceAnimation(onComplete, onEyesOpen = null) {
         if (this._washAnim) return;
         this.controlsLocked = true;
         this.allowLookWhileLocked = false;
@@ -870,6 +870,7 @@ export class PlayerController extends Component {
             duration: 3.45,
             startPitch: this.pitch,
             splashSoundPlayed: false,
+            eyesOpenedTriggered: false,
             flick1Played: false,
             flick2Played: false,
             mirrorPose: {
@@ -880,7 +881,8 @@ export class PlayerController extends Component {
                 elbRotX: 0,
                 eyeClose: 0
             },
-            onComplete
+            onComplete,
+            onEyesOpen
         };
     }
 
@@ -978,6 +980,10 @@ export class PlayerController extends Component {
             const uEase = u * u * (3 - 2 * u);
             eyeClose = 0;
             goalPitch = THREE.MathUtils.lerp(-0.18, -0.05, uEase);
+            if (!anim.eyesOpenedTriggered) {
+                anim.eyesOpenedTriggered = true;
+                if (anim.onEyesOpen) anim.onEyesOpen();
+            }
 
             const flickPhase = (u * 2.0) % 1.0;
             const isSecondFlick = u >= 0.5;
@@ -1178,8 +1184,14 @@ export class PlayerController extends Component {
         const H = this._mirrorHeadPivot;
         // Head pitch is relative to the leaning torso so the eyes keep matching the camera pitch
         H.rotation.order = 'YXZ';
-        H.rotation.y = lerp(H.rotation.y, headYaw * 0.75, k);
-        H.rotation.x = lerp(H.rotation.x, THREE.MathUtils.clamp(this.pitch + torsoLean, -1.0, 0.9), k);
+        const creepyLag = (this.mirrorCreepyTimer && this.mirrorCreepyTimer > 0);
+        if (creepyLag) {
+            this.mirrorCreepyTimer = Math.max(0, this.mirrorCreepyTimer - dt);
+        }
+        const headRate = creepyLag ? Math.min(1, dt * 1.1) : k;
+        const targetHeadYaw = creepyLag ? 0 : headYaw * 0.75;
+        H.rotation.y = lerp(H.rotation.y, targetHeadYaw, headRate);
+        H.rotation.x = lerp(H.rotation.x, THREE.MathUtils.clamp(this.pitch + torsoLean, -1.0, 0.9), headRate);
 
         this._mirrorLegL.rotation.x = lerp(this._mirrorLegL.rotation.x, legLX, k);
         this._mirrorLegR.rotation.x = lerp(this._mirrorLegR.rotation.x, legRX, k);
@@ -1428,7 +1440,8 @@ export class PlayerController extends Component {
         }
         const needOpenWindow = !!(balconyWindow && !balconyWindow.isOpen());
         const startPos = this.transform.position.clone();
-        const leanPos = new THREE.Vector3(0.45, 0.05, -4.22);
+        // Stand right in front of the open balcony window pane (x = 0.62..1.92, z = -4.72), centered at x = 1.24
+        const leanPos = new THREE.Vector3(1.24, 0.05, -4.22);
 
         this._smokeIntroAnim = {
             stage: needOpenWindow ? 'open_window' : 'walk_lean',
@@ -1454,38 +1467,71 @@ export class PlayerController extends Component {
         const lerp = THREE.MathUtils.lerp;
         const smooth = (u) => { const c = Math.max(0, Math.min(1, u)); return c * c * (3 - 2 * c); };
 
-        // Keep looking out into the snowy courtyard
-        this.forcedLookTarget = new THREE.Vector3(-0.6, 0.4, -18.0);
-        this.forcedLookSpeed = 4.0;
-
-        // Stage 1a: If balcony window is closed, reach out and open it first
+        // Stage 1a: Walk toward the closed balcony window (on the right side of the balcony), reach for its handle and swing it open
         if (a.stage === 'open_window') {
-            const u = Math.min(1, a.timer / 1.35);
+            const u = Math.min(1, a.timer / 1.45);
             const e = smooth(u);
+            // Smoothly step toward the window while looking at the window handle (x = 0.72, y = 1.55, z = -4.72)
+            this.forcedLookTarget = new THREE.Vector3(
+                lerp(0.75, 1.15, e),
+                lerp(1.52, 1.45, e),
+                lerp(-4.72, -12.0, Math.max(0, (u - 0.55) / 0.45))
+            );
+            this.forcedLookSpeed = 5.5;
+
+            const approachPos = new THREE.Vector3(
+                lerp(a.startPos.x, 1.05, e),
+                a.startPos.y,
+                lerp(a.startPos.z, -4.08, e)
+            );
+            this.transform.position.copy(approachPos);
+            if (this.rb) this.rb.position.copy(approachPos);
+
             L.position.set(-0.30, -0.55, -0.25);
-            R.position.set(lerp(0.24, 0.06, Math.sin(e * Math.PI)), lerp(-0.42, -0.06, Math.sin(e * Math.PI)), lerp(-0.24, -0.44, Math.sin(e * Math.PI)));
-            R.rotation.set(0.18, -0.15, 0);
-            if (!a.windowOpened && u >= 0.45) {
+            L.rotation.set(0.10, 0.20, 0.12);
+
+            // Right hand reaches forward from the right shoulder toward the window handle and pulls it open to the right
+            const reach = Math.sin(e * Math.PI);
+            const pullRight = u > 0.42 ? Math.sin(((u - 0.42) / 0.58) * Math.PI) * 0.14 : 0;
+            R.position.set(
+                lerp(0.26, 0.14, reach) + pullRight,
+                lerp(-0.42, -0.05, reach),
+                lerp(-0.24, -0.44, reach)
+            );
+            R.rotation.set(
+                lerp(-0.10, 0.20, reach),
+                lerp(-0.22, -0.18 - pullRight * 1.4, reach),
+                lerp(-0.18, -0.10, reach)
+            );
+
+            if (!a.windowOpened && u >= 0.44) {
                 a.windowOpened = true;
                 a.balconyWindow?.setOpen(true);
             }
             if (u >= 1) {
+                a.startPos.copy(this.transform.position);
                 a.stage = 'walk_lean';
                 a.timer = 0;
             }
             return;
         }
 
-        // Stage 1b: Walk up to the open window and lean gently on the sill
+        // Look out through the open balcony window into the snowy courtyard
+        this.forcedLookTarget = new THREE.Vector3(0.4, 0.4, -18.0);
+        this.forcedLookSpeed = 4.2;
+
+        // Stage 1b: Step right up to the open window and lean gently on the sill
         if (a.stage === 'walk_lean') {
-            const u = Math.min(1, a.timer / 1.25);
+            const u = Math.min(1, a.timer / 1.15);
             const e = smooth(u);
             this.transform.position.lerpVectors(a.startPos, a.leanPos, e);
             if (this.rb) this.rb.position.copy(this.transform.position);
             this.eyeHeight = lerp(1.54, 1.44, e);
             this.targetEyeHeight = this.eyeHeight;
             L.position.set(-0.30, -0.55, -0.25);
+            L.rotation.set(0.10, 0.20, 0.12);
             R.position.set(0.30, -0.55, -0.25);
+            R.rotation.set(0.10, -0.25, -0.22);
             if (u >= 1) {
                 a.stage = 'pack_open';
                 a.timer = 0;
@@ -1494,26 +1540,28 @@ export class PlayerController extends Component {
             return;
         }
 
-        // Stage 2: Left hand pulls pack from pocket, right hand flips lid & puts cigarette in mouth, pack returns to pocket
+        // Stage 2: Left hand pulls pack from left side, right hand flips lid from right side & puts cigarette in mouth
         if (a.stage === 'pack_open') {
             const t = a.timer;
             if (t < 0.75) {
                 const e = smooth(t / 0.75);
-                L.position.set(lerp(-0.26, -0.12, e), lerp(-0.52, -0.22, e), lerp(-0.22, -0.36, e));
-                L.rotation.set(0.12, 0.25, 0.10);
-                R.position.set(lerp(0.26, 0.08, e), lerp(-0.52, -0.18, e), lerp(-0.22, -0.36, e));
-                R.rotation.set(0.15, -0.22, -0.10);
+                L.position.set(lerp(-0.28, -0.13, e), lerp(-0.52, -0.22, e), lerp(-0.22, -0.36, e));
+                L.rotation.set(0.12, 0.28, 0.16);
+                R.position.set(lerp(0.30, 0.14, e), lerp(-0.52, -0.19, e), lerp(-0.22, -0.35, e));
+                R.rotation.set(0.14, -0.38, -0.26);
             } else if (t < 1.55) {
                 const e = smooth((t - 0.75) / 0.80);
                 if (this._cigPackLid) this._cigPackLid.rotation.x = lerp(0, 1.65, Math.min(1, e * 1.6));
-                R.position.set(lerp(0.08, -0.02, e), lerp(-0.18, -0.11, e), lerp(-0.36, -0.32, e));
+                R.position.set(lerp(0.14, 0.04, e), lerp(-0.19, -0.12, e), lerp(-0.35, -0.32, e));
+                R.rotation.set(0.16, -0.44, -0.28);
             } else if (t < 2.45) {
                 const e = smooth((t - 1.55) / 0.90);
                 if (this._cigPackStick) this._cigPackStick.visible = false;
                 if (e > 0.55 && this._mouthCig) this._mouthCig.visible = true;
-                // Right hand brings cigarette to mouth; left hand puts pack back in pocket
-                R.position.set(lerp(-0.02, 0.04, e), lerp(-0.11, -0.07, Math.sin(e * Math.PI)), lerp(-0.32, -0.18, Math.sin(e * Math.PI)));
-                L.position.set(lerp(-0.12, -0.28, e), lerp(-0.22, -0.55, e), lerp(-0.36, -0.22, e));
+                // Right hand brings cigarette to mouth from the right side; left hand puts pack back in pocket
+                R.position.set(lerp(0.04, 0.11, e), lerp(-0.12, -0.08, Math.sin(e * Math.PI)), lerp(-0.32, -0.19, Math.sin(e * Math.PI)));
+                R.rotation.set(0.20, -0.42, -0.28);
+                L.position.set(lerp(-0.13, -0.28, e), lerp(-0.22, -0.55, e), lerp(-0.36, -0.22, e));
             } else {
                 if (this._cigPackGroup) this._cigPackGroup.visible = false;
                 if (this._lighterGroup) this._lighterGroup.visible = true;
@@ -1524,7 +1572,7 @@ export class PlayerController extends Component {
             return;
         }
 
-        // Stage 3: Player pulls lighter & MUST spark/hold LMB or F to light the cigarette themselves!
+        // Stage 3: Player pulls lighter in right hand (angled naturally from the right shoulder, not the stomach!)
         if (a.stage === 'lighter_ready') {
             L.position.set(-0.32, -0.56, -0.22);
             const sparkDown = input.isKeyDown('KeyF') || (input.isPointerLocked() && input.isMouseButtonDown(0));
@@ -1548,8 +1596,23 @@ export class PlayerController extends Component {
             }
 
             const bring = smooth(a.lightHold);
-            R.position.set(lerp(0.14, 0.025, bring), lerp(-0.24, -0.11, bring), lerp(-0.32, -0.20, bring));
-            R.rotation.set(lerp(0.1, 0.28, bring), -0.16, -0.05);
+            // Keep right hand offset to the right (x: 0.22 -> 0.115) and rotated inward (rotY: -0.45 -> -0.56, rotZ: -0.32)
+            // so the forearm clearly extends from the right shoulder while the lighter tip reaches the cigarette at x ~ 0.02
+            R.position.set(
+                lerp(0.22, 0.115, bring),
+                lerp(-0.22, -0.115, bring),
+                lerp(-0.33, -0.21, bring)
+            );
+            R.rotation.set(
+                lerp(0.08, 0.22, bring),
+                lerp(-0.44, -0.56, bring),
+                lerp(-0.28, -0.34, bring)
+            );
+            if (this._lighterGroup) {
+                // Counter-tilt the lighter slightly in the palm so the flame stays upright near the cigarette tip
+                this._lighterGroup.position.set(-0.028, 0.024, -0.092);
+                this._lighterGroup.rotation.set(-0.12, 0.32, 0.26);
+            }
 
             if (this._mouthCig?.userData.tipMat) {
                 this._mouthCig.userData.tipMat.emissiveIntensity = bring * 2.2;
@@ -1565,11 +1628,12 @@ export class PlayerController extends Component {
             return;
         }
 
-        // Stage 4: Put lighter back in pocket and hand off to Act II cigarette smoking
+        // Stage 4: Put lighter back in right pocket and hand off to Act II cigarette smoking
         if (a.stage === 'put_lighter_away') {
             const u = Math.min(1, a.timer / 0.75);
             const e = smooth(u);
-            R.position.set(lerp(0.025, 0.28, e), lerp(-0.11, -0.55, e), lerp(-0.20, -0.22, e));
+            R.position.set(lerp(0.115, 0.30, e), lerp(-0.115, -0.55, e), lerp(-0.21, -0.22, e));
+            R.rotation.set(lerp(0.22, 0.05, e), lerp(-0.56, -0.25, e), lerp(-0.34, -0.18, e));
             if (u >= 1) {
                 if (this._smokeIntroGroup) this._smokeIntroGroup.visible = false;
                 if (this._lighterGroup) this._lighterGroup.visible = false;
@@ -1589,8 +1653,22 @@ export class PlayerController extends Component {
 
     setHeldItem(itemKey) {
         this.heldItem = itemKey;
+        const activeMesh = itemKey ? this._handMeshes[itemKey] : null;
+        const seen = new Set();
         for (const [k, m] of Object.entries(this._handMeshes)) {
-            m.visible = (k === itemKey) || (k === 'cigarette' && this.cigaretteActive);
+            if (!m || seen.has(m)) continue;
+            seen.add(m);
+            m.visible = (m === activeMesh) || (k === 'cigarette' && this.cigaretteActive);
+        }
+    }
+
+    setShoppingBasketContents({ olivier = false, meat = false } = {}) {
+        if (!this._shoppingBasketSlots) return;
+        if (this._shoppingBasketSlots.olivierSlot) {
+            this._shoppingBasketSlots.olivierSlot.visible = !!olivier;
+        }
+        if (this._shoppingBasketSlots.meatSlot) {
+            this._shoppingBasketSlots.meatSlot.visible = !!meat;
         }
     }
 
@@ -1968,9 +2046,18 @@ export class PlayerController extends Component {
         this._cameraRig.position.set(0, this.eyeHeight, 0);
     }
 
+    setCameraTiltEnabled(enabled) {
+        this.cameraTiltEnabled = !!enabled;
+        if (!this.cameraTiltEnabled) this._dynamicTiltRoll = 0;
+    }
+
     _getSurfaceFootstep() {
         const p = this.transform.position;
-        if (p.x > 40) return 'footstep_linoleum';
+        if (p.x > 30) {
+            if (p.x > 92.5 && p.x < 99.5 && p.z >= 49.8) return 'footstep_concrete';
+            if (p.z > 6.35) return 'footstep_snow';
+            return 'footstep_linoleum';
+        }
         if (p.z < -3.5) return 'footstep_snow';
         if (p.x < 2.0 && p.z <= 1.5) return 'footstep_parquet';
         return 'footstep_linoleum';
@@ -2026,7 +2113,40 @@ export class PlayerController extends Component {
             }
         }
 
-        const swayRoll = (this.cigaretteActive ? Math.sin(performance.now() * 0.0022) * 0.025 : 0) + (this.cinematicRollOffset || 0);
+        // Subtle dynamic camera roll/tilt when strafing, walking & turning the head (toggleable in Settings)
+        let targetTiltRoll = 0;
+        if (this.cameraTiltEnabled && !this.controlsLocked && !this.isHidden && !this.isPeephole) {
+            let strafeDir = 0;
+            if (input.isKeyDown('KeyD')) strafeDir += 1;
+            if (input.isKeyDown('KeyA')) strafeDir -= 1;
+            const sprintBoost = input.isKeyDown('ShiftLeft') && !this.isCrouching ? 1.45 : 1.0;
+            const strafeRoll = -strafeDir * 0.022 * sprintBoost;
+            const turnRoll = THREE.MathUtils.clamp(-delta.x * 0.00135, -0.026, 0.026);
+            const walkSway = (input.isKeyDown('KeyW') || input.isKeyDown('KeyS'))
+                ? Math.cos(this._bobTime) * 0.0075 * sprintBoost
+                : 0;
+            targetTiltRoll = strafeRoll + turnRoll + walkSway;
+        }
+        this._dynamicTiltRoll = THREE.MathUtils.lerp(this._dynamicTiltRoll, targetTiltRoll, Math.min(1, deltaTime * 8.5));
+
+        // Directional velocity motion blur driven by head-turn & sprint speed (toggleable in Settings)
+        const targetMbX = (!this.controlsLocked || this.allowLookWhileLocked)
+            ? THREE.MathUtils.clamp(delta.x * 0.00055, -0.016, 0.016)
+            : 0;
+        const targetMbY = (!this.controlsLocked || this.allowLookWhileLocked)
+            ? THREE.MathUtils.clamp(-delta.y * 0.00042, -0.012, 0.012)
+            : 0;
+        const mbRate = Math.min(1, deltaTime * 14.0);
+        this._motionBlurX = THREE.MathUtils.lerp(this._motionBlurX, targetMbX, mbRate);
+        this._motionBlurY = THREE.MathUtils.lerp(this._motionBlurY, targetMbY, mbRate);
+        this.engine.renderer?.setPostProcessParams?.({
+            motionBlurX: Math.abs(this._motionBlurX) > 0.0002 ? this._motionBlurX : 0,
+            motionBlurY: Math.abs(this._motionBlurY) > 0.0002 ? this._motionBlurY : 0
+        });
+
+        const swayRoll = (this.cigaretteActive ? Math.sin(performance.now() * 0.0022) * 0.025 : 0)
+            + (this.cinematicRollOffset || 0)
+            + this._dynamicTiltRoll;
         const swayPitch = this.cigaretteActive ? Math.cos(performance.now() * 0.0017) * 0.014 : 0;
         this.camera.rotation.set(this.pitch + swayPitch, this.yaw, swayRoll, 'YXZ');
         this._updateMirrorBodyAvatar(deltaTime);

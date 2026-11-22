@@ -132,8 +132,15 @@ export class ParticleEmitter extends Component {
     }
 
     update(deltaTime) {
-        this.points.visible = this.active || this.mode === 'fireworks';
+        this.points.visible = (this.active || this.mode === 'fireworks') && (this.gameObject?.transform?.visible !== false);
         if (!this.points.visible) return;
+        if (this.mode === 'fireworks') {
+            let anyAlive = false;
+            for (let i = 0; i < this.count; i++) {
+                if (this.lifetimes[i] > 0) { anyAlive = true; break; }
+            }
+            if (!anyAlive) return;
+        }
 
         for (let i = 0; i < this.count; i++) {
             const i3 = i * 3;

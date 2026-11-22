@@ -79,7 +79,8 @@ export const VHS_POST_SHADER = {
         uPanic: { value: 0.0 },
         uFade: { value: 1.0 },
         uPeephole: { value: 0.0 },
-        uGlitchSpike: { value: 0.0 }
+        uGlitchSpike: { value: 0.0 },
+        uMotionBlur: { value: new THREE.Vector2(0, 0) }
     },
     vertexShader: `
         varying vec2 vUv;
@@ -103,6 +104,7 @@ export const VHS_POST_SHADER = {
         uniform float uFade;
         uniform float uPeephole;
         uniform float uGlitchSpike;
+        uniform vec2 uMotionBlur;
         varying vec2 vUv;
 
         float hash(vec2 p) {
@@ -136,6 +138,16 @@ export const VHS_POST_SHADER = {
 
             float aber = uAberration * (1.0 + uPanic * 2.0 + uGlitchSpike * 3.0);
             vec3 centerCol = sampleColor(uv, aber);
+
+            // Directional camera velocity motion blur (toggleable in settings)
+            if (dot(uMotionBlur, uMotionBlur) > 0.0000004) {
+                vec3 mbAcc = centerCol * 0.30;
+                mbAcc += texture2D(tDiffuse, clamp(uv + uMotionBlur * 0.5, 0.001, 0.999)).rgb * 0.22;
+                mbAcc += texture2D(tDiffuse, clamp(uv - uMotionBlur * 0.5, 0.001, 0.999)).rgb * 0.22;
+                mbAcc += texture2D(tDiffuse, clamp(uv + uMotionBlur, 0.001, 0.999)).rgb * 0.13;
+                mbAcc += texture2D(tDiffuse, clamp(uv - uMotionBlur, 0.001, 0.999)).rgb * 0.13;
+                centerCol = mbAcc;
+            }
 
             // PS1 Crisp Sharpening (Unsharp Mask kernel)
             vec2 texel = 1.0 / max(uResolution, vec2(1.0));

@@ -36,6 +36,8 @@ export const de = {
     'ui.settings.mic_testing': 'Mikrofon verbunden! Teste Geräuschpegel (5 Sek.)...',
     'ui.settings.mic_menu_denied': 'Mikrofonzugriff verweigert — Modus „Ohne Mikrofon“ aktiviert. Klicke oben, um es erneut zu versuchen.',
     'ui.settings.ps1_jitter': 'PS1-Polygon-Flimmern (Vertex Jitter)',
+    'ui.settings.camera_tilt': 'Kameraneigung bei Bewegung & Drehung',
+    'ui.settings.motion_blur': 'Bewegungsunschärfe (Motion Blur)',
     'ui.settings.vhs_intensity': 'PS1-Filmkorn & Schärfe',
     'ui.settings.volume': 'Gesamtlautstärke',
     'ui.settings.sensitivity': 'Mausempfindlichkeit',
@@ -331,7 +333,17 @@ export const de = {
     'obj.act1.cook_meat': 'Wurst- und Käseplatte am Küchentisch schneiden',
     'obj.act1.put_chicken_oven': 'Ofen öffnen und Hähnchen zum Braten hineinstellen',
     'obj.act1.wait_chicken_oven': 'Warten, bis das Hähnchen im Ofen gar ist',
-    'obj.act1.carry_cooked_food': 'Frischen Olivier-Salat und Aufschnitt auf den Festtisch bringen'
+    'obj.act1.carry_cooked_food': 'Frischen Olivier-Salat und Aufschnitt auf den Festtisch bringen',
+
+    // Horror & Reworked Monster AI Additions
+    'tv.horror_ticker': '★ ER IST SCHON IM TREPPENHAUS ★ ÖFFNE NICHT DIE TÜR ★ SCHAU DURCH DEN TÜRSPION ★',
+    'tv.horror_weather': 'IN WOHNUNG 34 ERWARTET SIE...',
+    'sub.peephole_stalker': 'Jemand steht im Dunkeln auf dem Treppenabsatz... und starrt direkt in den Türspion.',
+    'sub.peephole_gone_scratch': 'Verschwunden... Aber außen an der Tür ist ein frischer tiefer Messerkratzer.',
+    'sub.peephole_act3_scare': 'ER STEHT DIREKT HINTER DER TÜR! Schnell verstecken!',
+    'sub.act3_hiding_inspect': 'Er ist direkt vor meinem Versteck stehengeblieben... Er lauscht ganz genau!',
+    'sub.act3_heard_something': 'Er hat das Geräusch gehört und sieht nach!..',
+    'sub.act3_alarm_ring': 'Das Telefon im Wohnzimmer klingelt plötzlich!.. Das Geräusch hat ihn abgelenkt!'
 };
 
 export default de;

@@ -59,11 +59,19 @@ export class Renderer {
 
         this._elapsed = 0;
         this.bypassPostProcess = false;
+        this.motionBlurEnabled = true;
         window.addEventListener('resize', () => this.onWindowResize(), false);
     }
 
     setBypassPostProcess(bypass) {
         this.bypassPostProcess = !!bypass;
+    }
+
+    setMotionBlur(enabled) {
+        this.motionBlurEnabled = !!enabled;
+        if (!this.motionBlurEnabled && this.postMaterial?.uniforms?.uMotionBlur) {
+            this.postMaterial.uniforms.uMotionBlur.value.set(0, 0);
+        }
     }
 
     setPS1Jitter(enabled, snapRes = 160.0) {
@@ -84,6 +92,13 @@ export class Renderer {
         if (params.fade !== undefined) u.uFade.value = params.fade;
         if (params.peephole !== undefined) u.uPeephole.value = params.peephole;
         if (params.glitchSpike !== undefined) u.uGlitchSpike.value = params.glitchSpike;
+        if (params.motionBlurX !== undefined || params.motionBlurY !== undefined) {
+            if (this.motionBlurEnabled) {
+                u.uMotionBlur.value.set(params.motionBlurX ?? 0, params.motionBlurY ?? 0);
+            } else {
+                u.uMotionBlur.value.set(0, 0);
+            }
+        }
     }
 
     precompileScene() {

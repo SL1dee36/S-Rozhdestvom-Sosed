@@ -63,6 +63,7 @@ export class MonsterAI extends Component {
         this._sidestepSign = 1;
         this._onJumpscare = null;
         this._onTrapLeft = null;
+        this._onHorrorCue = null;
         this._wreckDone = { mistletoe: false, garland: false, table: false };
         this._wreckAction = null;
         this._balconyState = null;
@@ -71,17 +72,38 @@ export class MonsterAI extends Component {
         this._balconyMaxHits = 0;
         this.balconyAssaultDone = false;
 
+        // Smart Predator AI state
+        this.suspicion = 0;
+        this._investigateTarget = null;
+        this._investigateTimer = 0;
+        this._inspectSpotCfg = null;
+        this._inspectPhase = 'approach';
+        this._inspectTimer = 0;
+        this._inspectKnifePlayed = false;
+        this._inspectedSpots = new Set();
+        this._paceBurstTimer = 0;
+        this._paceSlowTimer = 0;
+        this._backtrackDone = false;
+        this._pauseListenTimer = 0;
+        this._trapCreakTimer = 0;
+        this._trapFakeSlamPlayed = false;
+        this._losRaycaster = new THREE.Raycaster();
+
         this._buildMesh();
     }
 
     _buildMesh() {
         const root = this.gameObject.transform;
-        const coatMat = new THREE.MeshStandardMaterial({ color: 0x591212, roughness: 0.88 });
-        const pantsMat = new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 0.92 });
-        const bootMat = new THREE.MeshStandardMaterial({ color: 0x141210, roughness: 0.82 });
-        const skinMat = new THREE.MeshStandardMaterial({ color: 0x9e8472, roughness: 0.85 });
-        const redHatMat = new THREE.MeshStandardMaterial({ color: 0x751414, roughness: 0.88 });
-        const furMat = new THREE.MeshStandardMaterial({ color: 0xa69f92, roughness: 0.95 });
+        const mats = this.world?.materials || {};
+        const clothMap = mats.cloth?.map || null;
+        const skinMap = mats.skin?.map || null;
+        const hairMap = mats.hair?.map || null;
+        const coatMat = new THREE.MeshStandardMaterial({ color: 0x591212, map: clothMap, roughness: 0.88 });
+        const pantsMat = new THREE.MeshStandardMaterial({ color: 0x1a1d24, map: clothMap, roughness: 0.92 });
+        const bootMat = new THREE.MeshStandardMaterial({ color: 0x141210, map: clothMap, roughness: 0.82 });
+        const skinMat = new THREE.MeshStandardMaterial({ color: 0x9e8472, map: skinMap, roughness: 0.85 });
+        const redHatMat = new THREE.MeshStandardMaterial({ color: 0x751414, map: clothMap, roughness: 0.88 });
+        const furMat = new THREE.MeshStandardMaterial({ color: 0xa69f92, map: hairMap, roughness: 0.95 });
         const beltMat = new THREE.MeshStandardMaterial({ color: 0x121110, roughness: 0.65 });
         const buckleMat = new THREE.MeshStandardMaterial({ color: 0x9c8236, metalness: 0.55, roughness: 0.4 });
         const bladeMat = new THREE.MeshStandardMaterial({ color: 0x7b8288, metalness: 0.6, roughness: 0.35 });
@@ -193,9 +215,134 @@ export class MonsterAI extends Component {
         root.position.set(0, -50, 0);
     }
 
-    setCallbacks({ onJumpscare, onTrapLeft }) {
+    setCallbacks({ onJumpscare, onTrapLeft, onHorrorCue }) {
         this._onJumpscare = onJumpscare;
         this._onTrapLeft = onTrapLeft;
+        this._onHorrorCue = onHorrorCue || null;
+    }
+
+    showPhantomAt(position, lookAtPos, eyesVisible = true) {
+        this.state = 'phantom';
+        this.stateTimer = 0;
+        this._resetPose();
+        this.transform.position.copy(position);
+        if (lookAtPos) {
+            this.transform.lookAt(lookAtPos.x, position.y, lookAtPos.z);
+        }
+        this.setEyesVisible(eyesVisible);
+    }
+
+    hidePhantom() {
+        if (this.state === 'phantom') {
+            this.setIdleInNeighborRoom();
+        }
+    }
+
+    notifySoundStimulus(worldPos, intensity = 0.5, reason = 'sound') {
+        if (this.state !== 'patrol' && this.state !== 'investigate' && this.state !== 'inspect_hiding' && this.state !== 'moving_to_trap') {
+            return;
+        }
+        if (this._wreckAction || this._balconyState) return;
+        const pos = this.transform.position;
+        const dist = Math.hypot(worldPos.x - pos.x, worldPos.z - pos.z);
+        if (intensity >= 0.88 && dist < 3.4 && reason === 'noise') {
+            this.startChasePlayer('noise');
+            return;
+        }
+        this.suspicion = Math.min(1.0, this.suspicion + intensity * 0.45);
+        this._investigateTarget = new THREE.Vector3(worldPos.x, 0, worldPos.z);
+        this._investigateTimer = 0;
+        this._pauseListenTimer = 0.55;
+        if (this.state !== 'investigate') {
+            this.state = 'investigate';
+            this.stateTimer = 0;
+            this.engine.audioSystem.playSpatialOneShot('sniff', pos, { volume: 1.05, refDistance: 2.8 });
+            if (this._onHorrorCue) this._onHorrorCue('investigate', reason);
+        }
+    }
+
+    _hasLineOfSightTo(targetWorldPos, eyeY = 1.62) {
+        const blockers = this.world?.builder?.blockerMeshes;
+        if (!blockers || blockers.length === 0) return true;
+        const origin = new THREE.Vector3(this.transform.position.x, eyeY, this.transform.position.z);
+        const target = new THREE.Vector3(targetWorldPos.x, Math.max(0.45, targetWorldPos.y || 1.1), targetWorldPos.z);
+        const dir = new THREE.Vector3().subVectors(target, origin);
+        const dist = dir.length();
+        if (dist < 0.35) return true;
+        dir.normalize();
+        this._losRaycaster.set(origin, dir);
+        this._losRaycaster.far = Math.max(0.1, dist - 0.25);
+        const hits = this._losRaycaster.intersectObjects(blockers, false);
+        return hits.length === 0;
+    }
+
+    _canSeePlayer() {
+        const pos = this.transform.position;
+        const pPos = this.player.transform.position;
+        const dx = pPos.x - pos.x;
+        const dz = pPos.z - pos.z;
+        const dist = Math.hypot(dx, dz);
+
+        // Immediate contact radius
+        if (!this.player.isHidden && dist < 1.15) return 'seen_open';
+
+        // Monster forward direction vector (in Three.js rotation.y = atan2(dx, dz), forward is [sin(yaw), cos(yaw)])
+        const yaw = this.transform.rotation.y + (this.headGroup?.rotation?.y || 0) * 0.6;
+        const fwdX = Math.sin(yaw);
+        const fwdZ = Math.cos(yaw);
+        const toPlayerX = dx / Math.max(0.001, dist);
+        const toPlayerZ = dz / Math.max(0.001, dist);
+        const dot = fwdX * toPlayerX + fwdZ * toPlayerZ;
+
+        if (!this.player.isHidden) {
+            const maxViewDist = this.player.isCrouching ? 4.2 : 5.8;
+            const minCos = dist < 2.2 ? -0.15 : 0.28; // ~105 deg close, ~73 deg far
+            if (dist < maxViewDist && dot > minCos) {
+                const targetEye = new THREE.Vector3(pPos.x, this.player.eyeHeight || 1.2, pPos.z);
+                if (this._hasLineOfSightTo(targetEye)) {
+                    return 'seen_open';
+                }
+            }
+            return null;
+        }
+
+        // Player is hidden inside a hiding spot
+        const spot = this.player.currentHidingSpot;
+        if (!spot) return null;
+        if (!spot.isDoorClosed()) {
+            if (dist < 3.6 && dot > 0.15 && this._hasLineOfSightTo(spot.peekPos || spot.hidePos)) {
+                return 'door_open';
+            }
+        } else if (this.player.isPeeking) {
+            // If peeking while monster is very close and looking right at the hiding spot!
+            if (dist < 2.35 && dot > 0.58 && this._hasLineOfSightTo(spot.peekPos || spot.hidePos)) {
+                return 'seen_peeking';
+            }
+        }
+        return null;
+    }
+
+    _getHidingSpotInspectSpec(spotId) {
+        const specs = {
+            wardrobe: { id: 'wardrobe', standPos: new THREE.Vector3(2.45, 0, 3.68), lookPos: new THREE.Vector3(1.75, 1.2, 3.68) },
+            pantry: { id: 'pantry', standPos: new THREE.Vector3(2.45, 0, 2.42), lookPos: new THREE.Vector3(1.65, 1.2, 2.42) },
+            sofa: { id: 'sofa', standPos: new THREE.Vector3(-1.95, 0, -1.0), lookPos: new THREE.Vector3(-2.75, 0.35, -1.0) },
+            bathroom: { id: 'bathroom', standPos: new THREE.Vector3(4.82, 0, 2.58), lookPos: new THREE.Vector3(5.55, 1.2, 2.58) }
+        };
+        return specs[spotId] || null;
+    }
+
+    startInspectHidingSpot(spotId) {
+        const spec = this._getHidingSpotInspectSpec(spotId);
+        if (!spec) return false;
+        this._inspectedSpots.add(spotId);
+        this._inspectSpotCfg = spec;
+        this._inspectPhase = 'approach';
+        this._inspectTimer = 0;
+        this._inspectKnifePlayed = false;
+        this.state = 'inspect_hiding';
+        this.stateTimer = 0;
+        return true;
     }
 
     setEyesVisible(v) {
@@ -356,6 +503,17 @@ export class MonsterAI extends Component {
         this._balconyHits = 0;
         this._balconyMaxHits = 0;
         this.balconyAssaultDone = false;
+        this.suspicion = 0;
+        this._investigateTarget = null;
+        this._investigateTimer = 0;
+        this._inspectSpotCfg = null;
+        this._inspectedSpots.clear();
+        this._paceBurstTimer = 0;
+        this._paceSlowTimer = 0;
+        this._backtrackDone = false;
+        this._pauseListenTimer = 0;
+        this._trapCreakTimer = 0;
+        this._trapFakeSlamPlayed = false;
         this._resetPose();
         this.transform.position.set(3.08, 0, 4.35);
         this._lastProgressPos.copy(this.transform.position);
@@ -943,33 +1101,90 @@ export class MonsterAI extends Component {
                     this._animateLimbs(deltaTime, 0, 'idle');
                 }
             } else {
-                const target = this._patrolWaypoints[this._wpIndex];
-                const dist = Math.hypot(target.x - pos.x, target.z - pos.z);
-
-                if (dist < 0.36) {
-                    this._wpIndex++;
-                    if (this._wpIndex >= this._patrolWaypoints.length) {
-                        this.triggerTrapWait();
-                        return;
-                    }
+                // Dynamic pacing: occasional creepy pause-and-listen, slow stalk, or sudden aggressive burst
+                if (this._pauseListenTimer > 0) {
+                    this._pauseListenTimer -= deltaTime;
+                    this._animateLimbs(deltaTime, 0, 'idle');
+                    this.headGroup.rotation.y = Math.sin(this.stateTimer * 3.8) * 0.55;
                 } else {
-                    const actualSpeed = this._moveTowardWithAvoidance(target, 1.75, deltaTime);
-                    this._animateLimbs(deltaTime, actualSpeed, 'walk');
+                    if (this._paceBurstTimer > 0) this._paceBurstTimer -= deltaTime;
+                    if (this._paceSlowTimer > 0) this._paceSlowTimer -= deltaTime;
+
+                    const target = this._patrolWaypoints[this._wpIndex];
+                    const dist = Math.hypot(target.x - pos.x, target.z - pos.z);
+
+                    if (dist < 0.36) {
+                        // Before advancing, check if we should bluff-inspect a nearby hiding spot!
+                        const wp = this._wpIndex;
+                        let candidateSpot = null;
+                        if ((wp === 0 || wp === 8) && !this._inspectedSpots.has('wardrobe') && Math.random() < 0.65) {
+                            candidateSpot = 'wardrobe';
+                        } else if ((wp === 4 || wp === 5) && !this._inspectedSpots.has('sofa') && Math.random() < 0.7) {
+                            candidateSpot = 'sofa';
+                        } else if (wp === 8 && !this._inspectedSpots.has('pantry') && Math.random() < 0.65) {
+                            candidateSpot = 'pantry';
+                        } else if (wp === 9 && !this._inspectedSpots.has('bathroom') && Math.random() < 0.75) {
+                            candidateSpot = 'bathroom';
+                        }
+                        // Prioritize inspecting the player's actual hiding spot once during the hunt for maximum tension
+                        if (this.player.isHidden && this.player.currentHidingSpot) {
+                            const pSpotId = this.player.currentHidingSpot.id;
+                            const spec = this._getHidingSpotInspectSpec(pSpotId);
+                            if (spec && !this._inspectedSpots.has(pSpotId) && Math.hypot(spec.standPos.x - pos.x, spec.standPos.z - pos.z) < 2.6) {
+                                candidateSpot = pSpotId;
+                            }
+                        }
+
+                        if (candidateSpot && this.startInspectHidingSpot(candidateSpot)) {
+                            return;
+                        }
+
+                        // Occasional sudden fake-out backtrack when leaving the living room or kitchen
+                        if (!this._backtrackDone && (wp === 6 || wp === 8) && Math.random() < 0.42) {
+                            this._backtrackDone = true;
+                            this._wpIndex = Math.max(2, wp - 2);
+                            this._pauseListenTimer = 1.15;
+                            this._paceBurstTimer = 2.4;
+                            this.engine.audioSystem.playSpatialOneShot('sniff', pos, { volume: 1.0, refDistance: 2.6 });
+                        } else {
+                            this._wpIndex++;
+                            if (Math.random() < 0.28) {
+                                this._pauseListenTimer = 0.85 + Math.random() * 0.75;
+                            } else if (Math.random() < 0.25) {
+                                this._paceBurstTimer = 1.85;
+                            } else if (Math.random() < 0.25) {
+                                this._paceSlowTimer = 2.2;
+                            }
+                        }
+
+                        if (this._wpIndex >= this._patrolWaypoints.length) {
+                            this.triggerTrapWait();
+                            return;
+                        }
+                    } else {
+                        const patrolSpeed = this._paceBurstTimer > 0 ? 2.65 : (this._paceSlowTimer > 0 ? 1.12 : 1.78);
+                        const animMode = this._paceBurstTimer > 0 ? 'sprint' : 'walk';
+                        const actualSpeed = this._moveTowardWithAvoidance(target, patrolSpeed, deltaTime);
+                        this._animateLimbs(deltaTime, actualSpeed, animMode);
+                        this.headGroup.rotation.y = THREE.MathUtils.lerp(this.headGroup.rotation.y, Math.sin(this.stateTimer * 1.8) * 0.28, Math.min(1, deltaTime * 5));
+                    }
                 }
             }
 
             this.engine.audioSystem.updateLoopPosition('monster_breath', pos);
 
-            this._stepAccum += deltaTime;
-            if (this._stepAccum > 0.46) {
-                this._stepAccum = 0;
-                const sfx = pos.x < 2.0 && pos.z < 1.5 ? 'footstep_parquet' : 'footstep_linoleum';
-                this.engine.audioSystem.playSpatialOneShot(sfx, pos, {
-                    heavy: true,
-                    volume: 1.2,
-                    refDistance: 2.8,
-                    maxDistance: 24
-                });
+            if (this._pauseListenTimer <= 0) {
+                this._stepAccum += deltaTime * (this._paceBurstTimer > 0 ? 1.45 : (this._paceSlowTimer > 0 ? 0.68 : 1.0));
+                if (this._stepAccum > 0.46) {
+                    this._stepAccum = 0;
+                    const sfx = pos.x < 2.0 && pos.z < 1.5 ? 'footstep_parquet' : 'footstep_linoleum';
+                    this.engine.audioSystem.playSpatialOneShot(sfx, pos, {
+                        heavy: true,
+                        volume: this._paceBurstTimer > 0 ? 1.35 : (this._paceSlowTimer > 0 ? 0.85 : 1.2),
+                        refDistance: 2.8,
+                        maxDistance: 24
+                    });
+                }
             }
 
             this._knifeDragAccum += deltaTime;
@@ -988,16 +1203,136 @@ export class MonsterAI extends Component {
                 aberration: playerDist < 5.0 ? 0.0065 : 0.003
             });
 
-            if (!this.player.isHidden && !playerLockedOnBalcony && playerDist < 4.4) {
-                this.startChasePlayer('seen_open');
+            if (!playerLockedOnBalcony) {
+                const sightReason = this._canSeePlayer();
+                if (sightReason) {
+                    this.startChasePlayer(sightReason === 'door_open' ? 'door_open' : 'seen_open');
+                    return;
+                }
+            }
+        } else if (this.state === 'investigate') {
+            this.engine.audioSystem.updateLoopPosition('monster_breath', pos);
+            const pPos = this.player.transform.position;
+            const playerDist = pos.distanceTo(pPos);
+            this.engine.renderer.setPostProcessParams({
+                panic: playerDist < 6.0 ? Math.min(1, (6.0 - playerDist) / 4.5) : 0.25,
+                aberration: playerDist < 5.5 ? 0.007 : 0.0035
+            });
+
+            const sightReason = this._canSeePlayer();
+            if (sightReason) {
+                this.startChasePlayer(sightReason === 'door_open' ? 'door_open' : 'seen_open');
                 return;
             }
 
-            if (this.player.isHidden && this.player.currentHidingSpot) {
-                const spot = this.player.currentHidingSpot;
-                if (!spot.isDoorClosed() && playerDist < 3.6) {
-                    this.startChasePlayer('door_open');
-                    return;
+            if (this._pauseListenTimer > 0) {
+                this._pauseListenTimer -= deltaTime;
+                this._animateLimbs(deltaTime, 0, 'idle');
+                if (this._investigateTarget) {
+                    const ang = Math.atan2(this._investigateTarget.x - pos.x, this._investigateTarget.z - pos.z);
+                    let diff = ang - this.transform.rotation.y;
+                    while (diff > Math.PI) diff -= Math.PI * 2;
+                    while (diff < -Math.PI) diff += Math.PI * 2;
+                    this.transform.rotation.y += diff * Math.min(1, deltaTime * 8);
+                }
+                return;
+            }
+
+            const target = this._investigateTarget || this._patrolWaypoints[this._wpIndex];
+            const dist = Math.hypot(target.x - pos.x, target.z - pos.z);
+            if (dist > 0.45) {
+                const actualSpeed = this._moveTowardWithAvoidance(target, 2.35, deltaTime);
+                this._animateLimbs(deltaTime, actualSpeed, 'walk');
+                this._stepAccum += deltaTime * 1.25;
+                if (this._stepAccum > 0.42) {
+                    this._stepAccum = 0;
+                    const sfx = pos.x < 2.0 && pos.z < 1.5 ? 'footstep_parquet' : 'footstep_linoleum';
+                    this.engine.audioSystem.playSpatialOneShot(sfx, pos, { heavy: true, volume: 1.28, refDistance: 2.8, maxDistance: 24 });
+                }
+            } else {
+                this._investigateTimer += deltaTime;
+                this._animateLimbs(deltaTime, 0, 'idle');
+                this.headGroup.rotation.y = Math.sin(this._investigateTimer * 3.2) * 0.65;
+                if (this._investigateTimer >= 2.6) {
+                    // Check if there is a hiding spot right next to the investigated sound
+                    if (this.player.isHidden && this.player.currentHidingSpot) {
+                        const spotId = this.player.currentHidingSpot.id;
+                        const spec = this._getHidingSpotInspectSpec(spotId);
+                        if (spec && Math.hypot(spec.standPos.x - pos.x, spec.standPos.z - pos.z) < 2.8 && !this._inspectedSpots.has(spotId)) {
+                            this.startInspectHidingSpot(spotId);
+                            return;
+                        }
+                    }
+                    this.state = 'patrol';
+                    this.stateTimer = 0;
+                    this.headGroup.rotation.y = 0;
+                }
+            }
+        } else if (this.state === 'inspect_hiding') {
+            this.engine.audioSystem.updateLoopPosition('monster_breath', pos);
+            const cfg = this._inspectSpotCfg;
+            if (!cfg) {
+                this.state = 'patrol';
+                return;
+            }
+            const pPos = this.player.transform.position;
+            const playerDist = pos.distanceTo(pPos);
+            this.engine.renderer.setPostProcessParams({
+                panic: playerDist < 4.5 ? Math.min(1, (4.8 - playerDist) / 3.5) : 0.25,
+                aberration: playerDist < 4.0 ? 0.008 : 0.0035
+            });
+
+            const sightReason = this._canSeePlayer();
+            if (sightReason) {
+                this.startChasePlayer(sightReason === 'door_open' ? 'door_open' : 'seen_open');
+                return;
+            }
+
+            if (this._inspectPhase === 'approach') {
+                const dist = Math.hypot(cfg.standPos.x - pos.x, cfg.standPos.z - pos.z);
+                if (dist > 0.32) {
+                    const actualSpeed = this._moveTowardWithAvoidance(cfg.standPos, 1.85, deltaTime);
+                    this._animateLimbs(deltaTime, actualSpeed, 'walk');
+                    this._stepAccum += deltaTime;
+                    if (this._stepAccum > 0.45) {
+                        this._stepAccum = 0;
+                        const sfx = pos.x < 2.0 && pos.z < 1.5 ? 'footstep_parquet' : 'footstep_linoleum';
+                        this.engine.audioSystem.playSpatialOneShot(sfx, pos, { heavy: true, volume: 1.2, refDistance: 2.8 });
+                    }
+                } else {
+                    this._inspectPhase = 'stare';
+                    this._inspectTimer = 0;
+                    this.engine.audioSystem.playSpatialOneShot('sniff', cfg.lookPos, { volume: 1.25, refDistance: 2.5 });
+                    if (this._onHorrorCue && this.player.isHidden && this.player.currentHidingSpot?.id === cfg.id) {
+                        this._onHorrorCue('inspect_hiding', cfg.id);
+                    }
+                }
+            } else {
+                this._inspectTimer += deltaTime;
+                this._animateLimbs(deltaTime, 0, 'idle');
+                const ang = Math.atan2(cfg.lookPos.x - pos.x, cfg.lookPos.z - pos.z);
+                let diff = ang - this.transform.rotation.y;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                this.transform.rotation.y += diff * Math.min(1, deltaTime * 10);
+
+                // Lean forward toward the hiding spot crack (or crouch slightly for sofa)
+                const lean = Math.min(1, this._inspectTimer / 0.8);
+                this.torso.rotation.x = 0.24 + (cfg.id === 'sofa' ? 0.42 : 0.22) * lean;
+                this.headGroup.rotation.x = (cfg.id === 'sofa' ? 0.25 : 0.08) * lean;
+                this.headGroup.rotation.y = Math.sin(this._inspectTimer * 2.4) * 0.14;
+
+                if (!this._inspectKnifePlayed && this._inspectTimer >= 1.35) {
+                    this._inspectKnifePlayed = true;
+                    this.engine.audioSystem.playSpatialOneShot('knife_drag', cfg.lookPos, { volume: 1.2, refDistance: 2.4 });
+                    this.engine.audioSystem.playSpatialOneShot('wood_creak', cfg.lookPos, { volume: 0.75, refDistance: 2.4 });
+                }
+
+                if (this._inspectTimer >= 3.4) {
+                    this.torso.rotation.x = 0.24;
+                    this.headGroup.rotation.set(0, 0, 0);
+                    this.state = 'patrol';
+                    this.stateTimer = 0;
                 }
             }
         } else if (this.state === 'moving_to_trap') {
@@ -1024,6 +1359,28 @@ export class MonsterAI extends Component {
         } else if (this.state === 'trap') {
             this.trapElapsed += deltaTime;
             this._animateLimbs(deltaTime, 0, 'idle');
+
+            // Fake door thud at start of trap to trick the player into thinking he left
+            if (!this._trapFakeSlamPlayed && this.trapElapsed >= 0.4) {
+                this._trapFakeSlamPlayed = true;
+                this.engine.audioSystem.playSpatialOneShot('door_pound', new THREE.Vector3(3.2, -0.5, 4.8), {
+                    volume: 0.72,
+                    maxDistance: 28
+                });
+            }
+
+            // Subtle audio tells every 7.5 seconds while he lurks in the hallway corner (floorboard creak / muffled sniff)
+            this._trapCreakTimer += deltaTime;
+            if (this._trapCreakTimer >= 7.5 && this.trapElapsed < this.trapDuration - 2.0) {
+                this._trapCreakTimer = 0;
+                const tellSfx = Math.random() < 0.5 ? 'wood_creak' : 'sniff';
+                this.engine.audioSystem.playSpatialOneShot(tellSfx, pos, {
+                    volume: tellSfx === 'wood_creak' ? 0.52 : 0.42,
+                    refDistance: 2.2,
+                    maxDistance: 18
+                });
+            }
+
             if (!this.player.isHidden && this.trapElapsed < this.trapDuration) {
                 this.startChasePlayer('trap_ambush');
                 return;

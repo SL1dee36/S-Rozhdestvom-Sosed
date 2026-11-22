@@ -25,6 +25,31 @@
             <button id="tool-translate" class="active" data-tool="translate" title="Перемещение (W)">Позиция</button>
             <button id="tool-rotate" data-tool="rotate" title="Поворот (E)">Поворот</button>
             <button id="tool-scale" data-tool="scale" title="Размер / Масштаб (R)">Размер</button>
+            <button id="tool-trail" data-tool="trail" title="Рисовать тропинку грязным снегом по улице (B)">🖌 Тропинка</button>
+            <select id="select-trail-width" title="Ширина кисти тропинки">
+                <option value="1.2">Кисть: 1.2 м</option>
+                <option value="1.8" selected>Кисть: 1.8 м</option>
+                <option value="2.4">Кисть: 2.4 м</option>
+                <option value="3.2">Кисть: 3.2 м</option>
+            </select>
+            <button id="tool-landscape" data-tool="landscape" title="Лепить ландшафт на поверхностях с параметром Landscape (L)">⛰ Ландшафт</button>
+            <select id="select-land-mode" title="Режим лепки ландшафта">
+                <option value="raise" selected>▲ Вытягивать</option>
+                <option value="lower">▼ Вдавливать</option>
+                <option value="flatten">▬ Выравнивать</option>
+                <option value="smooth">〰 Сглаживать</option>
+            </select>
+            <select id="select-land-radius" title="Радиус кисти ландшафта">
+                <option value="1.5">R: 1.5 м</option>
+                <option value="3.0" selected>R: 3.0 м</option>
+                <option value="5.0">R: 5.0 м</option>
+                <option value="8.0">R: 8.0 м</option>
+            </select>
+            <select id="select-land-strength" title="Сила кисти ландшафта">
+                <option value="0.15">Слабо</option>
+                <option value="0.35" selected>Средне</option>
+                <option value="0.70">Сильно</option>
+            </select>
             <button id="btn-space" title="Переключить Мировые / Локальные оси (X)">Оси: Мир</button>
             <button id="btn-group-mode" title="Перемещать весь гарнитур мебели или одну деталь (G)">Вся мебель</button>
             <div class="bar-sep"></div>
@@ -89,6 +114,10 @@
                     <button data-preset="balcony">Балкон</button>
                     <button data-preset="stairwell">Подъезд</button>
                     <button data-preset="courtyard">Двор</button>
+                    <button data-preset="podiezd_in">Подъезд №2</button>
+                    <button data-preset="podiezd_out">Крыльцо</button>
+                    <button data-preset="street">Улица</button>
+                    <button data-preset="store">Магазин</button>
                     <button data-preset="overview">Общий</button>
                 </div>
             </div>
@@ -110,6 +139,7 @@
                         <option value="stairwell">Подъезд</option>
                         <option value="balcony">Балкон</option>
                         <option value="courtyard">Двор и Дом №14</option>
+                        <option value="store">Подъезд №2 / Улица / Магазин</option>
                         <option value="gameplay">Эффекты и геймплей</option>
                         <option value="activated">🍽 Событийные / Акт I и IV</option>
                         <option value="custom">Добавленные (+)</option>
@@ -241,6 +271,10 @@
                         <label class="check-row">
                             <span>Принимает тень (ReceiveShadow)</span>
                             <input type="checkbox" id="prop-receive-shadow">
+                        </label>
+                        <label class="check-row" id="wrap-landscape" title="Позволяет вытягивать, вдавливать и выравнивать эту поверхность инструментом Ландшафт (L)">
+                            <span>⛰ Ландшафт (Landscape)</span>
+                            <input type="checkbox" id="prop-landscape">
                         </label>
                         <div id="sec-custom-collider" class="hidden" style="margin-top:6px;">
                             <div class="prop-row">

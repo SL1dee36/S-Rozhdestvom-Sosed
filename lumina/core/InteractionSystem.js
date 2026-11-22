@@ -171,10 +171,16 @@ export class InteractionSystem {
             }
         }
 
+        const camPos = new THREE.Vector3();
+        camera.getWorldPosition(camPos);
+
         const activeInterMeshes = [];
         const activeInter = [];
         for (const it of this.interactables) {
             if (!it.enabled || !it.canInteract()) continue;
+            // Fast spatial pre-filter: skip interactables farther than 5m from the camera
+            const goPos = it.gameObject?.transform?.position;
+            if (goPos && camPos.distanceToSquared(goPos) > 25.0) continue;
             activeInter.push(it);
             for (const m of this._collectMeshes(it)) {
                 if (this._isVisibleInHierarchy(m)) activeInterMeshes.push(m);
@@ -187,7 +193,11 @@ export class InteractionSystem {
 
         if (activeInterMeshes.length > 0) {
             this.raycaster.far = 2.95;
-            const visibleBlockers = this.blockerMeshes.filter(m => this._isVisibleInHierarchy(m));
+            const visibleBlockers = [];
+            for (let i = 0; i < this.blockerMeshes.length; i++) {
+                const m = this.blockerMeshes[i];
+                if (this._isVisibleInHierarchy(m)) visibleBlockers.push(m);
+            }
             const testPool = [...activeInterMeshes, ...visibleBlockers];
             const hits = this.raycaster.intersectObjects(testPool, false);
             if (hits.length > 0) {

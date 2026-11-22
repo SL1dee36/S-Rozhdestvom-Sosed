@@ -50,7 +50,11 @@ ui.callbacks.onEnsureMenuMusic = () => {
 ui.callbacks.onSensitivityChange = (mult) => {
     playerCtrl.setSensitivityMultiplier(mult);
 };
+ui.callbacks.onCameraTiltChange = (enabled) => {
+    playerCtrl.setCameraTiltEnabled(enabled);
+};
 playerCtrl.setSensitivityMultiplier(ui.getSensitivityMultiplier());
+playerCtrl.setCameraTiltEnabled(ui.isCameraTiltEnabled());
 
 engine.inputManager.onPauseToggle = (paused) => {
     if (paused && director.phase !== 'menu' && director.phase !== 'ended') {

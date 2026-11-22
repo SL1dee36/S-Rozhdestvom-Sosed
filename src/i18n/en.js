@@ -36,6 +36,8 @@ export const en = {
     'ui.settings.mic_testing': 'Microphone connected! Testing noise level (5 sec)...',
     'ui.settings.mic_menu_denied': 'Microphone access not granted — "No Microphone" mode enabled. Click the button above to try again.',
     'ui.settings.ps1_jitter': 'PS1 Polygon Jitter (Vertex Jitter)',
+    'ui.settings.camera_tilt': 'Camera Tilt on Movement & Turning',
+    'ui.settings.motion_blur': 'Motion Blur',
     'ui.settings.vhs_intensity': 'PS1 Film Grain & Sharpness',
     'ui.settings.volume': 'Master Volume',
     'ui.settings.sensitivity': 'Mouse Sensitivity',
@@ -318,10 +320,15 @@ export const en = {
 
     // Store & Cooking Prompts
     'prompt.go_to_store': '[E] Go to the "Groceries 24" corner store',
-    'prompt.store_take_olivier': '[E] Pick up green peas and mayonnaise',
-    'prompt.store_take_meat': '[E] Pick up sausage, cheese, and chicken',
+    'prompt.store_take_olivier': '[E] Put green peas and mayonnaise in basket',
+    'prompt.store_take_meat': '[E] Put sausage, cheese, and chicken in basket',
     'prompt.store_exit_home': '[E] Return home with groceries',
     'prompt.store_exit_need_pay': '[E] Exit (pay for groceries at the counter first)',
+    'prompt.enter_store_door': '[E] Open "Groceries 24" double doors',
+    'prompt.close_store_door': '[E] Close store doors',
+    'prompt.open_iron_door': '[E] Open heavy iron entrance door',
+    'prompt.close_iron_door': '[E] Close iron entrance door',
+    'sub.street_exit_podiezd': 'Freezing winter air hits my face... Time to find "Groceries 24" across the park alley and avenue.',
     'prompt.talk_galya': '[E] Talk to Aunt Galya (Cashier)',
     'prompt.talk_nina': '[E] Talk to Grandma Nina',
     'prompt.talk_viktor': '[E] Talk to Viktor Petrovich',
@@ -382,9 +389,9 @@ export const en = {
     'sub.decor_box_empty_return': 'All ornaments and tinsel are up — the box is empty! Better put it back in the wardrobe.',
     'sub.decor_box_returned': 'Empty box is back in the wardrobe. Now to finish setting the table.',
     'sub.prologue_start': 'A couple hours left until New Year\'s, and I\'m short on groceries. Let\'s run to "Groceries 24" for peas, mayo, sausage, and chicken.',
-    'sub.store_entered': 'Warm light, smells of tangerines and fresh bread. Let\'s grab the groceries — and maybe chat with the neighbors.',
-    'sub.store_got_olivier': 'Got the peas and mayo. Enough for a proper Olivier salad.',
-    'sub.store_got_meat': 'Sausage, cheese, and chilled chicken — great, time to pay at Aunt Galya\'s counter.',
+    'sub.store_entered': 'Warm light, smells of tangerines and fresh bread. Let\'s put the groceries in the basket — and maybe chat with the neighbors.',
+    'sub.store_got_olivier': 'Put the peas and mayo into the shopping basket. Enough for a proper Olivier salad.',
+    'sub.store_got_meat': 'Sausage, cheese, and chilled chicken are in the basket — great, time to pay at Aunt Galya\'s counter.',
     'sub.store_need_pay': 'I should grab the groceries and pay at Aunt Galya\'s counter first.',
     'sub.store_returned_home': 'Brrr, it\'s getting freezing outside! Let\'s drop the bag in the kitchen and start cooking.',
     'sub.groceries_unpacked': 'Groceries unpacked. I\'ll chop the Olivier and slice the platter, and get the chicken roasting in the oven.',
@@ -444,7 +451,17 @@ export const en = {
     'dlg.lyokha.opt2': 'Going to watch the New Year\'s TV show?',
     'dlg.lyokha.reply_t2': 'Yeah, I\'ll leave it on in the background. Same old songs every year, yet the apartment feels weirdly empty without it.',
     'dlg.lyokha.opt3': 'How\'s life around the neighborhood?',
-    'dlg.lyokha.reply_t3': 'Quiet bedroom district. The courtyard streetlamp is flickering again, leaving half the yard dark. Still looks cozy in winter, especially when the midnight fireworks start.'
+    'dlg.lyokha.reply_t3': 'Quiet bedroom district. The courtyard streetlamp is flickering again, leaving half the yard dark. Still looks cozy in winter, especially when the midnight fireworks start.',
+
+    // Horror & Reworked Monster AI Additions
+    'tv.horror_ticker': '★ HE IS ALREADY IN YOUR STAIRWELL ★ DO NOT OPEN THE DOOR ★ CHECK THE PEEPHOLE ★',
+    'tv.horror_weather': 'IN APARTMENT 34 EXPECT...',
+    'sub.peephole_stalker': 'Someone is standing in the dark on the stairwell landing... staring right into the peephole.',
+    'sub.peephole_gone_scratch': 'He\'s gone... But there\'s a fresh deep knife scratch on the outside of the door.',
+    'sub.peephole_act3_scare': 'HE\'S RIGHT BEHIND THE DOOR! Run and hide!',
+    'sub.act3_hiding_inspect': 'He stopped right outside my hiding spot... Listening closely!',
+    'sub.act3_heard_something': 'He heard that noise and is going to investigate!..',
+    'sub.act3_alarm_ring': 'The phone in the living room suddenly rang!.. The sound distracted him!'
 };
 
 export default en;

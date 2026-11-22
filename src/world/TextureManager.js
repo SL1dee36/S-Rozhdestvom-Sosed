@@ -177,6 +177,56 @@ export class TextureManager {
         return configurePS1Texture(tex, 1, 1);
     }
 
+    createDirtySnowTexture(repeatX = 1, repeatY = 1) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+
+        // Trampled winter footpath base (packed greyish-brownish slushy snow)
+        ctx.fillStyle = '#8b8a84';
+        ctx.fillRect(0, 0, 128, 128);
+
+        // Soft mottled slush & packed snow patches
+        for (let i = 0; i < 160; i++) {
+            const x = Math.random() * 128;
+            const y = Math.random() * 128;
+            const r = 3 + Math.random() * 9;
+            const pick = i % 3;
+            ctx.fillStyle = pick === 0
+                ? 'rgba(175, 180, 186, 0.24)'
+                : (pick === 1 ? 'rgba(92, 82, 70, 0.22)' : 'rgba(122, 118, 110, 0.25)');
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Boot footprints & trampled ruts
+        for (let i = 0; i < 24; i++) {
+            const fx = 10 + Math.random() * 108;
+            const fy = 10 + Math.random() * 108;
+            const ang = (Math.random() - 0.5) * 1.4;
+            ctx.save();
+            ctx.translate(fx, fy);
+            ctx.rotate(ang);
+            ctx.fillStyle = 'rgba(66, 58, 48, 0.34)';
+            ctx.fillRect(-3, -6, 6, 12);
+            ctx.restore();
+        }
+
+        // Fine sand, salt, and grit speckles
+        for (let i = 0; i < 1200; i++) {
+            const pick = i % 4;
+            ctx.fillStyle = pick === 0
+                ? 'rgba(54, 46, 38, 0.38)'
+                : (pick === 1 ? 'rgba(136, 118, 92, 0.30)' : (pick === 2 ? 'rgba(218, 224, 232, 0.28)' : 'rgba(84, 80, 74, 0.30)'));
+            ctx.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, repeatX, repeatY);
+    }
+
     createConcreteTexture(repeatX = 1, repeatY = 1) {
         const canvas = document.createElement('canvas');
         canvas.width = 128;
@@ -607,10 +657,10 @@ export class TextureManager {
         ctx.font = 'bold 54px "Courier New", monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, 259, 69);
+        ctx.fillText(text, 259, 69, 464);
 
         ctx.fillStyle = '#fff0b8';
-        ctx.fillText(text, 256, 66);
+        ctx.fillText(text, 256, 66, 464);
 
         const tex = new THREE.CanvasTexture(canvas);
         return configurePS1Texture(tex, 1, 1);
@@ -812,19 +862,27 @@ export class TextureManager {
 
     createStoreDeptSignTexture(text, bg = '#274c6b', fg = '#f7ebd0') {
         const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 64;
+        canvas.width = 512;
+        canvas.height = 128;
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = bg;
-        ctx.fillRect(0, 0, 256, 64);
+        ctx.fillRect(0, 0, 512, 128);
         ctx.strokeStyle = fg;
-        ctx.lineWidth = 4;
-        ctx.strokeRect(5, 5, 246, 54);
+        ctx.lineWidth = 6;
+        ctx.strokeRect(10, 10, 492, 108);
         ctx.fillStyle = fg;
-        ctx.font = 'bold 28px "Courier New", monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text, 128, 34);
+
+        // Auto-fit font size so long department names stay cleanly inside the frame with padding
+        const maxTextWidth = 452;
+        let fontSize = 54;
+        while (fontSize > 22) {
+            ctx.font = `bold ${fontSize}px "Courier New", monospace`;
+            if (ctx.measureText(text).width <= maxTextWidth) break;
+            fontSize -= 2;
+        }
+        ctx.fillText(text, 256, 66, maxTextWidth);
         const tex = new THREE.CanvasTexture(canvas);
         return configurePS1Texture(tex, 1, 1);
     }
@@ -951,13 +1009,11 @@ export class TextureManager {
         // Kick plate at bottom
         ctx.fillStyle = '#5c6670';
         ctx.fillRect(6, 212, 116, 38);
-        // Little sign plate
-        ctx.fillStyle = '#e8dfc4';
-        ctx.fillRect(30, 152, 68, 20);
-        ctx.fillStyle = '#222830';
-        ctx.font = 'bold 11px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('ВЫХОД', 64, 166);
+        // Subtle horizontal aluminum push bar
+        ctx.fillStyle = '#9aa4ae';
+        ctx.fillRect(12, 146, 104, 10);
+        ctx.fillStyle = '#252f38';
+        ctx.fillRect(12, 156, 104, 3);
 
         const tex = new THREE.CanvasTexture(canvas);
         return configurePS1Texture(tex, 1, 1);
@@ -1130,6 +1186,539 @@ export class TextureManager {
             ctx.fillStyle = 'rgba(235, 240, 245, 0.14)';
             ctx.fillRect(Math.random() * 128, Math.random() * 128, 10, 1);
         }
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, 1, 1);
+    }
+
+    createCeilingPlasterTexture(repeatX = 1, repeatY = 1) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+
+        // Warm Soviet whitewashed ceiling slab plaster (побелка на бетонных плитах)
+        ctx.fillStyle = '#ddd8ce';
+        ctx.fillRect(0, 0, 256, 256);
+
+        // Roller brush streaks and limewash mottling
+        for (let i = 0; i < 1800; i++) {
+            const x = Math.random() * 256;
+            const y = Math.random() * 256;
+            const w = 2 + Math.random() * 6;
+            const h = 2 + Math.random() * 4;
+            ctx.fillStyle = i % 3 === 0
+                ? 'rgba(138, 130, 116, 0.14)'
+                : (i % 3 === 1 ? 'rgba(250, 247, 240, 0.18)' : 'rgba(170, 162, 148, 0.12)');
+            ctx.fillRect(x, y, w, h);
+        }
+
+        // Subtle porous plaster pinholes & micro-cracks
+        for (let i = 0; i < 450; i++) {
+            ctx.fillStyle = i % 2 === 0 ? 'rgba(92, 86, 76, 0.22)' : 'rgba(255, 252, 246, 0.22)';
+            ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+        }
+
+        // Khrushchevka precast ceiling slab joint seam (руст потолочной плиты)
+        ctx.fillStyle = 'rgba(116, 110, 98, 0.28)';
+        ctx.fillRect(0, 126, 256, 3);
+        ctx.fillStyle = 'rgba(252, 249, 242, 0.25)';
+        ctx.fillRect(0, 129, 256, 2);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, repeatX, repeatY);
+    }
+
+    createSkinTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+
+        // Neutral warm luminance skin map so multiplying by any skinColor hex preserves tone while adding pores & contours
+        const grad = ctx.createRadialGradient(64, 58, 10, 64, 64, 88);
+        grad.addColorStop(0, '#faf3ee');
+        grad.addColorStop(0.65, '#ede0d6');
+        grad.addColorStop(1, '#d4c0b2');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 128, 128);
+
+        // Warm cheek/knuckle subsurface blush patches
+        for (let i = 0; i < 45; i++) {
+            const x = Math.random() * 128;
+            const y = Math.random() * 128;
+            const r = 6 + Math.random() * 12;
+            const pGrad = ctx.createRadialGradient(x, y, 1, x, y, r);
+            pGrad.addColorStop(0, i % 2 === 0 ? 'rgba(195, 138, 118, 0.16)' : 'rgba(255, 244, 234, 0.16)');
+            pGrad.addColorStop(1, 'rgba(220, 185, 165, 0)');
+            ctx.fillStyle = pGrad;
+            ctx.fillRect(x - r, y - r, r * 2, r * 2);
+        }
+
+        // Fine PS1 skin pores, creases, and epidermal grain
+        for (let i = 0; i < 1100; i++) {
+            const x = Math.random() * 128;
+            const y = Math.random() * 128;
+            ctx.fillStyle = i % 3 === 0
+                ? 'rgba(128, 96, 78, 0.18)'
+                : (i % 3 === 1 ? 'rgba(255, 248, 242, 0.18)' : 'rgba(165, 128, 108, 0.14)');
+            ctx.fillRect(x, y, i % 4 === 0 ? 3 : 2, 2);
+        }
+
+        // Subtle anatomical contour lines (knuckles / brow / cheek crease shading)
+        ctx.strokeStyle = 'rgba(122, 90, 74, 0.18)';
+        ctx.lineWidth = 1.5;
+        for (let y = 16; y < 128; y += 32) {
+            ctx.beginPath();
+            ctx.moveTo(10, y);
+            ctx.quadraticCurveTo(64, y + 5, 118, y);
+            ctx.stroke();
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, 1, 1);
+    }
+
+    createHairTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+
+        // High-contrast neutral-warm hair strand map (multiplies cleanly with dark brown, blonde, grey, or auburn hairColor)
+        ctx.fillStyle = '#cfc7bc';
+        ctx.fillRect(0, 0, 128, 128);
+
+        // Layered directional hair locks & strands
+        for (let x = 0; x < 128; x += 2) {
+            ctx.fillStyle = x % 6 === 0
+                ? 'rgba(65, 52, 42, 0.34)'
+                : (x % 4 === 0 ? 'rgba(255, 250, 242, 0.26)' : 'rgba(115, 98, 84, 0.22)');
+            ctx.fillRect(x, 0, 2, 128);
+        }
+
+        for (let i = 0; i < 950; i++) {
+            const x = Math.random() * 128;
+            const y = Math.random() * 128;
+            const len = 8 + Math.random() * 18;
+            ctx.fillStyle = i % 3 === 0
+                ? 'rgba(48, 36, 28, 0.36)'
+                : (i % 3 === 1 ? 'rgba(255, 252, 245, 0.28)' : 'rgba(96, 80, 66, 0.24)');
+            ctx.fillRect(x, y, 2, len);
+        }
+
+        // Natural hair sheen band across crown
+        const sheen = ctx.createLinearGradient(0, 0, 0, 128);
+        sheen.addColorStop(0, 'rgba(55, 45, 38, 0.20)');
+        sheen.addColorStop(0.35, 'rgba(255, 252, 244, 0.24)');
+        sheen.addColorStop(0.65, 'rgba(90, 75, 62, 0.12)');
+        sheen.addColorStop(1, 'rgba(45, 35, 28, 0.25)');
+        ctx.fillStyle = sheen;
+        ctx.fillRect(0, 0, 128, 128);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, 1, 1);
+    }
+
+    createClothTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+
+        // Neutral woven wool / knit / winter coat textile map (multiplies with any clothing color)
+        ctx.fillStyle = '#dcd8d0';
+        ctx.fillRect(0, 0, 128, 128);
+
+        // Cross-hatch knit / twill fabric weave pattern
+        for (let y = 0; y < 128; y += 4) {
+            ctx.fillStyle = y % 8 === 0 ? 'rgba(75, 70, 64, 0.22)' : 'rgba(255, 253, 248, 0.18)';
+            ctx.fillRect(0, y, 128, 2);
+        }
+        for (let x = 0; x < 128; x += 4) {
+            ctx.fillStyle = x % 8 === 0 ? 'rgba(82, 76, 68, 0.20)' : 'rgba(250, 248, 242, 0.16)';
+            ctx.fillRect(x, 0, 2, 128);
+        }
+
+        // Diagonal cable-knit / wool fiber texture speckles
+        for (let i = 0; i < 1200; i++) {
+            const x = Math.random() * 128;
+            const y = Math.random() * 128;
+            ctx.fillStyle = i % 2 === 0 ? 'rgba(62, 58, 52, 0.22)' : 'rgba(255, 255, 250, 0.22)';
+            ctx.fillRect(x, y, 2, 2);
+        }
+
+        // Soft vertical garment fold shading & stitched seam lines
+        const foldGrad = ctx.createLinearGradient(0, 0, 128, 0);
+        foldGrad.addColorStop(0, 'rgba(65, 60, 55, 0.22)');
+        foldGrad.addColorStop(0.25, 'rgba(255, 255, 255, 0.14)');
+        foldGrad.addColorStop(0.5, 'rgba(75, 70, 64, 0.16)');
+        foldGrad.addColorStop(0.78, 'rgba(255, 255, 255, 0.14)');
+        foldGrad.addColorStop(1, 'rgba(60, 55, 50, 0.24)');
+        ctx.fillStyle = foldGrad;
+        ctx.fillRect(0, 0, 128, 128);
+
+        ctx.strokeStyle = 'rgba(58, 54, 48, 0.28)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(3, 3, 122, 122);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, 1, 1);
+    }
+
+    createAptNumberPlateTexture(numText = '34') {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+
+        // Classic Soviet dark-blue/slate enamel apartment door number plaque
+        ctx.fillStyle = '#1d2b3d';
+        ctx.fillRect(0, 0, 128, 64);
+
+        // Subtle metallic bevel & enamel weathering
+        for (let i = 0; i < 160; i++) {
+            ctx.fillStyle = i % 2 === 0 ? 'rgba(255, 255, 255, 0.06)' : 'rgba(10, 14, 22, 0.14)';
+            ctx.fillRect(Math.random() * 128, Math.random() * 64, 2, 2);
+        }
+
+        ctx.strokeStyle = '#d8d2be';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(4, 4, 120, 56);
+
+        // Corner mounting rivets
+        ctx.fillStyle = '#b4b0a2';
+        for (const [rx, ry] of [[12, 12], [116, 12], [12, 52], [116, 52]]) {
+            ctx.beginPath();
+            ctx.arc(rx, ry, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Bold crisp apartment number
+        ctx.fillStyle = '#f2ede0';
+        ctx.font = 'bold 38px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(numText), 64, 34);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, 1, 1);
+    }
+
+    createAsphaltRoadTexture(repeatX = 14, repeatY = 1) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+
+        // Base dark wet winter asphalt
+        ctx.fillStyle = '#252930';
+        ctx.fillRect(0, 0, 256, 256);
+
+        // Coarse mineral aggregate grain
+        for (let i = 0; i < 3200; i++) {
+            const x = Math.random() * 256;
+            const y = Math.random() * 256;
+            const shade = i % 3 === 0 ? 'rgba(14, 16, 20, 0.35)' : (i % 3 === 1 ? 'rgba(72, 78, 90, 0.25)' : 'rgba(180, 195, 212, 0.12)');
+            ctx.fillStyle = shade;
+            ctx.fillRect(x, y, 2, 2);
+        }
+
+        // Slushy snow accumulation along both road edges (top & bottom of UV)
+        const topSnow = ctx.createLinearGradient(0, 0, 0, 44);
+        topSnow.addColorStop(0, 'rgba(210, 222, 236, 0.88)');
+        topSnow.addColorStop(0.55, 'rgba(170, 184, 202, 0.42)');
+        topSnow.addColorStop(1, 'rgba(120, 134, 150, 0.0)');
+        ctx.fillStyle = topSnow;
+        ctx.fillRect(0, 0, 256, 44);
+
+        const botSnow = ctx.createLinearGradient(0, 256, 0, 212);
+        botSnow.addColorStop(0, 'rgba(210, 222, 236, 0.88)');
+        botSnow.addColorStop(0.55, 'rgba(170, 184, 202, 0.42)');
+        botSnow.addColorStop(1, 'rgba(120, 134, 150, 0.0)');
+        ctx.fillStyle = botSnow;
+        ctx.fillRect(0, 212, 256, 44);
+
+        // Tire tracks (two dark damp wheel ruts with light snow ridge in center)
+        ctx.fillStyle = 'rgba(14, 16, 22, 0.42)';
+        ctx.fillRect(0, 68, 256, 28);
+        ctx.fillRect(0, 158, 256, 28);
+
+        // Frosty slush ridge down the middle of the lane
+        const midSnow = ctx.createLinearGradient(0, 110, 0, 146);
+        midSnow.addColorStop(0, 'rgba(180, 194, 210, 0)');
+        midSnow.addColorStop(0.5, 'rgba(195, 210, 226, 0.34)');
+        midSnow.addColorStop(1, 'rgba(180, 194, 210, 0)');
+        ctx.fillStyle = midSnow;
+        ctx.fillRect(0, 110, 256, 36);
+
+        // Asphalt frost cracks
+        ctx.strokeStyle = 'rgba(12, 14, 18, 0.65)';
+        ctx.lineWidth = 2;
+        for (let c = 0; c < 4; c++) {
+            ctx.beginPath();
+            let cx = 20 + c * 62;
+            let cy = 40 + (c % 2) * 90;
+            ctx.moveTo(cx, cy);
+            for (let s = 0; s < 5; s++) {
+                cx += 8 + Math.random() * 14;
+                cy += (Math.random() - 0.5) * 18;
+                ctx.lineTo(cx, cy);
+            }
+            ctx.stroke();
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, repeatX, repeatY);
+    }
+
+    createWalkwayTexture(repeatX = 1, repeatY = 5) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+
+        // Trampled snowy winter concrete footpath
+        ctx.fillStyle = '#4c525c';
+        ctx.fillRect(0, 0, 128, 128);
+
+        // Concrete paving slab seams
+        ctx.strokeStyle = 'rgba(26, 30, 36, 0.45)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 64);
+        ctx.lineTo(128, 64);
+        ctx.stroke();
+
+        // Packed snow encroaching on left & right borders
+        const leftSnow = ctx.createLinearGradient(0, 0, 30, 0);
+        leftSnow.addColorStop(0, 'rgba(218, 228, 240, 0.92)');
+        leftSnow.addColorStop(1, 'rgba(180, 194, 210, 0.0)');
+        ctx.fillStyle = leftSnow;
+        ctx.fillRect(0, 0, 30, 128);
+
+        const rightSnow = ctx.createLinearGradient(128, 0, 98, 0);
+        rightSnow.addColorStop(0, 'rgba(218, 228, 240, 0.92)');
+        rightSnow.addColorStop(1, 'rgba(180, 194, 210, 0.0)');
+        ctx.fillStyle = rightSnow;
+        ctx.fillRect(98, 0, 30, 128);
+
+        // Packed snow & trampled boot footprints along the path center
+        for (let i = 0; i < 650; i++) {
+            const x = 16 + Math.random() * 96;
+            const y = Math.random() * 128;
+            ctx.fillStyle = i % 2 === 0 ? 'rgba(212, 224, 236, 0.28)' : 'rgba(32, 36, 44, 0.25)';
+            ctx.fillRect(x, y, 3, 3);
+        }
+        ctx.fillStyle = 'rgba(34, 38, 48, 0.45)';
+        for (let f = 0; f < 6; f++) {
+            const fx = 52 + (f % 2 === 0 ? -8 : 10);
+            const fy = 12 + f * 20;
+            ctx.fillRect(fx, fy, 7, 13);
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, repeatX, repeatY);
+    }
+
+    createBarkTexture(isBirch = false) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+
+        if (isBirch) {
+            ctx.fillStyle = '#d6d9d4';
+            ctx.fillRect(0, 0, 128, 128);
+            for (let i = 0; i < 380; i++) {
+                ctx.fillStyle = i % 3 === 0 ? 'rgba(170, 174, 168, 0.25)' : 'rgba(245, 248, 246, 0.25)';
+                ctx.fillRect(Math.random() * 128, Math.random() * 128, 6, 2);
+            }
+            // Characteristic black birch bark horizontal lenticels & knots
+            for (let i = 0; i < 55; i++) {
+                const x = Math.random() * 116;
+                const y = Math.random() * 124;
+                const w = 8 + Math.random() * 24;
+                const h = 2 + Math.random() * 3.5;
+                ctx.fillStyle = i % 4 === 0 ? '#1c1d1f' : '#35363a';
+                ctx.fillRect(x, y, w, h);
+            }
+        } else {
+            ctx.fillStyle = '#3b281c';
+            ctx.fillRect(0, 0, 128, 128);
+            for (let x = 0; x < 128; x += 3) {
+                ctx.fillStyle = x % 6 === 0 ? 'rgba(24, 14, 8, 0.55)' : 'rgba(84, 58, 40, 0.35)';
+                ctx.fillRect(x, 0, 2, 128);
+            }
+            for (let i = 0; i < 500; i++) {
+                ctx.fillStyle = i % 2 === 0 ? 'rgba(20, 12, 7, 0.45)' : 'rgba(110, 82, 60, 0.25)';
+                ctx.fillRect(Math.random() * 128, Math.random() * 128, 3, 10);
+            }
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, 1, 2);
+    }
+
+    createMissingPostersBoardTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+
+        // Weathered Soviet wooden/sheet-metal notice board background
+        ctx.fillStyle = '#3b3730';
+        ctx.fillRect(0, 0, 512, 256);
+        for (let i = 0; i < 900; i++) {
+            ctx.fillStyle = i % 2 === 0 ? 'rgba(20, 18, 14, 0.22)' : 'rgba(130, 122, 105, 0.14)';
+            ctx.fillRect(Math.random() * 512, Math.random() * 256, 3, 3);
+        }
+        // Dark wood frame border + top header bar
+        ctx.strokeStyle = '#1f1b16';
+        ctx.lineWidth = 10;
+        ctx.strokeRect(5, 5, 502, 246);
+        ctx.fillStyle = '#5c2420';
+        ctx.fillRect(10, 10, 492, 26);
+        ctx.fillStyle = '#efe6cf';
+        ctx.font = 'bold 16px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('ДОСКА ОБЪЯВЛЕНИЙ  ·  ПОДЪЕЗД №2', 256, 28);
+
+        const drawMissingPoster = (x, y, w, h, rot, title, nameLine, ageLine, seed) => {
+            ctx.save();
+            ctx.translate(x + w * 0.5, y + h * 0.5);
+            ctx.rotate(rot);
+            // Aged slightly yellowed photocopy paper
+            ctx.fillStyle = seed % 2 === 0 ? '#e5dec8' : '#dcd6c4';
+            ctx.fillRect(-w * 0.5, -h * 0.5, w, h);
+            ctx.strokeStyle = 'rgba(40, 35, 28, 0.45)';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(-w * 0.5, -h * 0.5, w, h);
+
+            // Red warning header
+            ctx.fillStyle = '#8c1919';
+            ctx.fillRect(-w * 0.46, -h * 0.46, w * 0.92, 18);
+            ctx.fillStyle = '#fff3df';
+            ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(title, 0, -h * 0.46 + 13);
+
+            // Grainy monochrome portrait photo box
+            const px = -w * 0.34;
+            const py = -h * 0.28;
+            const pw = w * 0.68;
+            const ph = h * 0.42;
+            ctx.fillStyle = '#b4b0a4';
+            ctx.fillRect(px, py, pw, ph);
+            // Pixelated silhouette / face
+            ctx.fillStyle = '#2a2826';
+            ctx.beginPath();
+            ctx.arc(0, py + ph * 0.40, pw * 0.24, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillRect(-pw * 0.34, py + ph * 0.65, pw * 0.68, ph * 0.35);
+            // Pale face oval & shadowed eyes
+            ctx.fillStyle = '#cfc9bc';
+            ctx.beginPath();
+            ctx.ellipse(0, py + ph * 0.44, pw * 0.17, pw * 0.21, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#181615';
+            ctx.fillRect(-pw * 0.09, py + ph * 0.39, 5, 4);
+            ctx.fillRect(pw * 0.04, py + ph * 0.39, 5, 4);
+            ctx.fillRect(-pw * 0.05, py + ph * 0.53, pw * 0.10, 2);
+
+            // Text lines below photo
+            ctx.fillStyle = '#1e1c1a';
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText(nameLine, 0, py + ph + 13);
+            ctx.font = '8px monospace';
+            ctx.fillText(ageLine, 0, py + ph + 24);
+            ctx.fillStyle = '#6e1c1c';
+            ctx.fillText('ТЕЛ. 02 / 4-18-90', 0, py + ph + 35);
+
+            // Tear-off phone strips at bottom
+            ctx.strokeStyle = 'rgba(40, 35, 28, 0.5)';
+            ctx.lineWidth = 1;
+            for (let s = -3; s <= 3; s++) {
+                ctx.beginPath();
+                ctx.moveTo(s * (w * 0.12), h * 0.36);
+                ctx.lineTo(s * (w * 0.12), h * 0.50);
+                ctx.stroke();
+            }
+            // Pin tack at top
+            ctx.fillStyle = '#b02a2a';
+            ctx.beginPath();
+            ctx.arc(0, -h * 0.46, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        };
+
+        drawMissingPoster(22, 46, 108, 178, -0.05, 'ПРОПАЛ ЧЕЛОВЕК', 'СОКОЛОВ А.В.', '1964 г.р. · 18.12', 1);
+        drawMissingPoster(142, 50, 108, 180, 0.04, 'РАЗЫСКИВАЕТСЯ', 'МОРОЗОВА Е.Н.', '1975 г.р. · 24.12', 2);
+        drawMissingPoster(262, 44, 108, 180, -0.03, 'ПРОПАЛ ЧЕЛОВЕК', 'КРЫЛОВ Д.И.', '1981 г.р. · 28.12', 3);
+        drawMissingPoster(382, 52, 106, 174, 0.06, 'ПРОПАЛ БЕЗ ВЕСТИ', 'ВОЛКОВ С.П.', '1958 г.р. · 30.12', 4);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, 1, 1);
+    }
+
+    createIntercomTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#4c5259';
+        ctx.fillRect(0, 0, 64, 128);
+        ctx.strokeStyle = '#22262b';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(2, 2, 60, 124);
+
+        // Speaker grille slots at top
+        ctx.fillStyle = '#181b20';
+        for (let y = 12; y <= 32; y += 5) {
+            ctx.fillRect(12, y, 40, 2);
+        }
+        // Small red LED & black RFID reader circle
+        ctx.fillStyle = '#ff2a2a';
+        ctx.fillRect(14, 42, 8, 5);
+        ctx.fillStyle = '#141618';
+        ctx.beginPath();
+        ctx.arc(44, 46, 8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Numeric keypad 3x4
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 3; c++) {
+                ctx.fillStyle = '#c8ced4';
+                ctx.fillRect(12 + c * 14, 62 + r * 14, 10, 10);
+                ctx.fillStyle = '#202428';
+                ctx.fillRect(15 + c * 14, 65 + r * 14, 4, 4);
+            }
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return configurePS1Texture(tex, 1, 1);
+    }
+
+    createStreetSignTexture(text = 'УЛ. ЛЕНИНА', subtext = 'ПРОДУКТЫ 24 ←') {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 96;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#1d3c66';
+        ctx.fillRect(0, 0, 256, 96);
+        ctx.strokeStyle = '#e8edf2';
+        ctx.lineWidth = 5;
+        ctx.strokeRect(5, 5, 246, 86);
+
+        ctx.fillStyle = '#f2f5fa';
+        ctx.font = 'bold 24px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(text, 128, 40);
+        ctx.fillStyle = '#ffe294';
+        ctx.font = 'bold 20px "Courier New", monospace';
+        ctx.fillText(subtext, 128, 72);
+
         const tex = new THREE.CanvasTexture(canvas);
         return configurePS1Texture(tex, 1, 1);
     }

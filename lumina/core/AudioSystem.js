@@ -580,6 +580,66 @@ export class AudioSystem {
                 });
                 break;
             }
+            case 'iron_door_creak': {
+                // Heavy Soviet rusted iron entrance door: metallic latch clank + prolonged screeching/groaning hinge
+                const latchOsc = this.ctx.createOscillator();
+                latchOsc.type = 'triangle';
+                latchOsc.frequency.setValueAtTime(190, t);
+                latchOsc.frequency.exponentialRampToValueAtTime(75, t + 0.09);
+                const latchGain = this.ctx.createGain();
+                latchGain.gain.setValueAtTime(0.45, t);
+                latchGain.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+                latchOsc.connect(latchGain);
+                latchGain.connect(filter);
+                latchOsc.start(t);
+                latchOsc.stop(t + 0.12);
+
+                // Single-stage rusty iron hinge groan (tail removed)
+                [
+                    { off: 0.08, dur: 0.48, f0: 215, f1: 310, f2: 185 }
+                ].forEach((seg) => {
+                    const osc = this.ctx.createOscillator();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(seg.f0, t + seg.off);
+                    osc.frequency.linearRampToValueAtTime(seg.f1, t + seg.off + seg.dur * 0.45);
+                    osc.frequency.linearRampToValueAtTime(seg.f2, t + seg.off + seg.dur);
+
+                    const bp = this.ctx.createBiquadFilter();
+                    bp.type = 'bandpass';
+                    bp.frequency.setValueAtTime(seg.f1 * 1.4, t + seg.off);
+                    bp.Q.value = 5.5;
+
+                    const cg = this.ctx.createGain();
+                    cg.gain.setValueAtTime(0.001, t + seg.off);
+                    cg.gain.linearRampToValueAtTime(0.28, t + seg.off + 0.08);
+                    cg.gain.linearRampToValueAtTime(0.22, t + seg.off + seg.dur * 0.72);
+                    cg.gain.exponentialRampToValueAtTime(0.001, t + seg.off + seg.dur);
+
+                    osc.connect(bp);
+                    bp.connect(cg);
+                    cg.connect(filter);
+                    osc.start(t + seg.off);
+                    osc.stop(t + seg.off + seg.dur + 0.03);
+                });
+
+                // Metallic friction scrape noise
+                const scrape = this.ctx.createBufferSource();
+                scrape.buffer = this._noiseBuffer;
+                const sbp = this.ctx.createBiquadFilter();
+                sbp.type = 'bandpass';
+                sbp.frequency.setValueAtTime(520, t + 0.08);
+                sbp.Q.value = 2.8;
+                const sg = this.ctx.createGain();
+                sg.gain.setValueAtTime(0.001, t + 0.08);
+                sg.gain.linearRampToValueAtTime(0.22, t + 0.22);
+                sg.gain.exponentialRampToValueAtTime(0.001, t + 0.56);
+                scrape.connect(sbp);
+                sbp.connect(sg);
+                sg.connect(filter);
+                scrape.start(t + 0.08);
+                scrape.stop(t + 0.58);
+                break;
+            }
             case 'door_crash': {
                 const bangBuf = this.buffers.get('door_bang');
                 if (bangBuf) {
@@ -789,6 +849,48 @@ export class AudioSystem {
                 osc.stop(t + 0.16);
                 break;
             }
+            case 'phone_ring': {
+                // Classic Soviet rotary phone / alarm double-bell trill
+                [0, 0.42].forEach(burstOff => {
+                    for (let k = 0; k < 5; k++) {
+                        const off = burstOff + k * 0.055;
+                        const osc1 = this.ctx.createOscillator();
+                        const osc2 = this.ctx.createOscillator();
+                        osc1.type = 'triangle';
+                        osc2.type = 'sine';
+                        osc1.frequency.setValueAtTime(1180 + (k % 2) * 260, t + off);
+                        osc2.frequency.setValueAtTime(1760 - (k % 2) * 190, t + off);
+                        const rg = this.ctx.createGain();
+                        rg.gain.setValueAtTime(0.28, t + off);
+                        rg.gain.exponentialRampToValueAtTime(0.002, t + off + 0.048);
+                        osc1.connect(rg);
+                        osc2.connect(rg);
+                        rg.connect(filter);
+                        osc1.start(t + off);
+                        osc2.start(t + off);
+                        osc1.stop(t + off + 0.05);
+                        osc2.stop(t + off + 0.05);
+                    }
+                });
+                break;
+            }
+            case 'kettle_whistle': {
+                // Eerie rising & warbling steam kettle whistle on the stove
+                const osc = this.ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1850, t);
+                osc.frequency.linearRampToValueAtTime(2420, t + 0.65);
+                osc.frequency.linearRampToValueAtTime(2280, t + 1.45);
+                const wg = this.ctx.createGain();
+                wg.gain.setValueAtTime(0.001, t);
+                wg.gain.linearRampToValueAtTime(0.24, t + 0.25);
+                wg.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
+                osc.connect(wg);
+                wg.connect(filter);
+                osc.start(t);
+                osc.stop(t + 1.55);
+                break;
+            }
             default: {
                 const osc = this.ctx.createOscillator();
                 osc.type = 'sine';
@@ -911,7 +1013,10 @@ export class AudioSystem {
             }
         }
 
+        this._occStep = ((this._occStep || 0) + 1) % 6;
+        let loopIdx = 0;
         for (const entry of this.activeLoops.values()) {
+            loopIdx++;
             const dist = this.camera ? this._tempPos.distanceTo(entry.position) : 0;
             const maxD = entry.maxDistance ?? 38;
             let distCutoff = 1.0;
@@ -920,7 +1025,11 @@ export class AudioSystem {
                 distCutoff = Math.pow(1.0 - norm, 1.8);
             }
             if (!entry.tvFilter && entry.checkOcclusion) {
-                const occ = this.computeOcclusion(entry.position);
+                // Only raycast audio occlusion every 6th frame and when within audible range
+                if (dist <= maxD + 1.0 && (loopIdx % 6) === this._occStep) {
+                    entry._cachedOcc = this.computeOcclusion(entry.position);
+                }
+                const occ = !!entry._cachedOcc;
                 const targetFreq = occ ? 480 : 18000;
                 const targetGain = entry.baseVolume * distCutoff * (occ ? 0.20 : 1.0);
                 entry.filter.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.1);

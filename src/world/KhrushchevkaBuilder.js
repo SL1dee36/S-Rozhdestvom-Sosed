@@ -216,6 +216,7 @@ export class KhrushchevkaBuilder {
             sofaFabric: 0.55,
             tablecloth: 0.65,
             dermantine: 1.1,
+            ceiling: 1.5,
             pine: 0.6,
             storeFloor: 0.9,
             storeWallLow: 1.5,
@@ -344,7 +345,100 @@ export class KhrushchevkaBuilder {
         this.engine.interactionSystem.setBlockerMeshes(this.blockerMeshes);
         this.engine.audioSystem.setOcclusionMeshes(this.blockerMeshes);
         this.world.setApartmentDestroyedState = () => this.setApartmentDestroyedState();
+        this._setupVisibilityOptimizer();
         return this.world;
+    }
+
+    _setupVisibilityOptimizer() {
+        const storeItems = [];
+        const apartmentAndWorldItems = [];
+        const tmpBox = new THREE.Box3();
+        const tmpCenter = new THREE.Vector3();
+
+        // Separate the entire scene into two exclusive zones:
+        // 1. Grocery Store («Продукты 24» around X = 60)
+        // 2. Everything else (Apartment, Stairwell, Balcony, Courtyard, Opposite Houses)
+        for (const child of this.scene.children) {
+            if (!child || child.isLight) continue;
+            const name = child.name || '';
+            const cat = child.userData?.category || '';
+            if (name === 'Player' || name === 'Monster' || name === 'SkyStars') continue;
+
+            tmpCenter.copy(child.position);
+            if (tmpCenter.lengthSq() < 0.0001 && child.children?.length > 0) {
+                tmpBox.setFromObject(child);
+                if (!tmpBox.isEmpty()) tmpBox.getCenter(tmpCenter);
+            }
+
+            if (cat === 'store' || tmpCenter.x > 30 || name.startsWith('Store') || name.startsWith('TangerineCrate')) {
+                storeItems.push(child);
+            } else {
+                apartmentAndWorldItems.push(child);
+            }
+        }
+
+        const setZoneCulled = (list, culled) => {
+            for (let i = 0; i < list.length; i++) {
+                const obj = list[i];
+                if (culled) {
+                    if (!obj.userData._zoneCulled) {
+                        obj.userData._savedVisBeforeCull = obj.visible;
+                        obj.userData._zoneCulled = true;
+                        obj.visible = false;
+                    }
+                } else if (obj.userData._zoneCulled) {
+                    obj.userData._zoneCulled = false;
+                    obj.visible = obj.userData._savedVisBeforeCull !== undefined ? obj.userData._savedVisBeforeCull : true;
+                }
+            }
+        };
+
+        let currentInStore = null;
+
+        this.world.updateVisibilityCulling = (playerPos, _isPeephole = false, inStore = false) => {
+            const isInStore = !!(inStore || (playerPos && playerPos.x > 30));
+            if (currentInStore === isInStore) return;
+            currentInStore = isInStore;
+
+            const L = this.world.lights || {};
+            const storeLights = this.world.store?.lights || [];
+
+            if (isInStore) {
+                // Player is inside the Grocery Store: show ONLY the store, completely unload/hide the entire apartment & courtyard
+                setZoneCulled(storeItems, false);
+                setZoneCulled(apartmentAndWorldItems, true);
+                for (const sl of storeLights) sl.visible = true;
+                for (const [k, light] of Object.entries(L)) {
+                    if (!light || k === 'ambient') continue;
+                    light.userData._savedVisBeforeStore = light.visible;
+                    light.visible = false;
+                }
+                for (const gl of this.world.garlandLights || []) {
+                    gl.userData._savedVisBeforeStore = gl.visible;
+                    gl.visible = false;
+                }
+            } else {
+                // Player is in the Apartment / Courtyard: completely unload/hide the Grocery Store and its lights
+                setZoneCulled(storeItems, true);
+                setZoneCulled(apartmentAndWorldItems, false);
+                for (const sl of storeLights) sl.visible = false;
+                for (const [k, light] of Object.entries(L)) {
+                    if (!light || k === 'ambient') continue;
+                    if (light.userData._savedVisBeforeStore !== undefined) {
+                        light.visible = light.userData._savedVisBeforeStore;
+                    } else {
+                        light.visible = true;
+                    }
+                }
+                for (const gl of this.world.garlandLights || []) {
+                    if (gl.userData._savedVisBeforeStore !== undefined) {
+                        gl.visible = gl.userData._savedVisBeforeStore;
+                    } else {
+                        gl.visible = true;
+                    }
+                }
+            }
+        };
     }
 
     _autoRegisterChildParts() {
@@ -404,15 +498,17 @@ export class KhrushchevkaBuilder {
     }
 
     _createPlanarReflector(width, height, options = {}) {
-        const renderTarget = new THREE.WebGLRenderTarget(512, 512, {
-            minFilter: THREE.LinearFilter,
-            magFilter: THREE.LinearFilter,
+        const renderTarget = new THREE.WebGLRenderTarget(1024, 1024, {
+            minFilter: THREE.NearestFilter,
+            magFilter: THREE.NearestFilter,
             type: THREE.UnsignedByteType
         });
         renderTarget.texture.generateMipmaps = false;
         const virtualCamera = new THREE.PerspectiveCamera();
         virtualCamera.userData.isMirrorCamera = true;
         const textureMatrix = new THREE.Matrix4();
+        const mirrorFrustum = new THREE.Frustum();
+        const mirrorProjScreenMatrix = new THREE.Matrix4();
 
         const mirrorMat = new THREE.ShaderMaterial({
             polygonOffset: true,
@@ -479,7 +575,19 @@ export class KhrushchevkaBuilder {
 
             view.subVectors(reflectorWorldPosition, cameraWorldPosition);
             if (view.dot(normal) > 0) return; // Camera is behind the mirror plane
-            if (view.lengthSq() > 95) return; // Skip when far away
+            const distSq = view.lengthSq();
+            if (distSq > 20.25) return; // Skip when > 4.5m away
+
+            // Skip if mirror is outside the player camera's view frustum
+            camera.updateMatrixWorld();
+            mirrorProjScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+            mirrorFrustum.setFromProjectionMatrix(mirrorProjScreenMatrix);
+            if (!mirrorFrustum.containsPoint(reflectorWorldPosition)) {
+                const camDir = new THREE.Vector3();
+                camera.getWorldDirection(camDir);
+                const toMirror = new THREE.Vector3().subVectors(reflectorWorldPosition, cameraWorldPosition).normalize();
+                if (camDir.dot(toMirror) < 0.15) return;
+            }
 
             view.reflect(normal).negate();
             view.add(reflectorWorldPosition);
@@ -616,6 +724,11 @@ export class KhrushchevkaBuilder {
         const tCeramicSink = this.tex.createCeramicSinkTexture();
         const tKitchenCabinet = this.tex.createKitchenCabinetTexture();
         const tMetalBrushed = this.tex.createMetalBrushedTexture();
+        const tCeiling = this.tex.createCeilingPlasterTexture(1, 1);
+        const tSkin = this.tex.createSkinTexture();
+        const tHair = this.tex.createHairTexture();
+        const tCloth = this.tex.createClothTexture();
+        const tDirtySnow = this.tex.createDirtySnowTexture(1, 1);
 
         this.materials = {
             parquet: this._ps1Mat({ map: tParquet, roughness: 0.85 }),
@@ -626,9 +739,13 @@ export class KhrushchevkaBuilder {
             concrete: this._ps1Mat({ map: tConcrete, roughness: 0.94 }),
             stairwellWall: this._ps1Mat({ map: tStairwell, roughness: 0.92 }),
             snow: this._ps1Mat({ map: tSnow, color: 0xd6e1ee, roughness: 0.95 }),
+            dirtySnow: this._ps1Mat({ map: tDirtySnow, roughness: 0.94 }),
             wallpaperHall: this._ps1Mat({ map: tWallpaper, roughness: 0.92 }),
             wallpaperKitchen: this._ps1Mat({ map: tWallpaperKitchen, roughness: 0.92 }),
-            ceiling: this._ps1Mat({ color: 0x99958c, roughness: 0.95 }),
+            ceiling: this._ps1Mat({ map: tCeiling, color: 0xebe6dc, roughness: 0.94 }),
+            skin: this._ps1Mat({ map: tSkin, color: 0xd8b094, roughness: 0.78 }),
+            hair: this._ps1Mat({ map: tHair, color: 0x2b1e16, roughness: 0.90 }),
+            cloth: this._ps1Mat({ map: tCloth, color: 0xffffff, roughness: 0.88 }),
             woodDark: this._ps1Mat({ map: tWoodDark, roughness: 0.55 }),
             woodFrame: this._ps1Mat({ color: 0x725944, roughness: 0.85 }),
             tablecloth: this._ps1Mat({ map: tTablecloth, roughness: 0.9 }),
@@ -1135,10 +1252,10 @@ export class KhrushchevkaBuilder {
     }
 
     _buildLighting() {
-        const ambient = new THREE.AmbientLight(0x485675, 1.05);
+        const ambient = new THREE.AmbientLight(0x526282, 1.45);
         this.scene.add(ambient);
 
-        const moon = new THREE.DirectionalLight(0x6b85bd, 0.65);
+        const moon = new THREE.DirectionalLight(0x6b85bd, 0.75);
         moon.position.set(-10, 14, -20);
         moon.castShadow = true;
         moon.shadow.mapSize.set(512, 512);
@@ -1150,40 +1267,48 @@ export class KhrushchevkaBuilder {
         moon.shadow.camera.bottom = -14;
         this.scene.add(moon);
 
-        const tvLight = new THREE.PointLight(0x6890ff, 1.6, 8.5, 1.5);
+        const tvLight = new THREE.PointLight(0x6890ff, 1.85, 9.5, 1.35);
         tvLight.position.set(1.15, 1.15, -1.0);
         this.scene.add(tvLight);
 
-        const hallLight = new THREE.PointLight(0xffe0a8, 0.0, 11.5, 1.35);
+        const hallLight = new THREE.PointLight(0xffe4b2, 0.0, 15.0, 1.15);
         hallLight.position.set(-0.75, 2.48, -1.0);
         this.scene.add(hallLight);
 
-        const kitchenLight = new THREE.PointLight(0xffd796, 2.0, 8.5, 1.5);
+        const kitchenLight = new THREE.PointLight(0xffdc9e, 3.3, 12.0, 1.15);
         kitchenLight.position.set(3.1, 2.45, -2.0);
         this.scene.add(kitchenLight);
 
-        const fridgeLight = new THREE.PointLight(0xffe184, 0.0, 2.8, 1.8);
+        const fridgeLight = new THREE.PointLight(0xffe184, 0.0, 3.2, 1.6);
         fridgeLight.position.set(3.45, 1.25, -2.85);
         this.scene.add(fridgeLight);
 
-        const ovenLight = new THREE.PointLight(0xff7722, 0.0, 2.4, 1.8);
+        const ovenLight = new THREE.PointLight(0xff7722, 0.0, 2.8, 1.6);
         ovenLight.position.set(3.45, 0.45, -2.10);
         this.scene.add(ovenLight);
 
-        const hallwayLight = new THREE.PointLight(0xffcfa0, 1.8, 8.5, 1.5);
+        const hallwayLight = new THREE.PointLight(0xffd5a8, 3.1, 12.0, 1.15);
         hallwayLight.position.set(3.1, 2.42, 2.2);
         this.scene.add(hallwayLight);
 
-        const bathroomLight = new THREE.PointLight(0xcbe8ff, 1.7, 5.5, 1.5);
+        const bathroomLight = new THREE.PointLight(0xd4edff, 2.9, 8.5, 1.15);
         bathroomLight.position.set(5.1, 2.42, 2.55);
         this.scene.add(bathroomLight);
 
-        const stairwellLight = new THREE.PointLight(0xd6df9c, 1.35, 9.0, 1.4);
-        stairwellLight.position.set(3.25, 2.85, 5.5);
+        const stairwellLight = new THREE.PointLight(0xe3ebaa, 2.8, 18.0, 1.10);
+        stairwellLight.position.set(3.25, 2.85, 6.4);
         this.scene.add(stairwellLight);
 
-        const streetLight = new THREE.PointLight(0xffad48, 3.2, 32, 1.3);
-        streetLight.position.set(-4.5, -0.8, -13.5);
+        const stairwellLightUpper = new THREE.PointLight(0xe3ebaa, 2.6, 18.0, 1.12);
+        stairwellLightUpper.position.set(3.25, 9.8, 6.6);
+        this.scene.add(stairwellLightUpper);
+
+        const stairwellLightLower = new THREE.PointLight(0xe3ebaa, 2.6, 18.0, 1.12);
+        stairwellLightLower.position.set(3.25, -4.6, 6.6);
+        this.scene.add(stairwellLightLower);
+
+        const streetLight = new THREE.PointLight(0xffad48, 3.4, 34, 1.25);
+        streetLight.position.set(-4.5, -2.8, -13.5);
         this.scene.add(streetLight);
 
         const neighborLight = new THREE.PointLight(0xffe07d, 0.0, 10, 1.3);
@@ -1201,6 +1326,8 @@ export class KhrushchevkaBuilder {
             hallwayLight,
             bathroomLight,
             stairwellLight,
+            stairwellLightUpper,
+            stairwellLightLower,
             streetLight,
             neighborLight
         };
@@ -1215,6 +1342,8 @@ export class KhrushchevkaBuilder {
         this._registerLight(hallwayLight, 'hallwayLight', t('light.hallway'), 'hallway');
         this._registerLight(bathroomLight, 'bathroomLight', t('light.bathroom'), 'bathroom');
         this._registerLight(stairwellLight, 'stairwellLight', t('light.stairwell'), null);
+        this._registerLight(stairwellLightUpper, 'stairwellLightUpper', t('light.stairwell'), null);
+        this._registerLight(stairwellLightLower, 'stairwellLightLower', t('light.stairwell'), null);
         this._registerLight(streetLight, 'streetLight', t('light.street'), null);
         this._registerLight(neighborLight, 'neighborLight', t('light.neighbor'), null);
     }
@@ -1234,7 +1363,6 @@ export class KhrushchevkaBuilder {
 
         this._addStaticBox('AptCeilingMain', 0.3, H + 0.2, -1.0, 8.2, 0.4, 5.2, this.materials.ceiling, { blocker: false });
         this._addStaticBox('AptCeilingSouth', 3.5, H + 0.2, 2.85, 5.6, 0.4, 3.3, this.materials.ceiling, { blocker: false });
-        this._addStaticBox('StairwellCeiling', 3.25, 3.35, 6.6, 3.1, 0.25, 4.3, this.materials.concrete, { blocker: false });
 
         this._addWallSegment('HallWestWall', -3.5, -3.5, -3.5, 1.5, 0, H, this.materials.wallpaperHall);
 
@@ -1487,6 +1615,14 @@ export class KhrushchevkaBuilder {
         );
         peepLens.rotation.x = Math.PI / 2;
         peepLens.position.set(0, 0.42, -0.052);
+        const peepLensOut = peepLens.clone();
+        peepLensOut.position.set(0, 0.42, 0.053);
+        // Apartment #34 enamel number plate & outer handle on the stairwell side of the front door
+        const frontPlateMat = this._ps1Mat({ map: this.tex.createAptNumberPlateTexture('34'), roughness: 0.55 });
+        const frontPlate = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.095, 0.012), frontPlateMat);
+        frontPlate.position.set(0, 0.64, 0.054);
+        const frontOuterHandle = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.036, 0.045), this.materials.metal);
+        frontOuterHandle.position.set(-0.34, -0.05, 0.062);
         // Pivoting brass peephole cover flap on the inner side of the front door
         const peepFlapPivot = new THREE.Group();
         peepFlapPivot.position.set(0, 0.448, -0.059);
@@ -1506,7 +1642,7 @@ export class KhrushchevkaBuilder {
         clawDecal.rotation.y = Math.PI;
         clawDecal.visible = false;
 
-        frontDoorGO.transform.add(doorLeaf, peepRing, peepLens, peepFlapPivot, chain, clawDecal);
+        frontDoorGO.transform.add(doorLeaf, peepRing, peepLens, peepLensOut, frontPlate, frontOuterHandle, peepFlapPivot, chain, clawDecal);
         const frontCol = frontDoorGO.addComponent(BoxCollider, new THREE.Vector3(0.95, 2.15, 0.14));
         frontDoorGO.addComponent(RigidBody, { bodyType: 'static' });
         this.blockerMeshes.push(doorLeaf);
@@ -1554,91 +1690,286 @@ export class KhrushchevkaBuilder {
     }
 
     _buildDetailedStairwell(aptH) {
-        const H_STAIR = 3.25;
-        const Y_BOT = -2.2;
         this._currentCategory = 'stairwell';
         this._currentGroupId = null;
 
-        this._addWallSegment('StairNorth_CornerW', 1.8, 4.5, 2.0, 4.5, Y_BOT, H_STAIR, this.materials.stairwellWall);
-        this._addWallSegment('StairNorth_CornerE', 4.2, 4.5, 4.7, 4.5, Y_BOT, H_STAIR, this.materials.stairwellWall);
-        this._addWallSegment('StairNorth_Header', 2.0, 4.5, 4.2, 4.5, aptH, H_STAIR, this.materials.stairwellWall);
+        // Full 5-story Khrushchevka stairwell shaft where each flight (10 steps, 2.0m rise) is a half-story
+        // and two flights + half-landing span 1 full story (4.0m floor-to-floor):
+        // Floor 1: Y = -8.0
+        // Floor 2: Y = -4.0
+        // Floor 3: Y =  0.0 (Player's apartment #34)
+        // Floor 4: Y = +4.0
+        // Floor 5: Y = +8.0 (Top floor, ceiling at Y = +11.4)
+        const HALF_H = 2.0;
+        const FLOOR_H = HALF_H * 2; // 4.0m full floor-to-floor height (2 flights of 2.0m each)
+        const Y_F1 = -2 * FLOOR_H;  // -8.0
+        const Y_TOP = 2 * FLOOR_H + 3.4; // +11.4
+        const Z_N = 4.5;
+        const Z_S = 10.5;
+        const X_W = 1.8;
+        const X_E = 4.7;
 
-        this._addWallSegment('StairW', 1.8, 4.5, 1.8, 8.6, Y_BOT, H_STAIR, this.materials.stairwellWall);
-        this._addWallSegment('StairE', 4.7, 4.5, 4.7, 8.6, Y_BOT, H_STAIR, this.materials.stairwellWall);
+        // Continuous West & East outer stairwell shaft walls from 1st floor foundation to 5th floor ceiling
+        this._addWallSegment('StairW', X_W, Z_N, X_W, Z_S, Y_F1 - 0.3, Y_TOP, this.materials.stairwellWall);
+        this._addWallSegment('StairE', X_E, Z_N, X_E, Z_S, Y_F1 - 0.3, Y_TOP, this.materials.stairwellWall);
 
-        this._addWallSegment('StairS_Bot', 1.8, 8.6, 4.7, 8.6, Y_BOT, 1.05, this.materials.stairwellWall);
-        this._addWallSegment('StairS_Top', 1.8, 8.6, 4.7, 8.6, 2.35, H_STAIR, this.materials.stairwellWall);
-        this._addWallSegment('StairS_WinL', 1.8, 8.6, 2.65, 8.6, 1.05, 2.35, this.materials.stairwellWall);
-        this._addWallSegment('StairS_WinR', 3.85, 8.6, 4.7, 8.6, 1.05, 2.35, this.materials.stairwellWall);
+        // North stairwell wall segments (around Floor 3 apartment doorway at Y = 0..aptH, and full walls on other floors)
+        this._addWallSegment('StairNorth_Lower', X_W, Z_N, X_E, Z_N, Y_F1 - 0.3, 0.0, this.materials.stairwellWall);
+        this._addWallSegment('StairNorth_CornerW', X_W, Z_N, 2.0, Z_N, 0.0, aptH, this.materials.stairwellWall);
+        this._addWallSegment('StairNorth_CornerE', 4.2, Z_N, X_E, Z_N, 0.0, aptH, this.materials.stairwellWall);
+        this._addWallSegment('StairNorth_Header', X_W, Z_N, X_E, Z_N, aptH, Y_TOP, this.materials.stairwellWall);
 
-        this._addStaticBox('StairWindowGlass', 3.25, 1.70, 8.58, 1.18, 1.26, 0.03,
-            this._ps1Mat({ color: 0x9eb8cc, emissive: 0x1e2c3d, transparent: true, opacity: 0.55, depthWrite: false, snap: false }),
-            { collide: false, blocker: false, materialKey: 'glass', category: 'doors' });
-        this._addStaticBox('StairWindowMullionV', 3.25, 1.70, 8.55, 0.05, 1.28, 0.06, this.materials.woodFrame, { collide: false });
-        this._addStaticBox('StairWindowMullionH', 3.25, 1.70, 8.55, 1.18, 0.05, 0.06, this.materials.woodFrame, { collide: false });
-        this._addStaticBox('StairWindowSill', 3.25, 1.04, 8.48, 1.28, 0.05, 0.22, this.materials.concrete, { collide: false });
-        const ashCan = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.11, 7), this.materials.metal);
-        ashCan.position.set(3.62, 1.12, 8.45);
-        this.scene.add(ashCan);
-        this._registerEditable(ashCan, 'StairwellAshCan', {
-            category: 'stairwell',
-            extra: { isSceneProp: true, primaryMesh: ashCan, materialKey: 'metal' }
+        // Top 5th floor stairwell roof ceiling slab & bottom 1st floor foundation slab
+        this._addStaticBox('StairwellCeiling', 3.25, Y_TOP + 0.12, 7.5, 3.1, 0.25, 6.2, this.materials.ceiling, { blocker: false });
+        this._addStaticBox('StairwellFloor_F1', 3.25, Y_F1 - 0.125, 7.5, 2.9, 0.25, 6.0, this.materials.concrete);
+
+        const glassMat = this._ps1Mat({
+            color: 0x9eb8cc,
+            emissive: 0x1e2c3d,
+            transparent: true,
+            opacity: 0.55,
+            depthWrite: false,
+            snap: false
         });
-        for (let r = 0; r < 6; r++) {
-            this._addStaticBox(`StairRadiator_${r}`, 2.95 + r * 0.12, 0.62, 8.46, 0.06, 0.54, 0.10, this.materials.metal, { collide: false });
-        }
-
-        this._addStaticBox('StairLowerLanding', 3.25, -2.0, 7.4, 2.9, 0.25, 2.6, this.materials.concrete, { collide: false });
-
-        for (let s = 0; s < 9; s++) {
-            this._addStaticBox(`StairDown_${s}`, 2.52, -0.12 - s * 0.20, 6.32 + s * 0.25, 1.22, 0.20, 0.27, this.materials.concrete, { collide: false });
-        }
-
-        for (let s = 0; s < 9; s++) {
-            this._addStaticBox(`StairUp_${s}`, 3.98, 0.12 + s * 0.21, 6.32 + s * 0.25, 1.22, 0.22, 0.27, this.materials.concrete, { collide: false });
-        }
-
-        for (let p = 0; p < 5; p++) {
-            this._addStaticBox(`StairPostMid_${p}`, 3.25, 0.45 + p * 0.36, 6.22 + p * 0.52, 0.04, 0.96, 0.04, this.materials.metal, { collide: false });
-        }
-        const railSlope = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 2.55), this.materials.metal);
-        railSlope.position.set(3.25, 1.65, 7.35);
-        railSlope.rotation.x = -0.64;
-        this.scene.add(railSlope);
-        this._registerEditable(railSlope, 'StairRailSlope', {
-            category: 'stairwell',
-            extra: { isSceneProp: true, primaryMesh: railSlope, materialKey: 'metal' }
-        });
-
-        this._addStaticBox('StairDropPostL', 1.94, 0.48, 6.22, 0.04, 0.96, 0.04, this.materials.metal, { collide: false });
-        this._addStaticBox('StairDropPostM', 2.58, 0.48, 6.22, 0.04, 0.96, 0.04, this.materials.metal, { collide: false });
-        this._addStaticBox('StairDropRailTop', 2.58, 0.96, 6.22, 1.34, 0.04, 0.05, this.materials.metal, { collide: false });
-
-        const stairGuard = new GameObject('StairwellGuardrail');
-        stairGuard.transform.position.set(3.25, 1.1, 6.22);
-        stairGuard.addComponent(BoxCollider, new THREE.Vector3(2.9, 2.2, 0.12));
-        stairGuard.addComponent(RigidBody, { bodyType: 'static' });
-        this.engine.addGameObject(stairGuard);
-        this._registerEditable(stairGuard.transform, 'StairwellGuardrail', {
-            category: 'stairwell',
-            extra: { gameObject: stairGuard, collide: true, blocker: false }
-        });
-
-        this._addStaticBox('NeighborDoor35', 4.60, 1.075, 5.35, 0.06, 2.12, 0.92, this.materials.dermantine, { category: 'doors' });
-        this._addStaticBox('NeighborDoor35Handle', 4.55, 1.02, 4.98, 0.04, 0.04, 0.14, this.materials.metal, { collide: false, category: 'doors' });
-        this._addStaticBox('NeighborDoor35Plate', 4.55, 1.58, 5.35, 0.02, 0.10, 0.14, this.materials.clockDial, { collide: false, category: 'doors' });
-
+        const lampGlowMat = this._ps1Mat({ color: 0xfff0c2, emissive: 0xffd27d, emissiveIntensity: 1.0 });
+        const warnMat = this._ps1Mat({ color: 0xd4a422 });
         const mailboxMat = this._ps1Mat({ color: 0x2c4b75, roughness: 0.65, metalness: 0.25 });
-        this._addStaticBox('MailboxCluster', 1.88, 1.38, 5.08, 0.14, 0.62, 0.86, mailboxMat, { materialKey: 'metal' });
-        for (let m = 0; m < 4; m++) {
-            this._addStaticBox(`MailboxSlot_${m}`, 1.96, 1.56, 4.76 + m * 0.21, 0.02, 0.04, 0.14, this.materials.darkSilhouette, { collide: false });
-        }
-        this._addStaticBox('ElectroPanel', 1.87, 1.48, 5.82, 0.12, 0.56, 0.42, this.materials.metal);
-        this._addStaticBox('ElectroWarning', 1.94, 1.54, 5.82, 0.02, 0.11, 0.11, this._ps1Mat({ color: 0xd4a422 }), { collide: false, materialKey: 'santaHatFur' });
 
-        this._addStaticBox('StairLampBase', 3.25, 3.21, 5.48, 0.24, 0.06, 0.18, this.materials.metal, { collide: false });
-        this._addStaticBox('StairLampGlow', 3.25, 3.16, 5.48, 0.18, 0.06, 0.13,
-            this._ps1Mat({ color: 0xfff0c2, emissive: 0xffd27d, emissiveIntensity: 1.0 }), { collide: false, materialKey: 'ceiling' });
+        const peepBrassMat = this._ps1Mat({ color: 0xb89648, roughness: 0.42, metalness: 0.68 });
+        const peepDarkLensMat = this._ps1Mat({ color: 0x0a0e16, roughness: 0.15, metalness: 0.85 });
+
+        // Helper to build a stairwell apartment door proud of the wall (no Z-fighting) with frame, peephole, and apartment number plate
+        const addStairwellAptDoor = (doorName, aptNum, orientation, fy) => {
+            const plateMat = this._ps1Mat({ map: this.tex.createAptNumberPlateTexture(String(aptNum)), roughness: 0.55 });
+            if (orientation === 'east') {
+                // East wall inner face is at X = 4.61; push frame to 4.595 and door leaf forward to 4.555 (front face 4.525)
+                this._addStaticBox(`${doorName}_Frame`, 4.595, fy + 1.09, 5.35, 0.03, 2.18, 1.02, this.materials.woodDark, { collide: false, category: 'doors' });
+                this._addStaticBox(doorName, 4.555, fy + 1.075, 5.35, 0.06, 2.12, 0.92, this.materials.dermantine, { category: 'doors' });
+                this._addStaticBox(`${doorName}Handle`, 4.508, fy + 1.02, 4.98, 0.04, 0.04, 0.14, this.materials.metal, { collide: false, category: 'doors' });
+                // Peephole (brass ring + dark glass lens)
+                const pGroup = new THREE.Group();
+                pGroup.position.set(4.522, fy + 1.50, 5.35);
+                const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.018, 8), peepBrassMat);
+                ring.rotation.z = Math.PI / 2;
+                const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.022, 8), peepDarkLensMat);
+                lens.rotation.z = Math.PI / 2;
+                pGroup.add(ring, lens);
+                this.scene.add(pGroup);
+                this._registerEditable(pGroup, `${doorName}Peephole`, {
+                    category: 'doors',
+                    extra: { isSceneProp: true, primaryMesh: ring, materialKey: 'metal' }
+                });
+                // Apartment number plate
+                this._addStaticBox(`${doorName}Plate`, 4.518, fy + 1.72, 5.35, 0.014, 0.095, 0.16, plateMat, {
+                    collide: false, worldUV: false, category: 'doors'
+                });
+            } else {
+                // North wall inner face is at Z = 4.59; push frame to 4.605 and door leaf forward to 4.645 (front face 4.675)
+                this._addStaticBox(`${doorName}_Frame`, 3.075, fy + 1.09, 4.605, 1.05, 2.18, 0.03, this.materials.woodDark, { collide: false, category: 'doors' });
+                this._addStaticBox(doorName, 3.075, fy + 1.075, 4.645, 0.95, 2.12, 0.06, this.materials.dermantine, { category: 'doors' });
+                this._addStaticBox(`${doorName}_Handle`, 2.70, fy + 1.02, 4.692, 0.14, 0.04, 0.04, this.materials.metal, { collide: false, category: 'doors' });
+                // Peephole (brass ring + dark glass lens)
+                const pGroup = new THREE.Group();
+                pGroup.position.set(3.075, fy + 1.50, 4.678);
+                const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.018, 8), peepBrassMat);
+                ring.rotation.x = Math.PI / 2;
+                const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.022, 8), peepDarkLensMat);
+                lens.rotation.x = Math.PI / 2;
+                pGroup.add(ring, lens);
+                this.scene.add(pGroup);
+                this._registerEditable(pGroup, `${doorName}_Peephole`, {
+                    category: 'doors',
+                    extra: { isSceneProp: true, primaryMesh: ring, materialKey: 'metal' }
+                });
+                // Apartment number plate
+                this._addStaticBox(`${doorName}_Plate`, 3.075, fy + 1.72, 4.682, 0.16, 0.095, 0.014, plateMat, {
+                    collide: false, worldUV: false, category: 'doors'
+                });
+            }
+        };
+
+        const aptNumbersByFloor = {
+            1: { north: 26, east: 27 },
+            2: { north: 30, east: 31 },
+            3: { north: 34, east: 35 },
+            4: { north: 38, east: 39 },
+            5: { north: 42, east: 43 }
+        };
+
+        // Build all 5 floor landings (Floor 1 to Floor 5)
+        for (let floor = 1; floor <= 5; floor++) {
+            const fy = (floor - 3) * FLOOR_H;
+            const fTag = `F${floor}`;
+
+            // Main floor landing slab at North side (Z: 4.5 .. 6.25)
+            // Note: Floor 3 already has 'StairwellFloor' built in _buildApartmentStructure, and Floor 1 has 'StairwellFloor_F1'
+            if (floor !== 1 && floor !== 3) {
+                this._addStaticBox(`StairLanding_${fTag}`, 3.25, fy - 0.125, 5.38, 2.9, 0.25, 1.76, this.materials.concrete);
+            }
+
+            // East wall apartment door (#27, #31, #35, #39, #43)
+            const eastDoorName = floor === 3 ? 'NeighborDoor35' : `NeighborDoorE_${fTag}`;
+            addStairwellAptDoor(eastDoorName, aptNumbersByFloor[floor].east, 'east', fy);
+
+            // North wall apartment door on floors 1, 2, 4, 5 (#26, #30, #38, #42 — Floor 3 is player's FrontDoor #34)
+            if (floor !== 3) {
+                addStairwellAptDoor(`NeighborDoorN_${fTag}`, aptNumbersByFloor[floor].north, 'north', fy);
+            }
+
+            // Electrical distribution cabinet on West wall of each floor landing
+            const epName = floor === 3 ? 'ElectroPanel' : `ElectroPanel_${fTag}`;
+            const ewName = floor === 3 ? 'ElectroWarning' : `ElectroWarning_${fTag}`;
+            this._addStaticBox(epName, 1.87, fy + 1.48, 5.82, 0.12, 0.56, 0.42, this.materials.metal);
+            this._addStaticBox(ewName, 1.94, fy + 1.54, 5.82, 0.02, 0.11, 0.11, warnMat, { collide: false, materialKey: 'santaHatFur' });
+
+            // Soviet blue metal mailbox blocks on Floors 1, 2, and 3
+            if (floor <= 3) {
+                const mbName = floor === 3 ? 'MailboxCluster' : `MailboxCluster_${fTag}`;
+                this._addStaticBox(mbName, 1.88, fy + 1.38, 5.08, 0.14, 0.62, 0.86, mailboxMat, { materialKey: 'metal' });
+                for (let m = 0; m < 4; m++) {
+                    const slotName = floor === 3 ? `MailboxSlot_${m}` : `MailboxSlot_${fTag}_${m}`;
+                    this._addStaticBox(slotName, 1.96, fy + 1.56, 4.76 + m * 0.21, 0.02, 0.04, 0.14, this.materials.darkSilhouette, { collide: false });
+                }
+            }
+
+            // Wall/ceiling lamp above each floor landing
+            const lampY = floor === 5 ? (Y_TOP - 0.04) : (fy + 3.21);
+            const lbName = floor === 3 ? 'StairLampBase' : `StairLampBase_${fTag}`;
+            const lgName = floor === 3 ? 'StairLampGlow' : `StairLampGlow_${fTag}`;
+            this._addStaticBox(lbName, 3.25, lampY, 4.65, 0.24, 0.06, 0.18, this.materials.metal, { collide: false });
+            this._addStaticBox(lgName, 3.25, lampY - 0.05, 4.65, 0.18, 0.06, 0.13, lampGlowMat, { collide: false, materialKey: 'ceiling' });
+
+            // Landing central newel post on floors 2..5
+            if (floor >= 2) {
+                this._addStaticBox(`StairLandingRailPost_${fTag}`, 3.25, fy + 0.48, 6.22, 0.05, 0.96, 0.05, this.materials.metal, { collide: false });
+            }
+        }
+
+        // Floor 1 Building Entrance Vestibule & Exit Door on South wall (Y = -8.0, pulled forward from Z = 10.41 inner face)
+        this._addWallSegment('StairS_F1_WallL', X_W, Z_S, 2.65, Z_S, Y_F1 - 0.3, Y_F1 + 2.15, this.materials.stairwellWall);
+        this._addWallSegment('StairS_F1_WallR', 3.85, Z_S, X_E, Z_S, Y_F1 - 0.3, Y_F1 + 2.15, this.materials.stairwellWall);
+        this._addStaticBox('StairEntranceDoorFrame_F1', 3.25, Y_F1 + 1.09, Z_S - 0.11, 1.30, 2.18, 0.04, this.materials.woodDark, { collide: false, category: 'doors' });
+        this._addStaticBox('StairEntranceDoor_F1', 3.25, Y_F1 + 1.06, Z_S - 0.15, 1.20, 2.12, 0.08, this.materials.storeDoor, { category: 'doors' });
+        this._addStaticBox('StairEntranceDoorHandle_F1', 2.78, Y_F1 + 1.02, Z_S - 0.21, 0.04, 0.16, 0.05, this.materials.metal, { collide: false });
+
+        // Build all 4 full-story connections (1->2, 2->3, 3->4, 4->5):
+        // Each full story (4.0m) has TWO 10-step flights (2.0m rise each, 0.20m per step, 0.25m depth):
+        // 1) East Flight (X = 3.98): ascends 2.0m from Floor F Main Landing (Y = fy, Z = 6.25)
+        //    to the South Half-Landing (Y = fy + 2.0, Z = 8.75).
+        // 2) South Half-Landing (Z: 8.75 .. 10.5, Y = fy + 2.0) with frosted window, sill, radiator, and ash tin.
+        // 3) West Flight (X = 2.52): ascends another 2.0m from the South Half-Landing (Y = fy + 2.0, Z = 8.75)
+        //    back to Floor (F+1) Main Landing (Y = fy + 4.0, Z = 6.25)!
+        const NUM_STEPS = 10;
+        const STEP_DY = HALF_H / NUM_STEPS; // 2.0 / 10 = 0.20m per step (exact original step height!)
+        const STEP_DZ = 0.25;               // 2.50m horizontal run (Z: 6.25 .. 8.75, exact original step depth!)
+
+        for (let floor = 1; floor <= 4; floor++) {
+            const fy = (floor - 3) * FLOOR_H;
+            const midY = fy + HALF_H; // Half-landing surface Y (-6.0, -2.0, +2.0, +6.0)
+            const hTag = `H${floor}_${floor + 1}`;
+
+            // Half-landing concrete slab at South end (Z: 8.72 .. 10.48)
+            const hlName = floor === 2 ? 'StairLowerLanding' : `StairHalfLanding_${hTag}`;
+            this._addStaticBox(hlName, 3.25, midY - 0.125, 9.60, 2.9, 0.25, 1.76, this.materials.concrete);
+
+            // Half-landing central turning newel post
+            this._addStaticBox(`StairHalfLandingPost_${hTag}`, 3.25, midY + 0.48, 8.74, 0.05, 0.96, 0.05, this.materials.metal, { collide: false });
+
+            // 1st Half-Story Flight — East side (X = 3.98): goes UP 2.0m from Floor F (Y = fy, Z = 6.25) to Half-Landing (Y = midY, Z = 8.75)
+            for (let s = 0; s < NUM_STEPS; s++) {
+                const sy = fy + (s + 0.5) * STEP_DY;
+                const sz = 6.32 + s * STEP_DZ;
+                const stepName = (floor === 3 && s < 9) ? `StairUp_${s}` : `StairFlightE_${hTag}_${s}`;
+                this._addStaticBox(stepName, 3.98, sy, sz, 1.24, STEP_DY + 0.02, STEP_DZ + 0.03, this.materials.concrete);
+            }
+
+            // 2nd Half-Story Flight — West side (X = 2.52): goes UP 2.0m from Half-Landing (Y = midY, Z = 8.75) to Floor F+1 (Y = fy + 4.0, Z = 6.25)
+            for (let s = 0; s < NUM_STEPS; s++) {
+                const sy = (fy + FLOOR_H) - (s + 0.5) * STEP_DY;
+                const sz = 6.32 + s * STEP_DZ;
+                const stepName = (floor === 2 && s < 9) ? `StairDown_${s}` : `StairFlightW_${hTag}_${s}`;
+                this._addStaticBox(stepName, 2.52, sy, sz, 1.24, STEP_DY + 0.02, STEP_DZ + 0.03, this.materials.concrete);
+            }
+
+            // Balustrade posts & sloped handrails along the inner well for BOTH flights (East flight & West return flight)
+            for (let p = 0; p < 5; p++) {
+                const frac = (p + 0.5) / 5;
+                const pz = 6.26 + frac * 2.45;
+                const pyE = fy + frac * HALF_H + 0.48;
+                const pyW = (fy + FLOOR_H) - frac * HALF_H + 0.48;
+                const postEName = (floor === 3) ? `StairPostMid_${p}` : `StairPostE_${hTag}_${p}`;
+                this._addStaticBox(postEName, 3.33, pyE, pz, 0.04, 0.96, 0.04, this.materials.metal, { collide: false });
+                this._addStaticBox(`StairPostW_${hTag}_${p}`, 3.17, pyW, pz, 0.04, 0.96, 0.04, this.materials.metal, { collide: false });
+            }
+
+            // Sloped handrail for East flight (rises 2.0m over 2.5m run -> pitch = -0.675 rad)
+            const railE = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 3.22), this.materials.metal);
+            railE.position.set(3.33, fy + HALF_H * 0.5 + 0.94, 7.48);
+            railE.rotation.x = -0.675;
+            this.scene.add(railE);
+            const railEName = floor === 3 ? 'StairRailSlope' : `StairRailSlopeE_${hTag}`;
+            this._registerEditable(railE, railEName, {
+                category: 'stairwell',
+                extra: { isSceneProp: true, primaryMesh: railE, materialKey: 'metal' }
+            });
+
+            // Sloped handrail for West return flight (rises 2.0m from half-landing Z=8.75 back to Z=6.25 -> pitch = +0.675 rad)
+            const railW = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 3.22), this.materials.metal);
+            railW.position.set(3.17, midY + HALF_H * 0.5 + 0.94, 7.48);
+            railW.rotation.x = 0.675;
+            this.scene.add(railW);
+            this._registerEditable(railW, `StairRailSlopeW_${hTag}`, {
+                category: 'stairwell',
+                extra: { isSceneProp: true, primaryMesh: railW, materialKey: 'metal' }
+            });
+
+            // Short horizontal handrail connecting the East and West rails at the half-landing turn
+            this._addStaticBox(`StairRailTurn_${hTag}`, 3.25, midY + 0.94, 8.74, 0.22, 0.04, 0.05, this.materials.metal, { collide: false });
+
+            // South Exterior Wall & Frosted Stairwell Window above each Half-Landing
+            const winBotY = midY + 0.95;
+            const winTopY = midY + 2.25;
+            const prevTopY = floor === 1 ? (Y_F1 + 2.15) : (midY - FLOOR_H + 2.25);
+            if (winBotY > prevTopY + 0.02) {
+                this._addWallSegment(`StairS_Spandrel_${hTag}`, X_W, Z_S, X_E, Z_S, prevTopY, winBotY, this.materials.stairwellWall);
+            }
+            const winLName = floor === 3 ? 'StairS_WinL' : `StairS_WinL_${hTag}`;
+            const winRName = floor === 3 ? 'StairS_WinR' : `StairS_WinR_${hTag}`;
+            this._addWallSegment(winLName, X_W, Z_S, 2.65, Z_S, winBotY, winTopY, this.materials.stairwellWall);
+            this._addWallSegment(winRName, 3.85, Z_S, X_E, Z_S, winBotY, winTopY, this.materials.stairwellWall);
+
+            const winCenterY = (winBotY + winTopY) * 0.5;
+            const wgName = floor === 3 ? 'StairWindowGlass' : `StairWindowGlass_${hTag}`;
+            const wmvName = floor === 3 ? 'StairWindowMullionV' : `StairWindowMullionV_${hTag}`;
+            const wmhName = floor === 3 ? 'StairWindowMullionH' : `StairWindowMullionH_${hTag}`;
+            const wsName = floor === 3 ? 'StairWindowSill' : `StairWindowSill_${hTag}`;
+
+            this._addStaticBox(wgName, 3.25, winCenterY, Z_S - 0.02, 1.18, 1.26, 0.03, glassMat,
+                { collide: false, blocker: false, materialKey: 'glass', category: 'doors' });
+            this._addStaticBox(wmvName, 3.25, winCenterY, Z_S - 0.05, 0.05, 1.28, 0.06, this.materials.woodFrame, { collide: false });
+            this._addStaticBox(wmhName, 3.25, winCenterY, Z_S - 0.05, 1.18, 0.05, 0.06, this.materials.woodFrame, { collide: false });
+            this._addStaticBox(wsName, 3.25, winBotY - 0.01, Z_S - 0.10, 1.28, 0.05, 0.22, this.materials.concrete, { collide: false });
+
+            // Tin ash can on window sill
+            const ashCan = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.11, 7), this.materials.metal);
+            ashCan.position.set(3.62, winBotY + 0.07, Z_S - 0.13);
+            this.scene.add(ashCan);
+            const ashName = floor === 3 ? 'StairwellAshCan' : `StairwellAshCan_${hTag}`;
+            this._registerEditable(ashCan, ashName, {
+                category: 'stairwell',
+                extra: { isSceneProp: true, primaryMesh: ashCan, materialKey: 'metal' }
+            });
+
+            // Cast-iron radiator under half-landing window
+            for (let r = 0; r < 6; r++) {
+                const radName = floor === 3 ? `StairRadiator_${r}` : `StairRadiator_${hTag}_${r}`;
+                this._addStaticBox(radName, 2.95 + r * 0.12, midY + 0.50, Z_S - 0.12, 0.06, 0.54, 0.10, this.materials.metal, { collide: false });
+            }
+        }
+
+        // Top South wall header above the 4th-to-5th half-landing window up to the roof ceiling
+        const topWinTopY = (1 * FLOOR_H + HALF_H) + 2.25; // midY of floor 4 (6.0) + 2.25 = 8.25
+        this._addWallSegment('StairS_TopHeader', X_W, Z_S, X_E, Z_S, topWinTopY, Y_TOP, this.materials.stairwellWall);
     }
 
     _addInteriorDoor(cfg) {
@@ -3177,12 +3508,12 @@ export class KhrushchevkaBuilder {
 
         const ovenDoorPivot = new GameObject('OvenDoor');
         ovenDoorPivot.transform.position.set(3.41, 0.15, stoveZ);
-        const oDoorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.45, 0.56), this.materials.metal);
-        oDoorMesh.position.set(0, 0.225, 0);
-        const oWindowMesh = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.24, 0.38), this.materials.glass);
-        oWindowMesh.position.set(0, 0.24, 0);
-        const oHandleMesh = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 0.42), this.materials.stoveWhite);
-        oHandleMesh.position.set(-0.04, 0.40, 0);
+        const oDoorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.57, 0.58), this.materials.metal);
+        oDoorMesh.position.set(0, 0.285, 0);
+        const oWindowMesh = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.30, 0.40), this.materials.glass);
+        oWindowMesh.position.set(0, 0.29, 0);
+        const oHandleMesh = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.032, 0.44), this.materials.stoveWhite);
+        oHandleMesh.position.set(-0.04, 0.51, 0);
         ovenDoorPivot.transform.add(oDoorMesh, oWindowMesh, oHandleMesh);
         this.blockerMeshes.push(oDoorMesh);
         let ovenOpen = false;
@@ -3439,8 +3770,9 @@ export class KhrushchevkaBuilder {
             { z: 3.89, len: 0.68, w: 0.09, col: 0x3d4d3a, rot: -0.03 },
             { z: 4.03, len: 0.92, w: 0.10, col: 0x87765e, rot: 0.05 }
         ];
+        const clothTexMap = this.materials.cloth?.map || null;
         for (const g of garments) {
-            const gMat = this._ps1Mat({ color: g.col, roughness: 0.9 });
+            const gMat = this._ps1Mat({ color: g.col, map: clothTexMap, roughness: 0.9 });
             const garment = new THREE.Group();
             garment.position.set(1.36, 1.80, g.z);
             garment.rotation.y = g.rot;
@@ -3980,8 +4312,8 @@ export class KhrushchevkaBuilder {
                 id: 'hall',
                 label: 'room.in_hall',
                 light: this.world.lights.hallLight,
-                baseIntensity: 2.45,
-                emissiveColor: 0xffe0a8,
+                baseIntensity: 3.7,
+                emissiveColor: 0xffe4b2,
                 fixturePos: new THREE.Vector3(-0.75, 2.52, -1.0),
                 isChandelier: true,
                 switches: [
@@ -3993,8 +4325,8 @@ export class KhrushchevkaBuilder {
                 id: 'kitchen',
                 label: 'room.in_kitchen',
                 light: this.world.lights.kitchenLight,
-                baseIntensity: 2.0,
-                emissiveColor: 0xffd796,
+                baseIntensity: 3.3,
+                emissiveColor: 0xffdc9e,
                 fixturePos: new THREE.Vector3(3.1, 2.55, -2.0),
                 switches: [
                     { name: 'KitchenSwitch', pos: new THREE.Vector3(2.2, 1.25, -0.69), normal: new THREE.Vector3(0, 0, -1) }
@@ -4004,8 +4336,8 @@ export class KhrushchevkaBuilder {
                 id: 'hallway',
                 label: 'room.in_hallway',
                 light: this.world.lights.hallwayLight,
-                baseIntensity: 1.8,
-                emissiveColor: 0xffcfa0,
+                baseIntensity: 3.1,
+                emissiveColor: 0xffd5a8,
                 fixturePos: new THREE.Vector3(3.1, 2.55, 2.2),
                 switches: [
                     { name: 'HallwaySwitch', pos: new THREE.Vector3(2.09, 1.25, 1.55), normal: new THREE.Vector3(1, 0, 0) }
@@ -4015,8 +4347,8 @@ export class KhrushchevkaBuilder {
                 id: 'bathroom',
                 label: 'room.in_bathroom',
                 light: this.world.lights.bathroomLight,
-                baseIntensity: 1.7,
-                emissiveColor: 0xcbe8ff,
+                baseIntensity: 2.9,
+                emissiveColor: 0xd4edff,
                 fixturePos: new THREE.Vector3(5.1, 2.55, 2.55),
                 switches: [
                     { name: 'BathroomSwitch', pos: new THREE.Vector3(4.11, 1.25, 1.85), normal: new THREE.Vector3(-1, 0, 0) }
@@ -4253,38 +4585,96 @@ export class KhrushchevkaBuilder {
     }
 
     _buildCourtyardAndOppositeHouse() {
-        const GY = -6.5;
+        // Snow ground is at GY = -8.5 so Floor 1 of the player's building (Y = -8.0) sits +0.5m above the snow!
+        const GY = -8.5;
         this._currentCategory = 'courtyard';
         this._currentGroupId = null;
 
-        this._addStaticBox('CourtyardGround', 0, GY - 0.5, -16, 48, 1.0, 32, this.materials.snow, { collide: false, blocker: false });
+        this._addStaticBox('CourtyardGround', 0, GY - 0.5, -16, 84, 1.0, 58, this.materials.snow, { collide: false, blocker: false });
 
-        for (let i = 0; i < 6; i++) {
-            this._addStaticBox(
-                `Snowdrift_${i}`,
-                -10 + i * 4.2,
-                GY + 0.28,
-                -8.5 - (i % 2) * 8.0,
-                2.8,
-                0.7,
-                2.2,
-                this.materials.snow,
-                { collide: false, blocker: false }
-            );
-        }
+        // Helper for sculpted, organic multi-mound snowdrifts
+        const addSnowdriftMound = (name, x, z, sx, sy, sz, rotY = 0, subCount = 2) => {
+            const group = new THREE.Group();
+            group.position.set(x, GY, z);
+            group.rotation.y = rotY;
+            const mainGeo = new THREE.DodecahedronGeometry(1.0, 1);
+            const mainMesh = new THREE.Mesh(mainGeo, this.materials.snow);
+            mainMesh.scale.set(sx * 0.52, sy * 0.55, sz * 0.52);
+            mainMesh.position.y = sy * 0.14;
+            mainMesh.receiveShadow = true;
+            group.add(mainMesh);
+            for (let k = 0; k < subCount; k++) {
+                const side = k % 2 === 0 ? -1 : 1;
+                const lobe = new THREE.Mesh(new THREE.DodecahedronGeometry(0.68, 0), this.materials.snow);
+                lobe.scale.set(sx * 0.38, sy * 0.40, sz * 0.36);
+                lobe.position.set(side * sx * 0.30, sy * 0.08, (k - 0.5) * sz * 0.18);
+                lobe.rotation.y = k * 1.1;
+                group.add(lobe);
+            }
+            this.scene.add(group);
+            this._registerEditable(group, name, {
+                category: 'courtyard',
+                extra: { isSceneProp: true, primaryMesh: mainMesh, materialKey: 'snow' }
+            });
+        };
 
-        this._addStaticBox('OwnFacadeBelow', 0.6, -3.3, -3.55, 14, 6.4, 0.2, this.materials.concrete, { collide: false, blocker: false });
-        this._addStaticBox('OwnPorchCanopy', 3.1, GY + 2.3, -4.3, 2.2, 0.18, 1.5, this.materials.concrete, { collide: false, blocker: false });
+        // 24 varied snowdrifts piled along walls, curbs, walkways, trees, and parked cars
+        const snowdriftSpecs = [
+            { x: -10.0, z: -8.5, sx: 3.4, sy: 0.95, sz: 2.5, r: 0.25 },
+            { x: -5.8, z: -17.8, sx: 3.2, sy: 0.85, sz: 2.2, r: 0.15 },
+            { x: -1.4, z: -8.2, sx: 2.9, sy: 0.78, sz: 2.1, r: -0.32 },
+            { x: 1.0, z: -17.9, sx: 2.7, sy: 0.72, sz: 1.9, r: 0.48 },
+            { x: 6.8, z: -9.4, sx: 3.3, sy: 0.92, sz: 2.4, r: -0.55 },
+            { x: 11.2, z: -18.0, sx: 3.8, sy: 1.05, sz: 2.7, r: 0.12 },
+            // Along player's building facade & porch
+            { x: -4.2, z: -4.4, sx: 3.6, sy: 1.05, sz: 1.8, r: 0.05 },
+            { x: -0.8, z: -4.3, sx: 2.8, sy: 0.82, sz: 1.6, r: -0.08 },
+            { x: 5.6, z: -4.4, sx: 3.2, sy: 0.98, sz: 1.9, r: 0.10 },
+            { x: 9.2, z: -4.8, sx: 3.9, sy: 1.15, sz: 2.2, r: -0.14 },
+            // Along both sides of the courtyard road curbs
+            { x: -13.5, z: -12.6, sx: 4.1, sy: 0.75, sz: 1.5, r: 0.04 },
+            { x: -7.8, z: -12.5, sx: 3.4, sy: 0.68, sz: 1.4, r: -0.06 },
+            { x: 0.4, z: -12.5, sx: 2.5, sy: 0.62, sz: 1.3, r: 0.08 },
+            { x: 9.8, z: -12.4, sx: 3.6, sy: 0.74, sz: 1.5, r: -0.05 },
+            { x: -12.2, z: -17.9, sx: 4.2, sy: 0.84, sz: 1.7, r: -0.04 },
+            { x: -2.2, z: -18.0, sx: 2.9, sy: 0.70, sz: 1.4, r: 0.10 },
+            { x: 6.4, z: -17.9, sx: 3.5, sy: 0.78, sz: 1.6, r: -0.08 },
+            { x: 15.2, z: -17.8, sx: 4.4, sy: 0.95, sz: 1.9, r: 0.15 },
+            // Beside walkways & House 14 facade
+            { x: 1.8, z: -7.2, sx: 1.6, sy: 0.52, sz: 2.4, r: 0.02 },
+            { x: 4.4, z: -7.4, sx: 1.7, sy: 0.56, sz: 2.6, r: -0.04 },
+            { x: 1.4, z: -20.6, sx: 1.8, sy: 0.58, sz: 2.5, r: 0.06 },
+            { x: 4.3, z: -20.8, sx: 1.9, sy: 0.62, sz: 2.4, r: -0.05 },
+            { x: -6.5, z: -23.4, sx: 4.0, sy: 1.10, sz: 2.1, r: 0.05 },
+            { x: 9.6, z: -23.3, sx: 3.8, sy: 1.02, sz: 2.0, r: -0.08 }
+        ];
+        snowdriftSpecs.forEach((sd, i) => {
+            addSnowdriftMound(`Snowdrift_${i}`, sd.x, sd.z, sd.sx, sd.sy, sd.sz, sd.r, i % 2 === 0 ? 2 : 3);
+        });
 
-        this._buildLowPolyCar(-3.8, GY, -11.5, 0.18, 0x8f9c88, 'CourtyardCar_1');
-        this._buildLowPolyCar(4.5, GY, -15.2, -0.35, 0x3b4859, 'CourtyardCar_2');
+        // Player's building exterior facade extending cleanly from Floor 3 (Y = 0) down to snow ground (GY = -8.5)
+        const plinthMat = this._ps1Mat({ color: 0x454950, roughness: 0.96 });
+        this._addStaticBox('OwnFacadeBelow', 0.6, -4.25, -3.55, 14, 8.5, 0.2, this.materials.concrete, { collide: false, blocker: false });
+        // Elevated concrete foundation plinth (цоколь) so Floor 1 sits visibly above the snow
+        this._addStaticBox('OwnFoundationPlinth', 0.6, GY + 0.35, -3.62, 14.2, 0.72, 0.34, plinthMat, { collide: false, blocker: false });
+        // Concrete porch step & entrance stairs leading up to Floor 1 entrance
+        this._addStaticBox('OwnPorchStep1', 3.1, GY + 0.14, -4.35, 2.3, 0.28, 1.45, this.materials.concrete, { collide: false, blocker: false });
+        this._addStaticBox('OwnPorchStep2', 3.1, GY + 0.38, -3.95, 2.1, 0.24, 0.95, this.materials.concrete, { collide: false, blocker: false });
+        this._addStaticBox('OwnPorchCanopy', 3.1, GY + 2.75, -4.3, 2.3, 0.20, 1.6, this.materials.concrete, { collide: false, blocker: false });
+        this._addStaticBox('OwnPorchCanopySnow', 3.1, GY + 2.91, -4.3, 2.26, 0.14, 1.56, this.materials.snow, { collide: false, blocker: false });
+
+        // Detailed retro Soviet Zhiguli / VAZ cars parked in the snowy courtyard
+        this._buildLowPolyCar(-3.8, GY, -11.5, 0.16, 0x8f9c88, 'CourtyardCar_1');
+        this._buildLowPolyCar(6.0, GY, -12.2, -1.52, 0x3b4859, 'CourtyardCar_2');
+        this._buildLowPolyCar(-10.8, GY, -12.0, 1.54, 0x73322e, 'CourtyardCar_3');
 
         this._addStaticBox('StreetLampPole', -5.2, GY + 3.0, -13.5, 0.16, 6.0, 0.16, this.materials.metal, { collide: false, blocker: false });
+        this._addStaticBox('StreetLampArm', -4.9, GY + 5.85, -13.5, 0.65, 0.08, 0.08, this.materials.metal, { collide: false, blocker: false });
         const lampHead = new THREE.Mesh(
             new THREE.BoxGeometry(0.45, 0.18, 0.28),
             new THREE.MeshBasicMaterial({ color: 0xffc766 })
         );
-        lampHead.position.set(-4.6, GY + 5.9, -13.5);
+        lampHead.position.set(-4.6, GY + 5.76, -13.5);
         this.scene.add(lampHead);
         this._registerEditable(lampHead, 'StreetLampHead', {
             category: 'courtyard',
@@ -4292,9 +4682,11 @@ export class KhrushchevkaBuilder {
         });
 
         const H14_Z = -24.5;
-        this._addStaticBox('House14_Body', 0, GY + 7.5, H14_Z - 2.0, 26, 15.0, 4.0, this.materials.concrete, { collide: false, blocker: false });
+        this._addStaticBox('House14_Body', 0, GY + 8.75, H14_Z - 2.0, 26, 17.5, 4.0, this.materials.concrete, { collide: false, blocker: false });
+        this._addStaticBox('House14_Plinth', 0, GY + 0.35, H14_Z - 1.92, 26.2, 0.72, 4.18, plinthMat, { collide: false, blocker: false });
 
-        const floorYs = [GY + 1.4, GY + 4.3, GY + 7.5, GY + 10.4, GY + 13.3];
+        // 5 floors of House 14 aligned so its 3rd floor (index 2, Y = 1.1) stays level with player's 3rd floor balcony
+        const floorYs = [GY + 1.85, GY + 5.45, 1.1, 4.65, 8.2];
         const colXs = [-9.5, -5.8, -1.0, 2.8, 6.6, 10.2];
         const litWarm = new Set(['0_1', '1_4', '3_0', '4_3']);
         const litTV = new Set(['1_1', '2_4', '3_5']);
@@ -4384,24 +4776,65 @@ export class KhrushchevkaBuilder {
             gazeTrigger: gazeComp
         };
 
-        const ROAD_Y = -6.12;
-        const asphaltMat = this._ps1Mat({ color: 0x262930, roughness: 0.95 });
-        const walkwayMat = this._ps1Mat({ color: 0x3b3f47, roughness: 0.92 });
-        const curbMat = this._ps1Mat({ color: 0x6f747d, roughness: 0.9 });
-        this._addStaticBox('CourtyardRoad', 0, ROAD_Y, -15.2, 84.0, 0.06, 4.2, asphaltMat, {
+        // Detailed winter asphalt road with tire tracks, slush margins, snow-topped curbs & storm drain
+        const ROAD_Y = GY + 0.04;
+        const asphaltTex = this.tex.createAsphaltRoadTexture(14, 1);
+        const walkwayTex = this.tex.createWalkwayTexture(1, 5);
+        const asphaltMat = this._ps1Mat({ map: asphaltTex, roughness: 0.92 });
+        const walkwayMat = this._ps1Mat({ map: walkwayTex, roughness: 0.90 });
+        const curbMat = this._ps1Mat({ map: this.materials.concrete.map, color: 0x7a808a, roughness: 0.92 });
+        this._addStaticBox('CourtyardRoad', 0, ROAD_Y, -15.2, 84.0, 0.06, 4.4, asphaltMat, {
+            collide: false, blocker: false, worldUV: false, category: 'courtyard'
+        });
+        this._addStaticBox('RoadCurb_N', 0, ROAD_Y + 0.06, -17.48, 84.0, 0.16, 0.20, curbMat, {
             collide: false, blocker: false, category: 'courtyard'
         });
-        this._addStaticBox('RoadCurb_N', 0, ROAD_Y + 0.05, -17.36, 84.0, 0.14, 0.16, curbMat, {
+        this._addStaticBox('RoadCurb_S', 0, ROAD_Y + 0.06, -12.92, 84.0, 0.16, 0.20, curbMat, {
             collide: false, blocker: false, category: 'courtyard'
         });
-        this._addStaticBox('RoadCurb_S', 0, ROAD_Y + 0.05, -13.04, 84.0, 0.14, 0.16, curbMat, {
+        // Snow ledges resting on top of the road curbs
+        this._addStaticBox('RoadCurbSnow_N', 0, ROAD_Y + 0.16, -17.52, 84.0, 0.08, 0.26, this.materials.snow, {
             collide: false, blocker: false, category: 'courtyard'
         });
-        this._addStaticBox('CourtyardWalkway', 3.1, ROAD_Y, -8.7, 1.35, 0.06, 8.6, walkwayMat, {
+        this._addStaticBox('RoadCurbSnow_S', 0, ROAD_Y + 0.16, -12.88, 84.0, 0.08, 0.26, this.materials.snow, {
             collide: false, blocker: false, category: 'courtyard'
         });
-        this._addStaticBox('House14_Walkway', 2.8, ROAD_Y, -20.2, 1.4, 0.06, 5.7, walkwayMat, {
+        // Cast-iron storm drain grate at road edge
+        this._addStaticBox('RoadDrainGrate', -1.8, ROAD_Y + 0.036, -13.28, 0.55, 0.02, 0.36, this.materials.metal, {
             collide: false, blocker: false, category: 'courtyard'
+        });
+
+        // Detailed trampled snow & concrete footpaths with snowbank borders
+        this._addStaticBox('CourtyardWalkway', 3.1, ROAD_Y + 0.015, -8.7, 1.48, 0.06, 8.4, walkwayMat, {
+            collide: false, blocker: false, worldUV: false, category: 'courtyard'
+        });
+        this._addStaticBox('CourtyardWalkwayEdgeL', 2.28, ROAD_Y + 0.07, -8.7, 0.24, 0.14, 8.2, this.materials.snow, {
+            collide: false, blocker: false, category: 'courtyard'
+        });
+        this._addStaticBox('CourtyardWalkwayEdgeR', 3.92, ROAD_Y + 0.07, -8.7, 0.24, 0.14, 8.2, this.materials.snow, {
+            collide: false, blocker: false, category: 'courtyard'
+        });
+
+        this._addStaticBox('House14_Walkway', 2.8, ROAD_Y + 0.015, -20.2, 1.50, 0.06, 5.8, walkwayMat, {
+            collide: false, blocker: false, worldUV: false, category: 'courtyard'
+        });
+        this._addStaticBox('House14_WalkwayEdgeL', 1.98, ROAD_Y + 0.07, -20.2, 0.24, 0.14, 5.6, this.materials.snow, {
+            collide: false, blocker: false, category: 'courtyard'
+        });
+        this._addStaticBox('House14_WalkwayEdgeR', 3.62, ROAD_Y + 0.07, -20.2, 0.24, 0.14, 5.6, this.materials.snow, {
+            collide: false, blocker: false, category: 'courtyard'
+        });
+
+        // Side trampled winter footpath along the front of House 14
+        const sidePathTex = this.tex.createWalkwayTexture(1, 10);
+        const sidePathMat = this._ps1Mat({ map: sidePathTex, roughness: 0.90 });
+        const sidePath = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.05, 18.0), sidePathMat);
+        sidePath.position.set(-2.4, ROAD_Y + 0.012, -21.8);
+        sidePath.rotation.y = Math.PI / 2;
+        this.scene.add(sidePath);
+        this._registerEditable(sidePath, 'CourtyardSidePath', {
+            category: 'courtyard',
+            extra: { isSceneProp: true, primaryMesh: sidePath, materialKey: 'concrete' }
         });
 
         const porchX = 2.8;
@@ -4510,7 +4943,7 @@ export class KhrushchevkaBuilder {
         const starCount = 360;
         const R = 95;
         const centerX = 0;
-        const centerY = -6.5;
+        const centerY = -8.5;
         const centerZ = -18.0;
         const positions = new Float32Array(starCount * 3);
         const colors = new Float32Array(starCount * 3);
@@ -4604,66 +5037,121 @@ export class KhrushchevkaBuilder {
     _buildCourtyardTree(name, x, gy, z, variant = 'spruce', scale = 1.0) {
         const treeGO = new GameObject(name);
         treeGO.transform.position.set(x, gy, z);
-        const trunkMat = variant === 'birch'
-            ? this._ps1Mat({ color: 0xcfd2cc, roughness: 0.92 })
-            : this._ps1Mat({ color: 0x3b271c, roughness: 0.95 });
-        const pineMat = this._ps1Mat({ color: 0x162b1c, roughness: 0.92 });
+        if (!this._treeBarkMats) {
+            this._treeBarkMats = {
+                birch: this._ps1Mat({ map: this.tex.createBarkTexture(true), roughness: 0.90 }),
+                spruce: this._ps1Mat({ map: this.tex.createBarkTexture(false), roughness: 0.95 }),
+                pineDark: this._ps1Mat({ map: this.materials.pine?.map, color: 0x1a3822, roughness: 0.92 }),
+                pineMid: this._ps1Mat({ map: this.materials.pine?.map, color: 0x244a2c, roughness: 0.90 }),
+                twig: this._ps1Mat({ color: 0x3b3834, roughness: 0.95 })
+            };
+        }
         const snowMat = this.materials.snow;
 
-        if (variant === 'birch') {
-            const h = 4.6 * scale;
-            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.10 * scale, 0.16 * scale, h, 6), trunkMat);
-            trunk.position.y = h * 0.5;
-            treeGO.transform.add(trunk);
+        // Soft snow ring mound piled around tree base
+        const baseMound = new THREE.Mesh(new THREE.DodecahedronGeometry(0.65 * scale, 0), snowMat);
+        baseMound.scale.set(1.25, 0.34, 1.25);
+        baseMound.position.y = 0.06 * scale;
+        treeGO.transform.add(baseMound);
 
+        if (variant === 'birch') {
+            const trunkMat = this._treeBarkMats.birch;
+            const hLower = 2.5 * scale;
+            const hUpper = 2.6 * scale;
+            // Lower trunk with root flare
+            const trunkLow = new THREE.Mesh(new THREE.CylinderGeometry(0.12 * scale, 0.20 * scale, hLower, 7), trunkMat);
+            trunkLow.position.y = hLower * 0.5;
+            trunkLow.rotation.z = 0.03;
+            // Upper slightly bent birch trunk
+            const trunkUp = new THREE.Mesh(new THREE.CylinderGeometry(0.06 * scale, 0.12 * scale, hUpper, 7), trunkMat);
+            trunkUp.position.set(-0.07 * scale, hLower + hUpper * 0.48, 0.02 * scale);
+            trunkUp.rotation.z = -0.05;
+            treeGO.transform.add(trunkLow, trunkUp);
+
+            // Multi-level primary + secondary forked birch branches with snow cushions
             const branchSpecs = [
-                { y: 2.3 * scale, rx: 0.65, rz: 0.72, len: 1.5 * scale },
-                { y: 2.8 * scale, rx: -0.55, rz: -0.68, len: 1.4 * scale },
-                { y: 3.3 * scale, rx: 0.48, rz: -0.62, len: 1.25 * scale },
-                { y: 3.7 * scale, rx: -0.6, rz: 0.55, len: 1.15 * scale }
+                { y: 2.1 * scale, yaw: 0.2, tilt: 0.72, len: 1.75 * scale, r: 0.055 },
+                { y: 2.55 * scale, yaw: 2.1, tilt: 0.68, len: 1.65 * scale, r: 0.052 },
+                { y: 3.0 * scale, yaw: 4.1, tilt: 0.65, len: 1.55 * scale, r: 0.048 },
+                { y: 3.45 * scale, yaw: 1.1, tilt: 0.60, len: 1.40 * scale, r: 0.044 },
+                { y: 3.85 * scale, yaw: 3.2, tilt: 0.55, len: 1.25 * scale, r: 0.040 },
+                { y: 4.25 * scale, yaw: 5.2, tilt: 0.52, len: 1.05 * scale, r: 0.035 },
+                { y: 4.65 * scale, yaw: 0.8, tilt: 0.45, len: 0.85 * scale, r: 0.030 }
             ];
             for (const b of branchSpecs) {
-                const br = new THREE.Mesh(new THREE.CylinderGeometry(0.03 * scale, 0.055 * scale, b.len, 5), trunkMat);
-                br.position.set(0, b.y, 0);
-                br.rotation.set(b.rx, 0, b.rz);
-                const sn = new THREE.Mesh(new THREE.BoxGeometry(0.10 * scale, 0.08 * scale, b.len * 0.65), snowMat);
-                sn.position.set(0, b.len * 0.18, 0);
-                br.add(sn);
-                treeGO.transform.add(br);
+                const pivot = new THREE.Group();
+                pivot.position.set(-0.04 * scale, b.y, 0);
+                pivot.rotation.y = b.yaw;
+                const br = new THREE.Mesh(
+                    new THREE.CylinderGeometry(b.r * 0.55 * scale, b.r * scale, b.len, 5),
+                    trunkMat
+                );
+                br.position.set(Math.sin(b.tilt) * b.len * 0.45, Math.cos(b.tilt) * b.len * 0.45, 0);
+                br.rotation.z = -b.tilt;
+
+                // Secondary forked sub-branch & twigs
+                const subBr = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.014 * scale, 0.028 * scale, b.len * 0.55, 4),
+                    this._treeBarkMats.twig
+                );
+                subBr.position.set(Math.sin(b.tilt) * b.len * 0.65, Math.cos(b.tilt) * b.len * 0.65 + 0.12 * scale, 0.14 * scale);
+                subBr.rotation.set(0.35, 0.2, -b.tilt * 0.7);
+
+                // Snow cushion resting on top of the limb
+                const sn = new THREE.Mesh(new THREE.DodecahedronGeometry(0.24 * scale, 0), snowMat);
+                sn.scale.set(1.6, 0.48, 0.9);
+                sn.position.set(Math.sin(b.tilt) * b.len * 0.52, Math.cos(b.tilt) * b.len * 0.52 + 0.08 * scale, 0);
+
+                pivot.add(br, subBr, sn);
+                treeGO.transform.add(pivot);
             }
-            const crown = new THREE.Mesh(new THREE.DodecahedronGeometry(0.95 * scale, 0), snowMat);
-            crown.scale.set(1.2, 0.85, 1.2);
-            crown.position.y = 4.2 * scale;
-            treeGO.transform.add(crown);
-            treeGO.addComponent(BoxCollider, new THREE.Vector3(0.45 * scale, h, 0.45 * scale));
+
+            // Frost-dusted upper twig cluster
+            for (let c = 0; c < 3; c++) {
+                const puff = new THREE.Mesh(new THREE.DodecahedronGeometry((0.55 - c * 0.1) * scale, 0), snowMat);
+                puff.scale.set(1.2, 0.65, 1.15);
+                puff.position.set((c - 1) * 0.32 * scale, (4.65 + (c === 1 ? 0.32 : 0)) * scale, (c % 2 === 0 ? 0.15 : -0.15) * scale);
+                treeGO.transform.add(puff);
+            }
+
+            treeGO.addComponent(BoxCollider, new THREE.Vector3(0.45 * scale, (hLower + hUpper), 0.45 * scale));
             treeGO.addComponent(RigidBody, { bodyType: 'static' });
             this.engine.addGameObject(treeGO);
             this._registerEditable(treeGO.transform, name, {
                 category: 'courtyard',
-                extra: { gameObject: treeGO, primaryMesh: trunk, collide: true, materialKey: 'snow' }
+                extra: { gameObject: treeGO, primaryMesh: trunkLow, collide: true, materialKey: 'snow' }
             });
             return;
         }
 
-        const trunkH = 1.4 * scale;
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14 * scale, 0.22 * scale, trunkH, 6), trunkMat);
+        // Detailed 5-tier winter spruce with textured bark trunk, staggered evergreen boughs & heavy snow caps
+        const trunkH = 1.65 * scale;
+        const trunk = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.13 * scale, 0.26 * scale, trunkH, 7),
+            this._treeBarkMats.spruce
+        );
         trunk.position.y = trunkH * 0.5;
         treeGO.transform.add(trunk);
 
         const tiers = [
-            { y: 1.95 * scale, r: 1.35 * scale, h: 1.9 * scale },
-            { y: 3.10 * scale, r: 1.05 * scale, h: 1.65 * scale },
-            { y: 4.15 * scale, r: 0.72 * scale, h: 1.4 * scale }
+            { y: 1.75 * scale, r: 1.55 * scale, h: 1.65 * scale, rot: 0.0 },
+            { y: 2.65 * scale, r: 1.32 * scale, h: 1.50 * scale, rot: 0.45 },
+            { y: 3.48 * scale, r: 1.06 * scale, h: 1.38 * scale, rot: 0.90 },
+            { y: 4.22 * scale, r: 0.78 * scale, h: 1.22 * scale, rot: 1.35 },
+            { y: 4.88 * scale, r: 0.46 * scale, h: 1.02 * scale, rot: 1.80 }
         ];
-        for (const t of tiers) {
-            const cone = new THREE.Mesh(new THREE.ConeGeometry(t.r, t.h, 7), pineMat);
+        tiers.forEach((t, idx) => {
+            const boughMat = idx % 2 === 0 ? this._treeBarkMats.pineDark : this._treeBarkMats.pineMid;
+            const cone = new THREE.Mesh(new THREE.ConeGeometry(t.r, t.h, 8), boughMat);
             cone.position.y = t.y;
-            const snowCap = new THREE.Mesh(new THREE.ConeGeometry(t.r * 0.92, t.h * 0.58, 7), snowMat);
-            snowCap.position.y = t.y + t.h * 0.24;
+            cone.rotation.y = t.rot;
+            const snowCap = new THREE.Mesh(new THREE.ConeGeometry(t.r * 0.94, t.h * 0.56, 8), snowMat);
+            snowCap.position.y = t.y + t.h * 0.25;
+            snowCap.rotation.y = t.rot + 0.15;
             treeGO.transform.add(cone, snowCap);
-        }
+        });
 
-        treeGO.addComponent(BoxCollider, new THREE.Vector3(0.65 * scale, 4.8 * scale, 0.65 * scale));
+        treeGO.addComponent(BoxCollider, new THREE.Vector3(0.65 * scale, 5.4 * scale, 0.65 * scale));
         treeGO.addComponent(RigidBody, { bodyType: 'static' });
         this.engine.addGameObject(treeGO);
         this._registerEditable(treeGO.transform, name, {
@@ -4906,11 +5394,11 @@ export class KhrushchevkaBuilder {
         this.world.mistletoe = { hanging: mistletoeHanging, trampled: mistletoeTrampled };
 
         const strollerGroup = new THREE.Group();
-        const stCoatMat = this._ps1Mat({ color: 0x28303d, roughness: 0.9 });
-        const stPantsMat = this._ps1Mat({ color: 0x1a1e26, roughness: 0.92 });
-        const stBootMat = this._ps1Mat({ color: 0x121214, roughness: 0.85 });
-        const stSkinMat = this._ps1Mat({ color: 0xc8a287, roughness: 0.85 });
-        const stFurMat = this._ps1Mat({ color: 0x45382e, roughness: 0.95 });
+        const stCoatMat = this._ps1Mat({ color: 0x28303d, map: this.materials.cloth?.map, roughness: 0.9 });
+        const stPantsMat = this._ps1Mat({ color: 0x1a1e26, map: this.materials.cloth?.map, roughness: 0.92 });
+        const stBootMat = this._ps1Mat({ color: 0x121214, map: this.materials.cloth?.map, roughness: 0.85 });
+        const stSkinMat = this._ps1Mat({ color: 0xc8a287, map: this.materials.skin?.map, roughness: 0.85 });
+        const stFurMat = this._ps1Mat({ color: 0x45382e, map: this.materials.hair?.map, roughness: 0.95 });
 
         const stLeftLeg = new THREE.Group();
         stLeftLeg.position.set(-0.10, 0.78, 0);
@@ -4956,7 +5444,7 @@ export class KhrushchevkaBuilder {
 
         strollerGroup.add(stLeftLeg, stRightLeg, stTorso, stCollar, stLeftArm, stRightArm, stHead, stHat, stEarFlapL, stEarFlapR);
         strollerGroup.userData.limbs = { leftLeg: stLeftLeg, rightLeg: stRightLeg, leftArm: stLeftArm, rightArm: stRightArm };
-        strollerGroup.position.set(-14.0, -6.5, -17.5);
+        strollerGroup.position.set(-14.0, -8.5, -17.5);
         strollerGroup.visible = false;
         this.scene.add(strollerGroup);
         this._registerEditable(strollerGroup, 'CourtyardStroller', {
@@ -5018,16 +5506,118 @@ export class KhrushchevkaBuilder {
         const car = new THREE.Group();
         car.position.set(x, gy, z);
         car.rotation.y = rotY;
-        const bodyMat = this._ps1Mat({ color });
-        const body = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.65, 3.8), bodyMat);
-        body.position.y = 0.52;
-        const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.55, 1.9), bodyMat);
-        cabin.position.set(0, 1.08, -0.1);
-        const snowCap = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.16, 1.95), this.materials.snow);
-        snowCap.position.set(0, 1.38, -0.1);
-        const hoodSnow = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.12, 1.25), this.materials.snow);
-        hoodSnow.position.set(0, 0.88, 1.25);
-        car.add(body, cabin, snowCap, hoodSnow);
+
+        const bodyMat = this._ps1Mat({ color, roughness: 0.55, metalness: 0.22 });
+        const trimMat = this._ps1Mat({ color: 0x202328, roughness: 0.85, metalness: 0.25 });
+        const chromeMat = this._ps1Mat({ color: 0xbac2cc, roughness: 0.28, metalness: 0.78 });
+        const tireMat = this._ps1Mat({ color: 0x16181c, roughness: 0.95 });
+        const winMat = this._ps1Mat({ color: 0x1c2836, roughness: 0.22, metalness: 0.45 });
+        const headlightMat = this._ps1Mat({ color: 0xe6e4cc, emissive: 0x302c18, roughness: 0.25 });
+        const amberMat = this._ps1Mat({ color: 0xd97d1c, roughness: 0.35 });
+        const tailMat = this._ps1Mat({ color: 0x9e1c1c, emissive: 0x240404, roughness: 0.35 });
+        const plateMat = this._ps1Mat({ color: 0x181a1e, roughness: 0.7 });
+        const snowMat = this.materials.snow;
+
+        // Lower body chassis & side sill skirt (classic boxy Soviet Zhiguli / VAZ-2101 proportions)
+        const body = new THREE.Mesh(new THREE.BoxGeometry(1.66, 0.58, 4.02), bodyMat);
+        body.position.y = 0.56;
+        const skirt = new THREE.Mesh(new THREE.BoxGeometry(1.60, 0.14, 3.85), trimMat);
+        skirt.position.y = 0.28;
+
+        // Cabin greenhouse + roof
+        const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.44, 0.52, 1.98), bodyMat);
+        cabin.position.set(0, 1.09, -0.14);
+
+        // Windshield, rear glass & side windows recessed slightly on cabin
+        const frontGlass = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.40, 0.06), winMat);
+        frontGlass.position.set(0, 1.09, 0.84);
+        frontGlass.rotation.x = -0.22;
+        const rearGlass = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.38, 0.06), winMat);
+        rearGlass.position.set(0, 1.09, -1.12);
+        rearGlass.rotation.x = 0.20;
+        const sideGlassL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.36, 1.66), winMat);
+        sideGlassL.position.set(-0.715, 1.10, -0.14);
+        const sideGlassR = sideGlassL.clone();
+        sideGlassR.position.x = 0.715;
+        // Center B-pillar dividing front/rear side doors
+        const pillarL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.40, 0.10), bodyMat);
+        pillarL.position.set(-0.71, 1.10, -0.10);
+        const pillarR = pillarL.clone();
+        pillarR.position.x = 0.71;
+
+        // Chrome front & rear bumpers + radiator grille
+        const bumperF = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.11, 0.14), chromeMat);
+        bumperF.position.set(0, 0.34, 2.04);
+        const bumperR = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.11, 0.14), chromeMat);
+        bumperR.position.set(0, 0.34, -2.04);
+        const grille = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.24, 0.05), trimMat);
+        grille.position.set(0, 0.58, 2.00);
+        const grilleTrim = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.03, 0.06), chromeMat);
+        grilleTrim.position.set(0, 0.58, 2.01);
+
+        // Twin round headlights, amber turn signals & red taillights
+        for (const sx of [-0.62, 0.62]) {
+            const hl = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.05, 8), headlightMat);
+            hl.rotation.x = Math.PI / 2;
+            hl.position.set(sx, 0.60, 2.01);
+            const hlBezel = new THREE.Mesh(new THREE.CylinderGeometry(0.125, 0.125, 0.03, 8), chromeMat);
+            hlBezel.rotation.x = Math.PI / 2;
+            hlBezel.position.set(sx, 0.60, 2.00);
+            const turn = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.04), amberMat);
+            turn.position.set(sx * 1.16, 0.45, 2.01);
+            const tail = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.12, 0.05), tailMat);
+            tail.position.set(sx, 0.62, -2.01);
+            car.add(hl, hlBezel, turn, tail);
+        }
+
+        // License plates, side mirrors & door handles
+        const plateF = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.11, 0.03), plateMat);
+        plateF.position.set(0, 0.36, 2.11);
+        const plateR = plateF.clone();
+        plateR.position.set(0, 0.50, -2.02);
+        for (const sx of [-1, 1]) {
+            const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.06), chromeMat);
+            mirror.position.set(sx * 0.82, 0.94, 0.58);
+            const handle1 = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.12), chromeMat);
+            handle1.position.set(sx * 0.84, 0.74, 0.08);
+            const handle2 = handle1.clone();
+            handle2.position.z = -0.62;
+            car.add(mirror, handle1, handle2);
+        }
+
+        // 4 Wheels with rubber tires and chrome hubcaps
+        const wheelPositions = [
+            [-0.78, 0.30, 1.24],
+            [0.78, 0.30, 1.24],
+            [-0.78, 0.30, -1.24],
+            [0.78, 0.30, -1.24]
+        ];
+        for (const [wx, wy, wz] of wheelPositions) {
+            const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.22, 10), tireMat);
+            tire.rotation.z = Math.PI / 2;
+            tire.position.set(wx, wy, wz);
+            const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.24, 8), chromeMat);
+            hub.rotation.z = Math.PI / 2;
+            hub.position.set(wx, wy, wz);
+            car.add(tire, hub);
+        }
+
+        // Winter snowdrifts accumulated on roof, hood, trunk & around tires
+        const roofSnow = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.16, 1.94), snowMat);
+        roofSnow.position.set(0, 1.40, -0.14);
+        const hoodSnow = new THREE.Mesh(new THREE.BoxGeometry(1.54, 0.12, 1.18), snowMat);
+        hoodSnow.position.set(0, 0.89, 1.38);
+        const trunkSnow = new THREE.Mesh(new THREE.BoxGeometry(1.54, 0.10, 0.78), snowMat);
+        trunkSnow.position.set(0, 0.88, -1.56);
+        const baseSnow = new THREE.Mesh(new THREE.DodecahedronGeometry(0.55, 0), snowMat);
+        baseSnow.scale.set(2.0, 0.42, 4.1);
+        baseSnow.position.set(0, 0.08, 0);
+
+        car.add(
+            body, skirt, cabin, frontGlass, rearGlass, sideGlassL, sideGlassR,
+            pillarL, pillarR, bumperF, bumperR, grille, grilleTrim, plateF, plateR,
+            roofSnow, hoodSnow, trunkSnow, baseSnow
+        );
         this.scene.add(car);
         this._registerEditable(car, name, {
             category: 'courtyard',
@@ -5040,11 +5630,11 @@ export class KhrushchevkaBuilder {
         this._currentGroupId = null;
 
         const snowGO = new GameObject('CourtyardSnow');
-        snowGO.transform.position.set(0, -6.5, -15.0);
+        snowGO.transform.position.set(0, -8.5, -15.0);
         snowGO.addComponent(ParticleEmitter, {
             mode: 'snow',
             count: 480,
-            bounds: new THREE.Vector3(32, 16, 19.5),
+            bounds: new THREE.Vector3(32, 19, 19.5),
             color: 0xe6f0ff,
             size: 0.042,
             speed: 1.0
@@ -5230,7 +5820,65 @@ export class KhrushchevkaBuilder {
                 customConfig: JSON.parse(JSON.stringify(cfg))
             }
         });
+        if (cfg.landscape) {
+            this.applyLandscapeToObject(go.transform, true, cfg.landscapeData || null);
+        }
+
         return go.transform;
+    }
+
+    applyLandscapeToObject(obj, enabled, landscapeData = null) {
+        if (!obj || !obj.userData) return false;
+        const mesh = obj.userData.primaryMesh || (obj.isMesh ? obj : null);
+        if (!mesh || !mesh.geometry) return false;
+
+        obj.userData.landscape = !!enabled;
+        const boxSize = obj.userData.boxSize || [1, 0.2, 1];
+        const [w, h, d] = boxSize;
+
+        if (!enabled) {
+            obj.userData.landscapeData = null;
+            if (obj.userData.isStaticBox || obj.userData.isSinglePrimitive) {
+                mesh.geometry.dispose();
+                mesh.geometry = this._buildPrimitiveGeometry(obj.userData.shape || 'box', w, h, d, obj.userData.radialSegs || 10);
+                this._applyWorldSpaceBoxUVs(mesh.geometry, w, h, d, obj.position.x, obj.position.y, obj.position.z, mesh.material);
+            }
+            return true;
+        }
+
+        const segX = Math.max(8, Math.min(64, Number(landscapeData?.segX) || 40));
+        const segZ = Math.max(8, Math.min(64, Number(landscapeData?.segZ) || 40));
+        const count = (segX + 1) * (segZ + 1);
+        const heights = new Float32Array(count);
+        if (landscapeData && Array.isArray(landscapeData.heights)) {
+            const len = Math.min(count, landscapeData.heights.length);
+            for (let i = 0; i < len; i++) heights[i] = Number(landscapeData.heights[i]) || 0;
+        }
+
+        const geo = new THREE.BoxGeometry(Math.max(0.05, w), Math.max(0.02, h), Math.max(0.05, d), segX, 1, segZ);
+        this._applyWorldSpaceBoxUVs(geo, w, h, d, obj.position.x, obj.position.y, obj.position.z, mesh.material);
+        const pos = geo.attributes.position;
+        const halfW = w * 0.5;
+        const halfD = d * 0.5;
+        const topY = h * 0.5;
+        for (let i = 0; i < pos.count; i++) {
+            if (pos.getY(i) > 0) {
+                const vx = pos.getX(i);
+                const vz = pos.getZ(i);
+                const ix = Math.max(0, Math.min(segX, Math.round(((vx + halfW) / w) * segX)));
+                const iz = Math.max(0, Math.min(segZ, Math.round(((vz + halfD) / d) * segZ)));
+                pos.setY(i, topY + heights[iz * (segX + 1) + ix]);
+            }
+        }
+        pos.needsUpdate = true;
+        geo.computeVertexNormals();
+        mesh.geometry.dispose();
+        mesh.geometry = geo;
+        obj.userData.landscapeData = { segX, segZ, heights };
+        if (obj.name === 'StoreCityGround') {
+            this.syncTrailOverlayToGround?.();
+        }
+        return true;
     }
 
     spawnCustomLight(cfg) {
@@ -5264,6 +5912,13 @@ export class KhrushchevkaBuilder {
             for (const cfg of overrides.addedLights) {
                 this.spawnCustomLight(cfg);
             }
+        }
+
+        if (typeof this.redrawStreetTrail === 'function') {
+            const strokes = (Array.isArray(overrides.streetTrailStrokes) && overrides.streetTrailStrokes.length > 0)
+                ? overrides.streetTrailStrokes
+                : (overrides.modifiedObjects?.StoreCityGround?.streetTrailStrokes || []);
+            this.redrawStreetTrail(strokes);
         }
 
         const modObjs = overrides.modifiedObjects || {};
@@ -5321,6 +5976,11 @@ export class KhrushchevkaBuilder {
                 obj.userData.primaryMesh.geometry.dispose();
                 obj.userData.primaryMesh.geometry = this._buildPrimitiveGeometry(primShape, w, h, d, obj.userData.radialSegs || 10);
                 obj.userData.boxSize = [w, h, d];
+            }
+
+            if (patch.landscape !== undefined || patch.landscapeData) {
+                const wantLand = patch.landscape !== undefined ? !!patch.landscape : !!obj.userData.landscape;
+                this.applyLandscapeToObject(obj, wantLand, patch.landscapeData || null);
             }
 
             const hasMatOverride = patch.materialKey !== undefined || patch.color !== undefined ||

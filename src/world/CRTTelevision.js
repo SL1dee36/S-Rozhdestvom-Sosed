@@ -17,6 +17,7 @@ export class CRTTelevision {
         this.channels = ['movie', 'weather', 'cartoon', 'ogonyok'];
         this.channelIndex = 0;
         this.cracked = false;
+        this.horrorLevel = 0;
         this._time = 0;
         this._frameAccum = 0;
         this._vsyncY = 0;
@@ -32,6 +33,10 @@ export class CRTTelevision {
         this.cracked = cracked;
         const idx = this.channels.indexOf(mode);
         if (idx >= 0) this.channelIndex = idx;
+    }
+
+    setHorrorLevel(level = 0) {
+        this.horrorLevel = Math.max(0, Math.min(3, level));
     }
 
     nextChannel() {
@@ -112,12 +117,13 @@ export class CRTTelevision {
 
         ctx.fillStyle = '#5c1a33';
         ctx.fillRect(20, 125, 216, 40);
-        const sway = Math.sin(t * 3.1) * 4;
+        const eerieFreeze = this.horrorLevel >= 2 && (Math.sin(t * 0.45) > 0.35);
+        const sway = eerieFreeze ? 0 : Math.sin(t * 3.1) * 4;
         // Singer in retro suit instead of black silhouette
         ctx.fillStyle = '#1e2436';
         ctx.fillRect(116 + sway, 118, 10, 24);
         ctx.fillRect(130 + sway, 118, 10, 24);
-        ctx.fillStyle = '#283147';
+        ctx.fillStyle = eerieFreeze ? '#3a0e12' : '#283147';
         ctx.fillRect(110 + sway, 86, 36, 36);
         ctx.fillStyle = '#f0ebe1';
         ctx.beginPath();
@@ -128,7 +134,7 @@ export class CRTTelevision {
         ctx.fill();
         ctx.fillStyle = '#a81c1c';
         ctx.fillRect(125 + sway, 88, 6, 4);
-        ctx.fillStyle = '#d9b396';
+        ctx.fillStyle = eerieFreeze ? '#9c8676' : '#d9b396';
         ctx.beginPath();
         ctx.arc(128 + sway, 72, 12, 0, Math.PI * 2);
         ctx.fill();
@@ -136,9 +142,9 @@ export class CRTTelevision {
         ctx.beginPath();
         ctx.arc(128 + sway, 66, 12, Math.PI, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = '#241a14';
-        ctx.fillRect(123 + sway, 70, 2, 2);
-        ctx.fillRect(131 + sway, 70, 2, 2);
+        ctx.fillStyle = eerieFreeze ? '#ffffff' : '#241a14';
+        ctx.fillRect(123 + sway, 70, eerieFreeze ? 3 : 2, eerieFreeze ? 3 : 2);
+        ctx.fillRect(131 + sway, 70, eerieFreeze ? 3 : 2, eerieFreeze ? 3 : 2);
         ctx.fillStyle = '#c8c8d8';
         ctx.fillRect(138, 78, 2, 52);
         ctx.fillStyle = '#8890a0';
@@ -155,7 +161,8 @@ export class CRTTelevision {
         ctx.fillStyle = '#ffe999';
         ctx.font = 'bold 11px monospace';
         const tickerX = 256 - ((t * 48) % 520);
-        ctx.fillText(tr('tv.ticker'), tickerX, 183);
+        const tickerText = eerieFreeze ? tr('tv.horror_ticker') : tr('tv.ticker');
+        ctx.fillText(tickerText, tickerX, 183);
 
         if (this.tvLight) {
             const r = hueShift > 0 ? 0.45 : 0.72;
@@ -242,12 +249,13 @@ export class CRTTelevision {
         ctx.fillStyle = '#252c3b'; ctx.fillRect(198, 108, 42, 60);
         ctx.fillStyle = '#dfb89c'; ctx.beginPath(); ctx.arc(219, 92, 12, 0, Math.PI * 2); ctx.fill();
         // Header & footer
-        ctx.fillStyle = '#1d4d7a'; ctx.fillRect(0, 0, W, 24);
+        const eerieWeather = this.horrorLevel >= 1 && (Math.sin(t * 0.55) > 0.25);
+        ctx.fillStyle = eerieWeather ? '#5c0e14' : '#1d4d7a'; ctx.fillRect(0, 0, W, 24);
         ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px monospace';
         ctx.fillText('3 КАНАЛ · ПРОГНОЗ ПОГОДЫ', 12, 16);
         ctx.fillStyle = '#0e2238'; ctx.fillRect(0, 164, W, 28);
-        ctx.fillStyle = '#9fe2ff'; ctx.font = 'bold 10px monospace';
-        ctx.fillText('31 ДЕКАБРЯ: МЕТЕЛЬ, МОРОЗ ДО -20°C', 18, 182);
+        ctx.fillStyle = eerieWeather ? '#ff6b6b' : '#9fe2ff'; ctx.font = 'bold 10px monospace';
+        ctx.fillText(eerieWeather ? tr('tv.horror_weather') : '31 ДЕКАБРЯ: МЕТЕЛЬ, МОРОЗ ДО -20°C', 14, 182);
         if (this.tvLight) {
             this.tvLight.color.setRGB(0.42, 0.72, 1.0);
             this.tvLight.intensity = 1.6;
@@ -257,6 +265,7 @@ export class CRTTelevision {
     _drawCartoon(ctx, W, H) {
         // Cozy winter Soviet cartoon (blue night forest, dancing snowman, glowing tree)
         const t = this._time;
+        const eerieCartoon = this.horrorLevel >= 1 && (Math.sin(t * 0.5) > 0.3);
         const grad = ctx.createLinearGradient(0, 0, 0, H);
         grad.addColorStop(0, '#0d1b3d');
         grad.addColorStop(1, '#264373');
@@ -266,21 +275,37 @@ export class CRTTelevision {
         ctx.fillStyle = '#dce8f5';
         ctx.fillRect(0, 134, W, 58);
         // Moon
-        ctx.fillStyle = '#fff0a8';
+        ctx.fillStyle = eerieCartoon ? '#c92a2a' : '#fff0a8';
         ctx.beginPath(); ctx.arc(214, 38, 16, 0, Math.PI * 2); ctx.fill();
         // Spruce tree on left
         ctx.fillStyle = '#1d6134';
         ctx.beginPath(); ctx.moveTo(64, 42); ctx.lineTo(26, 138); ctx.lineTo(102, 138); ctx.closePath(); ctx.fill();
-        // Bouncing snowman on right
-        const hop = Math.abs(Math.sin(t * 3.8)) * 10;
+        if (eerieCartoon) {
+            // Tall dark silhouette in Santa hat behind the spruce tree
+            ctx.fillStyle = '#08090d';
+            ctx.fillRect(92, 92, 18, 44);
+            ctx.beginPath(); ctx.arc(101, 84, 7, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(98, 82, 2, 2);
+            ctx.fillRect(103, 82, 2, 2);
+        }
+        // Bouncing snowman on right (freezes & stares at player during eerie moment)
+        const hop = eerieCartoon ? 0 : Math.abs(Math.sin(t * 3.8)) * 10;
         const sx = 162;
         ctx.fillStyle = '#f4f8fc';
         ctx.beginPath(); ctx.arc(sx, 128 - hop, 18, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(sx, 102 - hop, 13, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(sx, 82 - hop, 9, 0, Math.PI * 2); ctx.fill();
-        // Bucket hat & carrot nose
+        // Bucket hat & carrot nose / hollow staring eyes
         ctx.fillStyle = '#758294'; ctx.fillRect(sx - 7, 64 - hop, 14, 11);
-        ctx.fillStyle = '#eb721c'; ctx.fillRect(sx - 15, 81 - hop, 10, 3);
+        if (eerieCartoon) {
+            ctx.fillStyle = '#07080a';
+            ctx.fillRect(sx - 5, 79, 3, 4);
+            ctx.fillRect(sx + 2, 79, 3, 4);
+            ctx.fillRect(sx - 4, 86, 8, 2);
+        } else {
+            ctx.fillStyle = '#eb721c'; ctx.fillRect(sx - 15, 81 - hop, 10, 3);
+        }
         // Falling snow
         ctx.fillStyle = '#ffffff';
         for (let i = 0; i < 24; i++) {
@@ -463,6 +488,13 @@ export class NeighborWindowCanvas {
         this._redraw();
     }
 
+    setWatcherEyes(visible) {
+        if (this.watcherEyes === !!visible) return;
+        this.watcherEyes = !!visible;
+        this._dirty = true;
+        this._redraw();
+    }
+
     setMode(mode) {
         if (this.mode === mode) return;
         this.mode = mode;
@@ -561,6 +593,17 @@ export class NeighborWindowCanvas {
         ctx.lineTo(26, H - 15);
         ctx.closePath();
         ctx.fill();
+        if (this.watcherEyes) {
+            ctx.fillStyle = 'rgba(20, 24, 34, 0.9)';
+            ctx.beginPath();
+            ctx.arc(W * 0.5, 92, 22, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.beginPath();
+            ctx.arc(W * 0.5 - 8, 90, 3.2, 0, Math.PI * 2);
+            ctx.arc(W * 0.5 + 8, 90, 3.2, 0, Math.PI * 2);
+            ctx.fill();
+        }
         this._drawWindowMullions(ctx, W, H);
     }
 
