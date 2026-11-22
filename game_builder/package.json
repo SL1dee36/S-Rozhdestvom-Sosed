@@ -34,10 +34,10 @@
       "signAndEditExecutable": false
     },
     "portable": {
-      "artifactName": "NewYearsEve-1.3.0.exe"
+      "artifactName": "NewYearsEve-1.4.3.exe"
     },
     "nsis": {
-      "artifactName": "NewYearsEve-1.3.0-Setup.exe",
+      "artifactName": "NewYearsEve-1.4.3-Setup.exe",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     }
