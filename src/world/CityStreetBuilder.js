@@ -264,7 +264,7 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
         pole.position.y = 1.375;
         const board = new THREE.Mesh(
             new THREE.BoxGeometry(1.15, 0.44, 0.05),
-            new THREE.MeshBasicMaterial({ map: tex.createStreetSignTexture(topTxt, botTxt) })
+            builder._ps1Mat({ map: tex.createStreetSignTexture(topTxt, botTxt), roughness: 0.74 })
         );
         board.position.set(0, 2.48, 0.04);
         g.add(pole, board);
@@ -328,7 +328,7 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
     // Entrance number plaque above door
     const podSign = new THREE.Mesh(
         new THREE.PlaneGeometry(0.95, 0.36),
-        new THREE.MeshBasicMaterial({ map: tex.createStreetSignTexture('ПОДЪЕЗД №2', 'КВ. 25–44') })
+        builder._ps1Mat({ map: tex.createStreetSignTexture('ПОДЪЕЗД №2', 'КВ. 25–44'), roughness: 0.74 })
     );
     podSign.position.set(PX, OY + 2.48, PZ_N - 0.14);
     podSign.rotation.y = Math.PI;
@@ -450,7 +450,7 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
     cCurtainR.position.z = PZ_N + 2.78;
     const cSign = new THREE.Mesh(
         new THREE.PlaneGeometry(0.82, 0.22),
-        new THREE.MeshBasicMaterial({ map: tex.createStoreDeptSignTexture('КОНСЬЕРЖ', '#243a4d', '#f5ebd0') })
+        builder._ps1Mat({ map: tex.createStoreDeptSignTexture('КОНСЬЕРЖ', '#243a4d', '#f5ebd0'), roughness: 0.72 })
     );
     cSign.position.set(PX + 0.76, OY + 2.30, PZ_N + 1.85);
     cSign.rotation.y = -Math.PI / 2;
@@ -678,7 +678,7 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
     kioskWin.position.set(79.5, OY + 1.52, 26.98);
     const kioskSign = new THREE.Mesh(
         new THREE.PlaneGeometry(2.6, 0.42),
-        new THREE.MeshBasicMaterial({ map: tex.createStoreDeptSignTexture('СОЮЗПЕЧАТЬ', '#7d1e1e', '#fff0c2') })
+        builder._ps1Mat({ map: tex.createStoreDeptSignTexture('СОЮЗПЕЧАТЬ', '#7d1e1e', '#fff0c2'), roughness: 0.72 })
     );
     kioskSign.position.set(79.5, OY + 2.38, 26.97);
     kioskSign.rotation.y = Math.PI;
@@ -767,17 +767,37 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
     // =========================================================================
     // 7. MOVING CITY TRAFFIC (Rare Soviet Cars with Headlights & Taillights)
     // =========================================================================
+    // Soft radial-gradient headlight ground-pool texture for realistic car illumination
+    const hlPoolCanvas = document.createElement('canvas');
+    hlPoolCanvas.width = 128;
+    hlPoolCanvas.height = 128;
+    const hCtx = hlPoolCanvas.getContext('2d');
+    const hGrad = hCtx.createRadialGradient(64, 108, 6, 64, 68, 62);
+    hGrad.addColorStop(0.0, 'rgba(255, 244, 198, 0.72)');
+    hGrad.addColorStop(0.45, 'rgba(255, 232, 168, 0.28)');
+    hGrad.addColorStop(1.0, 'rgba(255, 224, 140, 0.0)');
+    hCtx.fillStyle = hGrad;
+    hCtx.fillRect(0, 0, 128, 128);
+    const hlPoolTex = new THREE.CanvasTexture(hlPoolCanvas);
+    const hlPoolMat = new THREE.MeshBasicMaterial({
+        map: hlPoolTex,
+        transparent: true,
+        opacity: 0.78,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    });
+
     const buildTrafficCar = (color, dirX, laneZ, startX, speed) => {
         const g = new THREE.Group();
         g.position.set(startX, OY + 0.05, laneZ);
         g.rotation.y = dirX > 0 ? Math.PI / 2 : -Math.PI / 2;
 
-        const bodyMat = builder._ps1Mat({ color, roughness: 0.5, metalness: 0.25 });
-        const winMat = builder._ps1Mat({ color: 0x1a2634, roughness: 0.2 });
+        const bodyMat = builder._ps1Mat({ color, roughness: 0.55, metalness: 0.22 });
+        const winMat = builder._ps1Mat({ color: 0x1a2634, roughness: 0.22 });
         const tireMat = builder._ps1Mat({ color: 0x14161a, roughness: 0.95 });
         const chromeMat = builder._ps1Mat({ color: 0xbac2cc, roughness: 0.3, metalness: 0.75 });
-        const hlMat = new THREE.MeshBasicMaterial({ color: 0xfff2c2 });
-        const tlMat = new THREE.MeshBasicMaterial({ color: 0xff2424 });
+        const hlMat = builder._ps1Mat({ color: 0xfff5d0, emissive: 0xffe49c, emissiveIntensity: 1.4, roughness: 0.2 });
+        const tlMat = builder._ps1Mat({ color: 0xb81c1c, emissive: 0xcc1818, emissiveIntensity: 0.9, roughness: 0.35 });
 
         const body = new THREE.Mesh(new THREE.BoxGeometry(1.66, 0.58, 3.95), bodyMat);
         body.position.y = 0.56;
@@ -801,15 +821,17 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
             hl.position.set(sx, 0.60, 1.99);
             const tl = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.11, 0.05), tlMat);
             tl.position.set(sx, 0.62, -1.99);
-            // Soft volumetric headlight beam cone on the snowy road
-            const beam = new THREE.Mesh(
-                new THREE.ConeGeometry(0.95, 5.2, 8, 1, true),
-                new THREE.MeshBasicMaterial({ color: 0xfff0b8, transparent: true, opacity: 0.13, depthWrite: false, side: THREE.DoubleSide })
-            );
-            beam.rotation.x = -Math.PI / 2;
-            beam.position.set(sx, 0.52, 4.55);
-            g.add(hl, tl, beam);
+            g.add(hl, tl);
         }
+        // Soft radial headlight ground projection + real warm PointLight illuminating the snowy road ahead
+        const hlPool = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 7.6), hlPoolMat);
+        hlPool.rotation.x = -Math.PI / 2;
+        hlPool.position.set(0, 0.05, 5.5);
+        const hlLight = new THREE.PointLight(0xffeec2, 2.6, 12.0, 1.35);
+        hlLight.position.set(0, 0.85, 3.8);
+        g.add(hlPool, hlLight);
+        streetLights.push(hlLight);
+
         const wheels = [];
         for (const [wx, wz] of [[-0.78, 1.22], [0.78, 1.22], [-0.78, -1.22], [0.78, -1.22]]) {
             const w = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.22, 10), tireMat);
@@ -819,7 +841,7 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
             wheels.push(w);
         }
         scene.add(g);
-        return { group: g, wheels, dirX, laneZ, speed, minX: 34, maxX: 118, pauseTimer: 0 };
+        return { group: g, wheels, dirX, laneZ, speed, minX: 34, maxX: 118, pauseTimer: 0, hornCooldown: 0, engineTimer: Math.random() * 0.6, tlMat };
     };
 
     const trafficCars = [
@@ -873,6 +895,7 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
             wpIdx: 1,
             speed: cfg.speed,
             walkCycle: cfg.phase,
+            blinkTimer: 1.5 + Math.random() * 3.0,
             yaw: 0
         };
     });
@@ -944,9 +967,24 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
                 const ahead = (playerPos.x - car.group.position.x) * car.dirX;
                 if (ahead > 0.5 && ahead < 6.5) blockedByPlayer = true;
             }
-            if (!blockedByPlayer) {
+            if (car.hornCooldown > 0) car.hornCooldown -= dt;
+            if (car.tlMat) car.tlMat.emissiveIntensity = blockedByPlayer ? 2.2 : 0.85;
+
+            if (blockedByPlayer) {
+                if (car.hornCooldown <= 0) {
+                    car.hornCooldown = 2.4 + Math.random() * 0.8;
+                    engine.audioSystem?.playSpatialOneShot?.('car_horn', car.group.position, { volume: 0.75 });
+                }
+            } else {
                 car.group.position.x += car.dirX * car.speed * dt;
                 for (const w of car.wheels) w.rotation.x += dt * car.speed * 2.5;
+                if (playerPos && car.group.position.distanceTo(playerPos) < 20) {
+                    car.engineTimer -= dt;
+                    if (car.engineTimer <= 0) {
+                        car.engineTimer = 0.72 + Math.random() * 0.22;
+                        engine.audioSystem?.playSpatialOneShot?.('car_engine_pass', car.group.position, { volume: 0.42 });
+                    }
+                }
                 if (car.dirX > 0 && car.group.position.x > car.maxX) {
                     car.group.position.x = car.minX;
                     car.pauseTimer = 2.0 + Math.random() * 5.0; // Rare traffic spacing
@@ -957,18 +995,22 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
             }
         }
 
-        // Update walking winter pedestrians
-        for (const ped of pedestrians) {
+        // Update walking winter pedestrians with organic, slightly chaotic human gait
+        const nowSec = performance.now() * 0.001;
+        for (let pIdx = 0; pIdx < pedestrians.length; pIdx++) {
+            const ped = pedestrians[pIdx];
             if (ped.rig.root.userData?.deleted || !ped.rig.root.visible) continue;
             const pos = ped.rig.root.position;
             const target = ped.waypoints[ped.wpIdx];
             const dx = target.x - pos.x;
             const dz = target.z - pos.z;
             const dist = Math.hypot(dx, dz);
+            const cadenceDrift = 0.92 + 0.14 * Math.sin(nowSec * 0.55 + pIdx * 1.9);
+            const curSpeed = ped.speed * cadenceDrift;
             if (dist < 0.35) {
                 ped.wpIdx = (ped.wpIdx + 1) % ped.waypoints.length;
             } else {
-                const step = Math.min(dist, ped.speed * dt);
+                const step = Math.min(dist, curSpeed * dt);
                 pos.x += (dx / dist) * step;
                 pos.z += (dz / dist) * step;
                 const goalYaw = Math.atan2(-dx, -dz);
@@ -978,15 +1020,37 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
                 ped.yaw += diff * Math.min(1, dt * 6.0);
                 ped.rig.root.rotation.y = ped.yaw;
             }
-            ped.walkCycle += dt * ped.speed * 5.2;
+            ped.walkCycle += dt * curSpeed * 5.1;
             const s = Math.sin(ped.walkCycle);
-            ped.rig.pelvis.position.y = 0.78 + Math.abs(s) * 0.02;
-            ped.rig.legL.rotation.x = s * 0.48;
-            ped.rig.kneeL.rotation.x = -Math.max(0, -s) * 0.62 - 0.05;
-            ped.rig.legR.rotation.x = -s * 0.48;
-            ped.rig.kneeR.rotation.x = -Math.max(0, s) * 0.62 - 0.05;
-            ped.rig.shoulderL.rotation.x = -s * 0.32;
-            ped.rig.shoulderR.rotation.x = s * 0.32;
+            const c = Math.cos(ped.walkCycle);
+            const asym = 0.08 * Math.sin(ped.walkCycle * 0.5 + pIdx * 2.1);
+
+            ped.rig.pelvis.position.y = 0.78 + Math.abs(s) * 0.026;
+            ped.rig.pelvis.rotation.z = s * 0.032;
+            ped.rig.pelvis.rotation.y = s * 0.055;
+            ped.rig.torsoPivot.rotation.x = -0.055 + Math.abs(c) * 0.022;
+            ped.rig.torsoPivot.rotation.y = -s * 0.085;
+            ped.rig.torsoPivot.rotation.z = -s * 0.025;
+            ped.rig.headPivot.rotation.y = Math.sin(nowSec * 0.7 + pIdx * 2.7) * 0.16;
+            ped.rig.headPivot.rotation.x = 0.03 + Math.sin(nowSec * 1.3 + pIdx) * 0.04;
+
+            ped.rig.legL.rotation.x = (s + asym) * 0.50;
+            ped.rig.kneeL.rotation.x = -Math.max(0, -s) * 0.72 - 0.06;
+            ped.rig.legR.rotation.x = (-s + asym) * 0.50;
+            ped.rig.kneeR.rotation.x = -Math.max(0, s) * 0.72 - 0.06;
+            ped.rig.shoulderL.rotation.x = -s * (0.34 + (pIdx % 2) * 0.08);
+            ped.rig.elbowL.rotation.x = 0.22 + Math.max(0, -s) * 0.28;
+            ped.rig.shoulderR.rotation.x = s * (0.36 - (pIdx % 2) * 0.06);
+            ped.rig.elbowR.rotation.x = 0.24 + Math.max(0, s) * 0.26;
+            ped.blinkTimer -= dt;
+            let lid = 0.06;
+            if (ped.blinkTimer < 0) {
+                const b = -ped.blinkTimer;
+                lid = THREE.MathUtils.lerp(0.06, 1.15, Math.sin(Math.min(1, b / 0.16) * Math.PI));
+                if (b > 0.16) ped.blinkTimer = 2.2 + Math.random() * 3.4;
+            }
+            if (ped.rig.eyelidL) ped.rig.eyelidL.scale.y = lid;
+            if (ped.rig.eyelidR) ped.rig.eyelidR.scale.y = lid;
         }
     };
 

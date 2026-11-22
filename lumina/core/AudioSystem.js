@@ -328,6 +328,118 @@ export class AudioSystem {
             src.start();
             lfo.start();
             nodes.push(src, lfo);
+        } else if (kind === 'winter_street_music') {
+            // Nostalgic post-Soviet winter night street ambient music (warm detuned electric pad + soft bells)
+            const chords = [
+                [220.00, 261.63, 329.63, 392.00], // Am7
+                [174.61, 220.00, 261.63, 329.63], // Fmaj7
+                [146.83, 220.00, 261.63, 349.23], // Dm7
+                [164.81, 207.65, 246.94, 329.63]  // E7
+            ];
+            const bellNotes = [523.25, 659.25, 587.33, 440.00, 493.88, 659.25, 783.99, 659.25];
+            let stepIdx = 0;
+            const playBar = () => {
+                if (ctx.state !== 'running') return;
+                const now = ctx.currentTime;
+                const chord = chords[stepIdx % chords.length];
+                const lp = ctx.createBiquadFilter();
+                lp.type = 'lowpass';
+                lp.frequency.value = 920;
+                lp.connect(dest);
+
+                for (let i = 0; i < chord.length; i++) {
+                    const osc = ctx.createOscillator();
+                    osc.type = i === 0 ? 'triangle' : 'sine';
+                    osc.frequency.value = chord[i] * (i === 0 ? 0.5 : 1.0);
+                    osc.detune.value = (i % 2 === 0 ? -4 : 4) + (Math.random() - 0.5) * 3;
+                    const g = ctx.createGain();
+                    const peak = i === 0 ? 0.22 : 0.11;
+                    g.gain.setValueAtTime(0.0008, now);
+                    g.gain.linearRampToValueAtTime(peak, now + 0.85);
+                    g.gain.exponentialRampToValueAtTime(0.0008, now + 3.7);
+                    osc.connect(g);
+                    g.connect(lp);
+                    osc.start(now);
+                    osc.stop(now + 3.8);
+                }
+
+                // Soft wintry music-box / celesta note on top
+                if (stepIdx % 2 === 0 || Math.random() < 0.65) {
+                    const bOsc = ctx.createOscillator();
+                    bOsc.type = 'sine';
+                    bOsc.frequency.value = bellNotes[stepIdx % bellNotes.length];
+                    const bg = ctx.createGain();
+                    const bt = now + 0.6 + Math.random() * 0.6;
+                    bg.gain.setValueAtTime(0.0008, bt);
+                    bg.gain.linearRampToValueAtTime(0.085, bt + 0.04);
+                    bg.gain.exponentialRampToValueAtTime(0.0008, bt + 2.2);
+                    bOsc.connect(bg);
+                    bg.connect(dest);
+                    bOsc.start(bt);
+                    bOsc.stop(bt + 2.3);
+                }
+                stepIdx++;
+            };
+            playBar();
+            timer = setInterval(playBar, 3600);
+        } else if (kind === 'tv_broadcast') {
+            // Retro Soviet TV program audio (muffled announcer speech cadence + variety show melody + subtle CRT hum)
+            const hum = ctx.createOscillator();
+            hum.type = 'sine';
+            hum.frequency.value = 50;
+            const humG = ctx.createGain();
+            humG.gain.value = 0.04;
+            hum.connect(humG);
+            humG.connect(dest);
+            hum.start();
+            nodes.push(hum);
+
+            const melody = [329.63, 392.00, 440.00, 392.00, 349.23, 329.63, 293.66, 329.63];
+            let tvTick = 0;
+            timer = setInterval(() => {
+                if (ctx.state !== 'running') return;
+                const now = ctx.currentTime;
+                const phase = tvTick % 16;
+                if (phase < 10) {
+                    // Muffled TV announcer / movie dialogue syllable burst
+                    if (Math.random() < 0.78) {
+                        const vOsc = ctx.createOscillator();
+                        vOsc.type = 'sawtooth';
+                        const baseF = (phase % 5 < 3 ? 135 : 210) + Math.random() * 45;
+                        vOsc.frequency.setValueAtTime(baseF, now);
+                        vOsc.frequency.linearRampToValueAtTime(baseF * (0.85 + Math.random() * 0.3), now + 0.14);
+                        const form = ctx.createBiquadFilter();
+                        form.type = 'bandpass';
+                        form.frequency.value = 750 + Math.random() * 650;
+                        form.Q.value = 3.2;
+                        const vg = ctx.createGain();
+                        const dur = 0.09 + Math.random() * 0.11;
+                        vg.gain.setValueAtTime(0.001, now);
+                        vg.gain.linearRampToValueAtTime(0.18, now + 0.02);
+                        vg.gain.exponentialRampToValueAtTime(0.001, now + dur);
+                        vOsc.connect(form);
+                        form.connect(vg);
+                        vg.connect(dest);
+                        vOsc.start(now);
+                        vOsc.stop(now + dur + 0.02);
+                    }
+                } else {
+                    // Retro TV variety show jingle / music snippet
+                    const note = melody[tvTick % melody.length];
+                    const mOsc = ctx.createOscillator();
+                    mOsc.type = 'triangle';
+                    mOsc.frequency.value = note;
+                    const mg = ctx.createGain();
+                    mg.gain.setValueAtTime(0.001, now);
+                    mg.gain.linearRampToValueAtTime(0.11, now + 0.03);
+                    mg.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+                    mOsc.connect(mg);
+                    mg.connect(dest);
+                    mOsc.start(now);
+                    mOsc.stop(now + 0.36);
+                }
+                tvTick++;
+            }, 220);
         } else if (kind === 'heartbeat') {
             timer = setInterval(() => {
                 if (ctx.state === 'running') {
@@ -462,27 +574,161 @@ export class AudioSystem {
             case 'footstep_linoleum':
             case 'footstep_snow':
             case 'footstep_concrete': {
+                this._stepFootSide = !this._stepFootSide;
+                const footMul = this._stepFootSide ? 0.92 : 1.09;
+                const randOff = Math.random() * Math.max(0.1, (this._noiseBuffer.duration || 2.0) - 0.35);
+                const heavyMul = options.heavy ? 1.55 : (0.68 + Math.random() * 0.24);
+
+                // Primary impact / crunch layer with randomized buffer grain & pitch
                 const src = this.ctx.createBufferSource();
                 src.buffer = this._noiseBuffer;
+                src.playbackRate.value = (0.82 + Math.random() * 0.38) * footMul;
+
                 const bp = this.ctx.createBiquadFilter();
                 bp.type = 'bandpass';
                 const freqMap = {
-                    footstep_parquet: 220,
-                    footstep_linoleum: 360,
-                    footstep_snow: 1100,
-                    footstep_concrete: 520
+                    footstep_parquet: 210,
+                    footstep_linoleum: 350,
+                    footstep_snow: 1350,
+                    footstep_concrete: 540
                 };
-                bp.frequency.value = freqMap[type] * (0.9 + Math.random() * 0.2);
-                bp.Q.value = type === 'footstep_snow' ? 0.9 : 2.5;
+                bp.frequency.value = freqMap[type] * footMul * (0.78 + Math.random() * 0.46);
+                bp.Q.value = type === 'footstep_snow'
+                    ? (0.65 + Math.random() * 0.55)
+                    : (1.7 + Math.random() * 1.4);
+
+                const dur = type === 'footstep_snow'
+                    ? (0.16 + Math.random() * 0.10)
+                    : (0.10 + Math.random() * 0.06);
                 const fg = this.ctx.createGain();
-                fg.gain.setValueAtTime(0.01, t);
-                fg.gain.linearRampToValueAtTime(options.heavy ? 1.45 : 0.72, t + 0.015);
-                fg.gain.exponentialRampToValueAtTime(0.001, t + (type === 'footstep_snow' ? 0.20 : 0.14));
+                fg.gain.setValueAtTime(0.008, t);
+                fg.gain.linearRampToValueAtTime(heavyMul, t + 0.012 + Math.random() * 0.012);
+                fg.gain.exponentialRampToValueAtTime(0.001, t + dur);
                 src.connect(bp);
                 bp.connect(fg);
                 fg.connect(filter);
-                src.start(t);
-                src.stop(t + 0.24);
+                src.start(t, randOff, dur + 0.04);
+
+                // Secondary character layer for natural surface variety (snow heel-toe crunch, wood creak, concrete grit)
+                if (type === 'footstep_snow') {
+                    // Deep packed-snow thump + delayed crisp toe crunch
+                    const thump = this.ctx.createOscillator();
+                    thump.type = 'triangle';
+                    thump.frequency.setValueAtTime((95 + Math.random() * 35) * footMul, t);
+                    thump.frequency.exponentialRampToValueAtTime(42, t + 0.075);
+                    const tg = this.ctx.createGain();
+                    tg.gain.setValueAtTime(0.001, t);
+                    tg.gain.linearRampToValueAtTime(0.28 * heavyMul, t + 0.01);
+                    tg.gain.exponentialRampToValueAtTime(0.001, t + 0.085);
+                    thump.connect(tg);
+                    tg.connect(filter);
+                    thump.start(t);
+                    thump.stop(t + 0.09);
+
+                    const t2 = t + 0.032 + Math.random() * 0.028;
+                    const src2 = this.ctx.createBufferSource();
+                    src2.buffer = this._noiseBuffer;
+                    src2.playbackRate.value = 1.05 + Math.random() * 0.45;
+                    const hp = this.ctx.createBiquadFilter();
+                    hp.type = 'bandpass';
+                    hp.frequency.value = 2100 + Math.random() * 1100;
+                    hp.Q.value = 1.1;
+                    const g2 = this.ctx.createGain();
+                    g2.gain.setValueAtTime(0.005, t2);
+                    g2.gain.linearRampToValueAtTime(0.45 * heavyMul, t2 + 0.015);
+                    g2.gain.exponentialRampToValueAtTime(0.001, t2 + 0.11);
+                    src2.connect(hp);
+                    hp.connect(g2);
+                    g2.connect(filter);
+                    src2.start(t2, Math.random() * 1.2, 0.14);
+                } else if (type === 'footstep_parquet' && Math.random() < 0.38) {
+                    const creak = this.ctx.createOscillator();
+                    creak.type = 'sine';
+                    const f0 = 620 + Math.random() * 480;
+                    creak.frequency.setValueAtTime(f0, t + 0.01);
+                    creak.frequency.exponentialRampToValueAtTime(f0 * 0.72, t + 0.07);
+                    const cg = this.ctx.createGain();
+                    cg.gain.setValueAtTime(0.001, t + 0.01);
+                    cg.gain.linearRampToValueAtTime(0.09 * heavyMul, t + 0.025);
+                    cg.gain.exponentialRampToValueAtTime(0.001, t + 0.075);
+                    creak.connect(cg);
+                    cg.connect(filter);
+                    creak.start(t + 0.01);
+                    creak.stop(t + 0.08);
+                } else if (type === 'footstep_concrete' && Math.random() < 0.45) {
+                    const grit = this.ctx.createBufferSource();
+                    grit.buffer = this._noiseBuffer;
+                    const gbp = this.ctx.createBiquadFilter();
+                    gbp.type = 'highpass';
+                    gbp.frequency.value = 1800 + Math.random() * 1200;
+                    const gg = this.ctx.createGain();
+                    gg.gain.setValueAtTime(0.004, t + 0.015);
+                    gg.gain.linearRampToValueAtTime(0.24 * heavyMul, t + 0.025);
+                    gg.gain.exponentialRampToValueAtTime(0.001, t + 0.085);
+                    grit.connect(gbp);
+                    gbp.connect(gg);
+                    gg.connect(filter);
+                    grit.start(t + 0.015, Math.random() * 1.2, 0.09);
+                }
+                break;
+            }
+            case 'car_horn': {
+                // Classic Soviet dual-tone car horn (Zhiguli / Volga)
+                const hornDur = 0.44;
+                const hbp = this.ctx.createBiquadFilter();
+                hbp.type = 'bandpass';
+                hbp.frequency.value = 880;
+                hbp.Q.value = 1.6;
+                const hg = this.ctx.createGain();
+                hg.gain.setValueAtTime(0.001, t);
+                hg.gain.linearRampToValueAtTime(0.55, t + 0.025);
+                hg.gain.setValueAtTime(0.52, t + hornDur - 0.06);
+                hg.gain.exponentialRampToValueAtTime(0.001, t + hornDur);
+                hbp.connect(hg);
+                hg.connect(filter);
+                for (const freq of [392, 493.88]) {
+                    const osc = this.ctx.createOscillator();
+                    osc.type = 'sawtooth';
+                    osc.frequency.value = freq * (0.98 + Math.random() * 0.04);
+                    osc.connect(hbp);
+                    osc.start(t);
+                    osc.stop(t + hornDur + 0.02);
+                }
+                break;
+            }
+            case 'car_engine_pass': {
+                // Low Soviet engine rumble + winter tire hiss on snowy asphalt
+                const engDur = 0.85;
+                const osc = this.ctx.createOscillator();
+                osc.type = 'sawtooth';
+                osc.frequency.value = 54 + Math.random() * 14;
+                const lp = this.ctx.createBiquadFilter();
+                lp.type = 'lowpass';
+                lp.frequency.value = 185;
+                const eg = this.ctx.createGain();
+                eg.gain.setValueAtTime(0.001, t);
+                eg.gain.linearRampToValueAtTime(0.32, t + 0.22);
+                eg.gain.exponentialRampToValueAtTime(0.001, t + engDur);
+                osc.connect(lp);
+                lp.connect(eg);
+                eg.connect(filter);
+                osc.start(t);
+                osc.stop(t + engDur + 0.02);
+
+                const tire = this.ctx.createBufferSource();
+                tire.buffer = this._noiseBuffer;
+                const tbp = this.ctx.createBiquadFilter();
+                tbp.type = 'bandpass';
+                tbp.frequency.value = 420 + Math.random() * 140;
+                tbp.Q.value = 0.8;
+                const tg = this.ctx.createGain();
+                tg.gain.setValueAtTime(0.001, t);
+                tg.gain.linearRampToValueAtTime(0.22, t + 0.22);
+                tg.gain.exponentialRampToValueAtTime(0.001, t + engDur);
+                tire.connect(tbp);
+                tbp.connect(tg);
+                tg.connect(filter);
+                tire.start(t, Math.random() * 0.9, engDur + 0.02);
                 break;
             }
             case 'knife_drag': {

@@ -727,7 +727,7 @@ export function buildGroceryStore(builder) {
     // --- Department Signs & Retro Posters ---
     let deptSignIdx = 0;
     const addDeptSign = (text, bg, fg, x, y, z, rotY = 0, w = 2.0, h = 0.48, hanging = false) => {
-        const signMat = new THREE.MeshBasicMaterial({ map: tex.createStoreDeptSignTexture(text, bg, fg) });
+        const signMat = builder._ps1Mat({ map: tex.createStoreDeptSignTexture(text, bg, fg), roughness: 0.72 });
         const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.08, h + 0.08, 0.05), trimMat);
         frame.position.set(x, y, z);
         frame.rotation.y = rotY;
@@ -1698,14 +1698,27 @@ export function buildGroceryStore(builder) {
                 r.shoulderR.rotation.z = 0.07;
 
                 npc.blinkTimer -= dt;
-                let lid = 0.08;
+                let lid = 0.06;
                 if (npc.blinkTimer < 0) {
                     const b = -npc.blinkTimer;
-                    lid = THREE.MathUtils.lerp(0.08, 1.0, Math.sin(Math.min(1, b / 0.15) * Math.PI));
-                    if (b > 0.15) npc.blinkTimer = 2.4 + Math.random() * 3.5;
+                    lid = THREE.MathUtils.lerp(0.06, 1.15, Math.sin(Math.min(1, b / 0.16) * Math.PI));
+                    if (b > 0.16) npc.blinkTimer = 2.2 + Math.random() * 3.4;
                 }
-                r.eyelidL.scale.y = lid;
-                r.eyelidR.scale.y = lid;
+                if (r.eyelidL) r.eyelidL.scale.y = lid;
+                if (r.eyelidR) r.eyelidR.scale.y = lid;
+
+                // Animate mouth only while the NPC is actively speaking their current dialogue phrase
+                if (r.mouth) {
+                    const speakingNow = talking && (engine?.ui?.isDialogueSpeaking ? engine.ui.isDialogueSpeaking() : true);
+                    if (speakingNow) {
+                        const talkWave = Math.abs(Math.sin(now * 14.5 + npc.phase) * Math.cos(now * 6.2 + npc.phase * 0.5));
+                        r.mouth.scale.y = THREE.MathUtils.lerp(r.mouth.scale.y, 1.0 + talkWave * 2.1, Math.min(1, dt * 18));
+                        r.mouth.scale.x = THREE.MathUtils.lerp(r.mouth.scale.x, 1.0 - talkWave * 0.16, Math.min(1, dt * 18));
+                    } else {
+                        r.mouth.scale.y = THREE.MathUtils.lerp(r.mouth.scale.y, 1.0, Math.min(1, dt * 14));
+                        r.mouth.scale.x = THREE.MathUtils.lerp(r.mouth.scale.x, 1.0, Math.min(1, dt * 14));
+                    }
+                }
             }
         }
     };

@@ -1016,7 +1016,8 @@ export class StoryDirector {
                                 this.ui.showSubtitle(tr('sub.cooked_olivier_done'), 3600);
                                 this._refreshObjectives();
                             },
-                            boardTarget
+                            boardTarget,
+                            'olivier'
                         );
                     } else if (!p.cookMeat) {
                         this._cookingInProgress = true;
@@ -1034,7 +1035,8 @@ export class StoryDirector {
                                 this.ui.showSubtitle(tr('sub.cooked_meat_done'), 3600);
                                 this._refreshObjectives();
                             },
-                            boardTarget
+                            boardTarget,
+                            'meat'
                         );
                     } else if (!p.boardPicked) {
                         this._droppedItems.delete('dirtyBoard');
@@ -1919,6 +1921,7 @@ export class StoryDirector {
 
         // Game starts sitting on the sofa watching TV in the evening (21:10)!
         this.phase = 'prologue_tv_sitting';
+        this.engine.audioSystem.startSpatialLoop('tv_audio', 'tv_broadcast', this.world.tvGameObject?.transform?.position || new THREE.Vector3(1.58, 0.94, -1.0), { volume: 0.30, tvFilter: true });
         const sp = this.world.playerSpawn || { position: new THREE.Vector3(-2.65, 0.05, -1.0), yaw: -Math.PI / 2, pitch: -0.05 };
         this.player.controlsLocked = true;
         this.player.allowLookWhileLocked = true;
@@ -3363,6 +3366,7 @@ export class StoryDirector {
                     this.world.setClockTime(-128);
                     this.ui.setClockText('21:22');
                     this.world.store.resetStreetDoors?.();
+                    a.startSpatialLoop('street_music', 'winter_street_music', null, { volume: 0.26, checkOcclusion: false });
                     const sp = this.world.store.streetSpawnPos || this.world.store.spawnPos;
                     this.player.setPose(sp, this.world.store.streetSpawnYaw ?? 0, -0.04);
                     if (this.player.rb) this.player.rb.useGravity = true;
@@ -3421,6 +3425,7 @@ export class StoryDirector {
                 this.world.setClockTime(-110);
                 this.ui.setClockText('21:40');
                 this.world.store.resetStreetDoors?.();
+                a.stopSpatialLoop('street_music');
                 // Place player on the 3rd-floor stairs coming up toward Apartment #34
                 this.player.setPose(new THREE.Vector3(2.55, -0.78, 7.15), 0.12, 0.14);
                 this.player.forcedLookTarget = trState.lookTarget;

@@ -1,6 +1,6 @@
 export const MAP_OVERRIDES = {
     "version": 1,
-    "updatedAt": "2026-11-22T17:54:14.170Z",
+    "updatedAt": "2026-11-22T18:30:14.090Z",
     "modifiedObjects": {
         "BalconyRailW": {
             "position": [
@@ -7487,6 +7487,13 @@ export const MAP_OVERRIDES = {
                 96,
                 -0.005,
                 49.18
+            ]
+        },
+        "StoreBakeryRack": {
+            "position": [
+                52.79,
+                0.95,
+                -0.727
             ]
         }
     },

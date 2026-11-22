@@ -680,17 +680,22 @@ export class PlayerController extends Component {
         const cLeft = this._makeSleeveArm(true);
         const cRight = this._makeSleeveArm(false);
         const knifeHandle = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.013, 0.015, 0.095, 7),
-            new THREE.MeshStandardMaterial({ color: 0x2b1d14, roughness: 0.85 })
+            new THREE.CylinderGeometry(0.014, 0.016, 0.105, 8),
+            new THREE.MeshStandardMaterial({ color: 0x3d2415, roughness: 0.8 })
         );
         knifeHandle.rotation.x = Math.PI / 2;
-        knifeHandle.position.set(0, 0.005, -0.07);
-        const knifeBlade = new THREE.Mesh(
-            new THREE.BoxGeometry(0.004, 0.032, 0.14),
-            new THREE.MeshStandardMaterial({ color: 0xc8d0d8, metalness: 0.65, roughness: 0.25 })
+        knifeHandle.position.set(0, 0.008, -0.055);
+        const knifeBolster = new THREE.Mesh(
+            new THREE.BoxGeometry(0.018, 0.036, 0.014),
+            new THREE.MeshStandardMaterial({ color: 0x9aa4ae, metalness: 0.7, roughness: 0.3 })
         );
-        knifeBlade.position.set(0, 0.002, -0.175);
-        cRight.add(knifeHandle, knifeBlade);
+        knifeBolster.position.set(0, 0.006, -0.112);
+        const knifeBlade = new THREE.Mesh(
+            new THREE.BoxGeometry(0.005, 0.042, 0.165),
+            new THREE.MeshStandardMaterial({ color: 0xe6edf5, emissive: 0x1a2028, metalness: 0.72, roughness: 0.22 })
+        );
+        knifeBlade.position.set(0, 0.002, -0.198);
+        cRight.add(knifeHandle, knifeBolster, knifeBlade);
         cookHandsGroup.add(cLeft, cRight);
         this.camera.add(cookHandsGroup);
         this._cookHandsGroup = cookHandsGroup;
@@ -1273,25 +1278,76 @@ export class PlayerController extends Component {
         }
     }
 
-    startCookingAnimation(duration = 2.8, onProgress = null, onComplete = null, lookTarget = null) {
+    startCookingAnimation(duration = 2.8, onProgress = null, onComplete = null, lookTarget = null, mode = 'olivier') {
         if (this._cookAnim) return;
         this.controlsLocked = true;
         this.allowLookWhileLocked = false;
-        if (lookTarget) {
-            this.forcedLookTarget = lookTarget.clone();
-            this.forcedLookSpeed = 6.5;
-        }
+        this.forcedLookTarget = null;
         this._handAnchor.visible = false;
+
+        const boardPos = lookTarget ? lookTarget.clone() : this.transform.position.clone().add(new THREE.Vector3(0, 0.8, -0.4));
+        const scene = this.engine.renderer.scene;
+
+        // Build a 3D multi-slice food item resting directly on top of the cutting board
+        if (this._cookSliceGroup) {
+            scene.remove(this._cookSliceGroup);
+            this._cookSliceGroup = null;
+        }
+        const sliceGroup = new THREE.Group();
+        sliceGroup.position.set(boardPos.x, boardPos.y - 0.016, boardPos.z);
+
+        const sliceCount = 8;
+        const sliceThick = 0.020;
+        const radius = mode === 'meat' ? 0.028 : 0.032;
+        const outerMat = new THREE.MeshStandardMaterial({
+            color: mode === 'meat' ? 0x7d2922 : 0xd98a7c,
+            roughness: 0.68
+        });
+        const innerMat = new THREE.MeshStandardMaterial({
+            color: mode === 'meat' ? 0x9e3c34 : 0xebb0a4,
+            roughness: 0.60
+        });
+        const slices = [];
+        for (let i = 0; i < sliceCount; i++) {
+            const sl = new THREE.Group();
+            const disc = new THREE.Mesh(
+                new THREE.CylinderGeometry(radius, radius, sliceThick, 10),
+                [outerMat, innerMat, innerMat]
+            );
+            disc.rotation.z = Math.PI / 2;
+            sl.add(disc);
+            // Line slices up along X from left (-0.07) to right (+0.07)
+            const baseX = -0.075 + i * (sliceThick + 0.001);
+            sl.position.set(baseX, radius + 0.002, 0.01);
+            sl.userData = { baseX, cut: false, cutAnim: 0, targetX: baseX + 0.055 + (sliceCount - 1 - i) * 0.008, targetZ: 0.02 + ((i % 3) - 1) * 0.028, tiltZ: (i % 2 === 0 ? 1 : -1) * 0.85 };
+            sliceGroup.add(sl);
+            slices.push(sl);
+        }
+        scene.add(sliceGroup);
+        this._cookSliceGroup = sliceGroup;
+
         if (this._cookHandsGroup) {
             this._cookHandsGroup.visible = true;
-            this._cookLeftHand.position.set(-0.14, -0.24, -0.37);
-            this._cookRightHand.position.set(0.11, -0.20, -0.37);
+            this._cookLeftHand.position.set(-0.15, -0.18, -0.32);
+            this._cookRightHand.position.set(0.11, -0.15, -0.32);
         }
+
+        // Compute top-down camera offset in player-local space right above the cutting board
+        const targetCamWorld = new THREE.Vector3(boardPos.x, boardPos.y + 0.46, boardPos.z + 0.13);
+        const targetRigLocal = targetCamWorld.clone().sub(this.transform.position);
+
         this._cookAnim = {
             progress: 0,
-            knifeX: 0.10,
-            knifeY: -0.19,
-            lastSoundProgress: 0,
+            knifeX: 0.08,
+            knifeY: -0.15,
+            cutCount: 0,
+            slices,
+            savedYaw: this.yaw,
+            savedPitch: this.pitch,
+            savedRigPos: this._cameraRig.position.clone(),
+            targetRigLocal,
+            targetYaw: 0,
+            targetPitch: -1.26,
             onProgress,
             onComplete
         };
@@ -1305,32 +1361,69 @@ export class PlayerController extends Component {
         const L = this._cookLeftHand;
         const R = this._cookRightHand;
 
+        // Smoothly move camera overhead looking down at the cutting board
+        const camLerp = Math.min(1, deltaTime * 8.5);
+        this._cameraRig.position.lerp(anim.targetRigLocal, camLerp);
+        this.yaw = THREE.MathUtils.lerp(this.yaw, anim.targetYaw, camLerp);
+        this.pitch = THREE.MathUtils.lerp(this.pitch, anim.targetPitch, camLerp);
+        this._cameraRig.rotation.y = this.yaw;
+        this.camera.rotation.x = this.pitch;
+
         // Player directly guides the knife across the food on the cutting board with mouse movement!
-        anim.knifeX = THREE.MathUtils.clamp(anim.knifeX + delta.x * 0.00055, -0.04, 0.22);
-        anim.knifeY = THREE.MathUtils.clamp(anim.knifeY - delta.y * 0.00055, -0.27, -0.10);
+        anim.knifeX = THREE.MathUtils.clamp(anim.knifeX + delta.x * 0.00055, -0.05, 0.20);
+        anim.knifeY = THREE.MathUtils.clamp(anim.knifeY - delta.y * 0.00055, -0.25, -0.08);
 
         const moveAmt = Math.hypot(delta.x, delta.y);
         if (moveAmt > 1.2) {
-            anim.progress = Math.min(1.0, anim.progress + moveAmt * 0.00062);
+            anim.progress = Math.min(1.0, anim.progress + moveAmt * 0.00068);
         }
 
-        // Left hand holds the food steady; right hand slices accurately with the knife
-        L.position.set(-0.13, -0.25, -0.38);
-        L.rotation.set(-0.16, 0.26, 0.14);
+        // Left hand holds the uncut product steady on the left; right hand slices with the knife
+        L.position.set(-0.15, -0.18, -0.34);
+        L.rotation.set(-0.35, 0.30, 0.18);
 
-        const cutDepth = THREE.MathUtils.clamp((-0.14 - anim.knifeY) / 0.13, 0, 1);
-        R.position.set(anim.knifeX, anim.knifeY, -0.36 - cutDepth * 0.03);
-        R.rotation.set(-0.10 - cutDepth * 0.36, -0.20 + (0.10 - anim.knifeX) * 0.6, -0.08);
+        const cutDepth = THREE.MathUtils.clamp((-0.11 - anim.knifeY) / 0.14, 0, 1);
+        R.position.set(anim.knifeX, anim.knifeY, -0.30 - cutDepth * 0.07);
+        R.rotation.set(-0.22 - cutDepth * 0.45, -0.18 + (0.08 - anim.knifeX) * 0.5, -0.10);
 
-        if (anim.progress - anim.lastSoundProgress >= 0.14) {
-            anim.lastSoundProgress = anim.progress;
-            this.engine.audioSystem.playSpatialOneShot('footstep_parquet', this.transform.position, { volume: 0.32 });
+        // Slice off pieces from right to left as progress advances!
+        const totalSlices = anim.slices.length;
+        const desiredCuts = Math.min(totalSlices, Math.floor(anim.progress * totalSlices + 0.001));
+        while (anim.cutCount < desiredCuts) {
+            const idx = totalSlices - 1 - anim.cutCount;
+            if (anim.slices[idx]) {
+                anim.slices[idx].userData.cut = true;
+            }
+            anim.cutCount++;
+            this.engine.audioSystem.playSpatialOneShot('footstep_parquet', this.transform.position, { volume: 0.36 });
+        }
+
+        // Animate detached slices sliding and tipping flat onto the right side of the board
+        for (const sl of anim.slices) {
+            if (!sl.userData.cut) continue;
+            sl.userData.cutAnim = Math.min(1, sl.userData.cutAnim + deltaTime * 6.5);
+            const t = sl.userData.cutAnim;
+            const ease = 1 - (1 - t) * (1 - t);
+            sl.position.x = THREE.MathUtils.lerp(sl.userData.baseX, sl.userData.targetX, ease);
+            sl.position.z = THREE.MathUtils.lerp(0.01, sl.userData.targetZ, ease);
+            sl.position.y = THREE.MathUtils.lerp(0.032, 0.014, ease);
+            sl.rotation.z = THREE.MathUtils.lerp(0, sl.userData.tiltZ, ease);
+            sl.rotation.y = THREE.MathUtils.lerp(0, sl.userData.tiltZ * 0.4, ease);
         }
 
         if (anim.onProgress) anim.onProgress(anim.progress);
 
         if (anim.progress >= 1.0) {
             if (this._cookHandsGroup) this._cookHandsGroup.visible = false;
+            if (this._cookSliceGroup) {
+                this.engine.renderer.scene.remove(this._cookSliceGroup);
+                this._cookSliceGroup = null;
+            }
+            this._cameraRig.position.copy(anim.savedRigPos);
+            this.yaw = anim.savedYaw;
+            this.pitch = anim.savedPitch;
+            this._cameraRig.rotation.y = this.yaw;
+            this.camera.rotation.x = this.pitch;
             this._handAnchor.visible = true;
             this.forcedLookTarget = null;
             this.forcedLookSpeed = 5.0;

@@ -762,6 +762,10 @@ export class UIManager {
         return !!(this.el.dialogueOverlay && !this.el.dialogueOverlay.classList.contains('hidden'));
     }
 
+    isDialogueSpeaking() {
+        return this.isDialogueOpen() && performance.now() < (this._dialogueSpeakEndTime || 0);
+    }
+
     openDialogue(speakerName, speakerRole, text, choices, onSelect, onClose = null) {
         if (!this.el.dialogueOverlay) return;
         this._onDialogueSelect = onSelect;
@@ -781,7 +785,12 @@ export class UIManager {
 
     updateDialogue(text, choices = []) {
         this._dialogueChoices = choices;
-        if (this.el.dialogueText) this.el.dialogueText.textContent = text || '';
+        const txt = text || '';
+        // Speak duration proportional to phrase length (~52ms per character, clamped 0.9s..7.5s)
+        this._dialogueSpeakEndTime = txt.trim().length > 0
+            ? performance.now() + Math.max(900, Math.min(7500, txt.length * 52))
+            : 0;
+        if (this.el.dialogueText) this.el.dialogueText.textContent = txt;
         if (!this.el.dialogueChoices) return;
         this.el.dialogueChoices.innerHTML = '';
         choices.forEach((ch, idx) => {
@@ -800,6 +809,7 @@ export class UIManager {
         if (!this.el.dialogueOverlay || this.el.dialogueOverlay.classList.contains('hidden')) return;
         this.el.dialogueOverlay.classList.add('hidden');
         this.el.hud?.classList.remove('dialogue-open');
+        this._dialogueSpeakEndTime = 0;
         this._dialogueChoices = [];
         const cb = this._onDialogueClose;
         this._onDialogueSelect = null;

@@ -34,8 +34,11 @@ export function buildArticulatedHuman(options = {}) {
         hatColor = 0x3a2e28,
         heightScale = 1.0,
         buildWidth = 1.0,
+        gender = null,
         matFactory = null
     } = options;
+
+    const isFemale = gender === 'female' || hatStyle === 'bun' || hatStyle === 'kerchief';
 
     const tex = getSharedCharacterTextures();
 
@@ -54,22 +57,28 @@ export function buildArticulatedHuman(options = {}) {
     const shoeMat = makeMat(shoeColor, 0.85, 0.06, tex?.cloth);
     const skinMat = makeMat(skinColor, 0.76, 0.03, tex?.skin);
     const hairMat = makeMat(hairColor, 0.90, 0.03, tex?.hair);
-    const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xf0eee9 });
-    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x181c22 });
-    const lipMat = makeMat(0xb07c6a, 0.80, 0.03, tex?.skin);
+    const eyeWhiteMat = makeMat(0xe8e4dc, 0.55, 0.02);
+    const pupilMat = makeMat(0x161920, 0.35, 0.05);
+    const lipMat = makeMat(isFemale ? 0xc26368 : 0xb07c6a, 0.72, 0.04, tex?.skin);
 
     const root = new THREE.Group();
     root.scale.set(buildWidth, heightScale, buildWidth);
 
     const pelvis = new THREE.Group();
     pelvis.position.set(0, 0.78, 0);
-    const hipMesh = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.14, 0.21), pantsMat);
+    const hipMesh = new THREE.Mesh(new THREE.BoxGeometry(isFemale ? 0.37 : 0.35, 0.14, isFemale ? 0.22 : 0.21), pantsMat);
     pelvis.add(hipMesh);
 
     if (coatColor !== null) {
-        const coatHem = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.24, 0.24), topMat);
-        coatHem.position.y = -0.05;
+        const coatHem = new THREE.Mesh(new THREE.BoxGeometry(isFemale ? 0.41 : 0.38, isFemale ? 0.30 : 0.24, isFemale ? 0.26 : 0.24), topMat);
+        coatHem.position.y = isFemale ? -0.08 : -0.05;
         pelvis.add(coatHem);
+    } else if (isFemale) {
+        // Subtle skirt flare for indoor female NPCs (e.g. Galya)
+        const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.185, 0.225, 0.34, 8), pantsMat);
+        skirt.scale.set(1.05, 1.0, 0.72);
+        skirt.position.set(0, -0.14, 0);
+        pelvis.add(skirt);
     }
 
     const buildLeg = (sideX) => {
@@ -93,18 +102,28 @@ export function buildArticulatedHuman(options = {}) {
 
     const torsoPivot = new THREE.Group();
     torsoPivot.position.set(0, 0.04, 0);
-    const torsoLower = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.26, 0.21), topMat);
+    const torsoLower = new THREE.Mesh(new THREE.BoxGeometry(isFemale ? 0.29 : 0.35, 0.26, isFemale ? 0.19 : 0.21), topMat);
     torsoLower.position.set(0, 0.13, 0);
-    const torsoChest = new THREE.Mesh(new THREE.BoxGeometry(0.39, 0.34, 0.23), topMat);
+    const torsoChest = new THREE.Mesh(new THREE.BoxGeometry(isFemale ? 0.34 : 0.39, 0.34, isFemale ? 0.21 : 0.23), topMat);
     torsoChest.position.set(0, 0.42, 0);
-    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.086, 0.105, 0.065, 8), collarMat);
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.10, 0.065, 8), collarMat);
     collar.position.set(0, 0.60, 0);
     torsoPivot.add(torsoLower, torsoChest, collar);
 
+    if (isFemale) {
+        const bustMat = apronColor !== null ? makeMat(apronColor, 0.88, 0.04, tex?.cloth) : topMat;
+        for (const side of [-1, 1]) {
+            const bust = new THREE.Mesh(new THREE.SphereGeometry(0.082, 8, 6), bustMat);
+            bust.scale.set(1.06, 0.92, 0.88);
+            bust.position.set(side * 0.082, 0.43, -0.108);
+            torsoPivot.add(bust);
+        }
+    }
+
     if (apronColor !== null) {
         const apronMat = makeMat(apronColor, 0.88, 0.04, tex?.cloth);
-        const apronFront = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.56, 0.03), apronMat);
-        apronFront.position.set(0, 0.24, -0.125);
+        const apronFront = new THREE.Mesh(new THREE.BoxGeometry(isFemale ? 0.33 : 0.36, 0.56, 0.03), apronMat);
+        apronFront.position.set(0, 0.24, isFemale ? -0.115 : -0.125);
         torsoPivot.add(apronFront);
     }
 
@@ -157,29 +176,39 @@ export function buildArticulatedHuman(options = {}) {
     const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.014, 0.014), lipMat);
     mouth.position.set(0, 0.068, -0.104);
 
-    const browL = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.012, 0.016), hairMat);
-    browL.position.set(-0.048, 0.168, -0.105);
-    const browR = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.012, 0.016), hairMat);
-    browR.position.set(0.048, 0.168, -0.105);
+    const browH = isFemale ? 0.008 : 0.012;
+    const browL = new THREE.Mesh(new THREE.BoxGeometry(0.046, browH, 0.016), hairMat);
+    browL.position.set(-0.048, isFemale ? 0.171 : 0.168, -0.105);
+    if (isFemale) browL.rotation.z = 0.08;
+    const browR = new THREE.Mesh(new THREE.BoxGeometry(0.046, browH, 0.016), hairMat);
+    browR.position.set(0.048, isFemale ? 0.171 : 0.168, -0.105);
+    if (isFemale) browR.rotation.z = -0.08;
     const eyeWhiteL = new THREE.Mesh(new THREE.BoxGeometry(0.040, 0.022, 0.014), eyeWhiteMat);
     eyeWhiteL.position.set(-0.048, 0.145, -0.104);
     const eyeWhiteR = new THREE.Mesh(new THREE.BoxGeometry(0.040, 0.022, 0.014), eyeWhiteMat);
     eyeWhiteR.position.set(0.048, 0.145, -0.104);
+    if (isFemale) {
+        const lashL = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.005, 0.017), pupilMat);
+        lashL.position.set(-0.048, 0.157, -0.106);
+        const lashR = lashL.clone();
+        lashR.position.x = 0.048;
+        headPivot.add(lashL, lashR);
+    }
     const pupilL = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.020, 0.016), pupilMat);
     pupilL.position.set(-0.048, 0.145, -0.106);
     const pupilR = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.020, 0.016), pupilMat);
     pupilR.position.set(0.048, 0.145, -0.106);
     const eyelidL = new THREE.Group();
-    eyelidL.position.set(-0.048, 0.158, -0.107);
-    const eyelidMeshL = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.026, 0.018), skinMat);
-    eyelidMeshL.position.y = -0.013;
+    eyelidL.position.set(-0.048, 0.158, -0.109);
+    const eyelidMeshL = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.028, 0.020), skinMat);
+    eyelidMeshL.position.y = -0.014;
     eyelidL.add(eyelidMeshL);
     eyelidL.scale.y = 0.04;
 
     const eyelidR = new THREE.Group();
-    eyelidR.position.set(0.048, 0.158, -0.107);
-    const eyelidMeshR = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.026, 0.018), skinMat);
-    eyelidMeshR.position.y = -0.013;
+    eyelidR.position.set(0.048, 0.158, -0.109);
+    const eyelidMeshR = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.028, 0.020), skinMat);
+    eyelidMeshR.position.y = -0.014;
     eyelidR.add(eyelidMeshR);
     eyelidR.scale.y = 0.04;
 
@@ -200,9 +229,26 @@ export function buildArticulatedHuman(options = {}) {
         hairSideR.position.set(0.102, 0.17, 0.02);
         headPivot.add(hairTop, hairBack, hairSideL, hairSideR);
         if (hatStyle === 'bun') {
-            const bun = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.085, 0.085), hairMat);
-            bun.position.set(0, 0.17, 0.135);
-            headPivot.add(bun);
+            const bun = new THREE.Mesh(new THREE.SphereGeometry(0.068, 8, 6), hairMat);
+            bun.position.set(0, 0.18, 0.138);
+            const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.195, 0.042, 0.032), hairMat);
+            bangs.position.set(0, 0.212, -0.098);
+            const lockL = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.18, 0.075), hairMat);
+            lockL.position.set(-0.105, 0.12, -0.045);
+            const lockR = lockL.clone();
+            lockR.position.x = 0.105;
+            headPivot.add(bun, bangs, lockL, lockR);
+        } else if (isFemale) {
+            // Shoulder-length feminine hair
+            const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.195, 0.044, 0.032), hairMat);
+            bangs.position.set(0, 0.212, -0.098);
+            const longBack = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.28, 0.075), hairMat);
+            longBack.position.set(0, 0.06, 0.088);
+            const lockL = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.26, 0.085), hairMat);
+            lockL.position.set(-0.106, 0.08, -0.035);
+            const lockR = lockL.clone();
+            lockR.position.x = 0.106;
+            headPivot.add(bangs, longBack, lockL, lockR);
         }
     } else if (hatStyle === 'beanie') {
         const beanie = new THREE.Mesh(new THREE.BoxGeometry(0.222, 0.115, 0.232), hatMat);
@@ -225,7 +271,14 @@ export function buildArticulatedHuman(options = {}) {
         sideL.position.set(-0.11, 0.13, 0.01);
         const sideR = sideL.clone();
         sideR.position.x = 0.11;
-        headPivot.add(top, back, sideL, sideR);
+        // Visible hair bangs & side strands peeking out under the kerchief
+        const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.036, 0.028), hairMat);
+        bangs.position.set(0, 0.198, -0.102);
+        const strandL = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.12, 0.045), hairMat);
+        strandL.position.set(-0.096, 0.135, -0.072);
+        const strandR = strandL.clone();
+        strandR.position.x = 0.096;
+        headPivot.add(top, back, sideL, sideR, bangs, strandL, strandR);
     }
 
     torsoPivot.add(headPivot);
@@ -246,6 +299,7 @@ export function buildArticulatedHuman(options = {}) {
         shoulderR: armR.shoulderPivot,
         elbowR: armR.elbowPivot,
         eyelidL,
-        eyelidR
+        eyelidR,
+        mouth
     };
 }
