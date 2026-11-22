@@ -117,6 +117,7 @@ async function createWindow() {
         minWidth: 800,
         minHeight: 600,
         title: 'С Новым Годом, Сосед',
+        icon: path.join(GAME_DIR, 'assets', 'icon.png'),
         backgroundColor: '#000000',
         autoHideMenuBar: true,
         webPreferences: {
