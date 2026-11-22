@@ -394,6 +394,8 @@ export class KhrushchevkaBuilder {
         };
 
         let currentInStore = null;
+        const savedDefaultFog = this.scene.fog || null;
+        const streetSnowMist = new THREE.FogExp2(0x152030, 0.022);
 
         this.world.updateVisibilityCulling = (playerPos, _isPeephole = false, inStore = false) => {
             const isInStore = !!(inStore || (playerPos && playerPos.x > 30));
@@ -404,9 +406,10 @@ export class KhrushchevkaBuilder {
             const storeLights = this.world.store?.lights || [];
 
             if (isInStore) {
-                // Player is inside the Grocery Store: show ONLY the store, completely unload/hide the entire apartment & courtyard
+                // Player is on the Street / Grocery Store: show ONLY street+store, completely hide apartment, stairwell & courtyard
                 setZoneCulled(storeItems, false);
                 setZoneCulled(apartmentAndWorldItems, true);
+                this.scene.fog = streetSnowMist;
                 for (const sl of storeLights) sl.visible = true;
                 for (const [k, light] of Object.entries(L)) {
                     if (!light || k === 'ambient') continue;
@@ -418,9 +421,10 @@ export class KhrushchevkaBuilder {
                     gl.visible = false;
                 }
             } else {
-                // Player is in the Apartment / Courtyard: completely unload/hide the Grocery Store and its lights
+                // Player is in the Apartment / Courtyard: completely hide street, podiezd #2 & grocery store
                 setZoneCulled(storeItems, true);
                 setZoneCulled(apartmentAndWorldItems, false);
+                this.scene.fog = savedDefaultFog;
                 for (const sl of storeLights) sl.visible = false;
                 for (const [k, light] of Object.entries(L)) {
                     if (!light || k === 'ambient') continue;
@@ -439,6 +443,8 @@ export class KhrushchevkaBuilder {
                 }
             }
         };
+        // Immediately cull the inactive zone on startup
+        this.world.updateVisibilityCulling(this.world.playerSpawn?.position, false, false);
     }
 
     _autoRegisterChildParts() {

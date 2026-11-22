@@ -787,15 +787,18 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
         depthWrite: false
     });
 
-    const buildTrafficCar = (color, dirX, laneZ, startX, speed) => {
-        const g = new THREE.Group();
+    const buildTrafficCar = (idx, color, dirX, laneZ, startX, speed) => {
+        const carGO = new GameObject(`StoreTrafficCar_${idx}`);
+        const g = carGO.transform;
         g.position.set(startX, OY + 0.05, laneZ);
         g.rotation.y = dirX > 0 ? Math.PI / 2 : -Math.PI / 2;
 
-        const bodyMat = builder._ps1Mat({ color, roughness: 0.55, metalness: 0.22 });
-        const winMat = builder._ps1Mat({ color: 0x1a2634, roughness: 0.22 });
+        const bodyMat = builder._ps1Mat({ map: materials.metal.map, color, roughness: 0.52, metalness: 0.28 });
+        const trimDarkMat = builder._ps1Mat({ color: 0x1e2228, roughness: 0.85, metalness: 0.2 });
+        const winMat = builder._ps1Mat({ color: 0x1a2634, roughness: 0.18, metalness: 0.45 });
         const tireMat = builder._ps1Mat({ color: 0x14161a, roughness: 0.95 });
-        const chromeMat = builder._ps1Mat({ color: 0xbac2cc, roughness: 0.3, metalness: 0.75 });
+        const chromeMat = builder._ps1Mat({ map: materials.metal.map, color: 0xc4ccd6, roughness: 0.28, metalness: 0.8 });
+        const plateMat = builder._ps1Mat({ color: 0xe6e4dc, roughness: 0.7 });
         const hlMat = builder._ps1Mat({ color: 0xfff5d0, emissive: 0xffe49c, emissiveIntensity: 1.4, roughness: 0.2 });
         const tlMat = builder._ps1Mat({ color: 0xb81c1c, emissive: 0xcc1818, emissiveIntensity: 0.9, roughness: 0.35 });
 
@@ -807,13 +810,30 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
         glassF.position.set(0, 1.08, 0.84);
         const glassR = glassF.clone();
         glassR.position.z = -1.08;
+        // Side windows, door seams & side mirrors
+        for (const sx of [-1, 1]) {
+            const sideWin = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.34, 1.56), winMat);
+            sideWin.position.set(sx * 0.71, 1.08, -0.12);
+            const trimStrip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 3.65), chromeMat);
+            trimStrip.position.set(sx * 0.835, 0.58, 0);
+            const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.08), trimDarkMat);
+            mirror.position.set(sx * 0.86, 0.92, 0.68);
+            g.add(sideWin, trimStrip, mirror);
+        }
+        // Radiator grille + front & rear Soviet license plates
+        const grille = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.24, 0.06), trimDarkMat);
+        grille.position.set(0, 0.58, 1.98);
+        const plateF = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.11, 0.03), plateMat);
+        plateF.position.set(0, 0.35, 2.06);
+        const plateR = plateF.clone();
+        plateR.position.set(0, 0.48, -2.01);
         const roofSnow = new THREE.Mesh(new THREE.BoxGeometry(1.34, 0.08, 1.75), snowMat);
         roofSnow.position.set(0, 1.36, -0.12);
         const bumperF = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.10, 0.12), chromeMat);
         bumperF.position.set(0, 0.34, 2.00);
         const bumperR = bumperF.clone();
         bumperR.position.z = -2.00;
-        g.add(body, cabin, glassF, glassR, roofSnow, bumperF, bumperR);
+        g.add(body, cabin, glassF, glassR, grille, plateF, plateR, roofSnow, bumperF, bumperR);
 
         for (const sx of [-0.60, 0.60]) {
             const hl = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.10, 0.05, 8), hlMat);
@@ -837,19 +857,24 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
             const w = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.22, 10), tireMat);
             w.rotation.z = Math.PI / 2;
             w.position.set(wx, 0.30, wz);
-            g.add(w);
+            const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.24, 8), chromeMat);
+            hub.rotation.z = Math.PI / 2;
+            hub.position.set(wx, 0.30, wz);
+            g.add(w, hub);
             wheels.push(w);
         }
-        scene.add(g);
-        return { group: g, wheels, dirX, laneZ, speed, minX: 34, maxX: 118, pauseTimer: 0, hornCooldown: 0, engineTimer: Math.random() * 0.6, tlMat };
+        // Collidable body (rotated 90deg along X axis -> 4.0m along X, 1.35m tall, 1.75m along Z)
+        carGO.addComponent(BoxCollider, new THREE.Vector3(4.0, 1.35, 1.75), new THREE.Vector3(0, 0.68, 0));
+        const carRB = carGO.addComponent(RigidBody, { bodyType: 'static' });
+        engine.addGameObject(carGO);
+        return { go: carGO, rb: carRB, group: g, wheels, dirX, laneZ, speed, minX: 34, maxX: 118, pauseTimer: idx * 3.5, hornCooldown: 0, engineTimer: Math.random() * 0.6, tlMat };
     };
 
     const trafficCars = [
-        buildTrafficCar(0x889984, -1, 19.6, 112, 6.2),
-        buildTrafficCar(0x3a4a60, 1, 22.8, 38, 5.6),
-        buildTrafficCar(0x7c3630, -1, 19.6, 62, 6.8)
+        buildTrafficCar(0, 0x889984, -1, 19.6, 112, 5.8),
+        buildTrafficCar(1, 0x3a4a60, 1, 22.8, 38, 5.4)
     ];
-    trafficCars.forEach((c, idx) => reg(c.group, `StoreTrafficCar_${idx}`, 'gameplay'));
+    trafficCars.forEach((c, idx) => reg(c.group, `StoreTrafficCar_${idx}`, 'store', { gameObject: c.go }));
 
     // =========================================================================
     // 8. WALKING CITY PEDESTRIANS (4 Bundled-Up Winter Residents)
@@ -910,7 +935,7 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
         count: 720,
         bounds: new THREE.Vector3(78, 18, 66),
         color: 0xe8f2ff,
-        size: 0.048,
+        size: 0.018,
         speed: 1.05
     });
     engine.addGameObject(citySnowGO);
@@ -963,20 +988,30 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
                 continue;
             }
             let blockedByPlayer = false;
+            let blockedByCar = false;
             if (playerPos && Math.abs(playerPos.z - car.laneZ) < 1.8) {
                 const ahead = (playerPos.x - car.group.position.x) * car.dirX;
                 if (ahead > 0.5 && ahead < 6.5) blockedByPlayer = true;
             }
+            for (const other of trafficCars) {
+                if (other === car || Math.abs(other.laneZ - car.laneZ) > 1.2) continue;
+                const aheadCar = (other.group.position.x - car.group.position.x) * car.dirX;
+                if (aheadCar > 0 && aheadCar < 8.0) {
+                    blockedByCar = true;
+                    break;
+                }
+            }
             if (car.hornCooldown > 0) car.hornCooldown -= dt;
-            if (car.tlMat) car.tlMat.emissiveIntensity = blockedByPlayer ? 2.2 : 0.85;
+            if (car.tlMat) car.tlMat.emissiveIntensity = (blockedByPlayer || blockedByCar) ? 2.2 : 0.85;
 
             if (blockedByPlayer) {
                 if (car.hornCooldown <= 0) {
                     car.hornCooldown = 2.4 + Math.random() * 0.8;
                     engine.audioSystem?.playSpatialOneShot?.('car_horn', car.group.position, { volume: 0.75 });
                 }
-            } else {
+            } else if (!blockedByCar) {
                 car.group.position.x += car.dirX * car.speed * dt;
+                if (car.rb?.position) car.rb.position.copy(car.group.position);
                 for (const w of car.wheels) w.rotation.x += dt * car.speed * 2.5;
                 if (playerPos && car.group.position.distanceTo(playerPos) < 20) {
                     car.engineTimer -= dt;
@@ -987,10 +1022,12 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
                 }
                 if (car.dirX > 0 && car.group.position.x > car.maxX) {
                     car.group.position.x = car.minX;
-                    car.pauseTimer = 2.0 + Math.random() * 5.0; // Rare traffic spacing
+                    if (car.rb?.position) car.rb.position.copy(car.group.position);
+                    car.pauseTimer = 4.0 + Math.random() * 6.0; // Rare traffic spacing
                 } else if (car.dirX < 0 && car.group.position.x < car.minX) {
                     car.group.position.x = car.maxX;
-                    car.pauseTimer = 2.0 + Math.random() * 5.0;
+                    if (car.rb?.position) car.rb.position.copy(car.group.position);
+                    car.pauseTimer = 4.0 + Math.random() * 6.0;
                 }
             }
         }

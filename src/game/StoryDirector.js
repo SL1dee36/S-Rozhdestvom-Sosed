@@ -3397,7 +3397,13 @@ export class StoryDirector {
                 return;
             }
 
-            // Return home: fade out while climbing the ground-floor podiezd stairs -> teleport to 3rd-floor stairs outside #34 -> walk inside!
+            // Return home:
+            // 1. Immediately animate climbing forward up the ground-floor podiezd stairs while fading out
+            // 2. Fade in on the 3rd-floor stairs & climb up to Apartment #34
+            // 3. Open front door & walk inside
+            // 4. Turn around toward the door
+            // 5. Close front door behind player
+            // 6. Turn back toward the hallway & unlock controls
             const t = trState.timer;
             const a = this.engine.audioSystem;
             const fd = this.world.frontDoor?.go;
@@ -3406,11 +3412,28 @@ export class StoryDirector {
                 return c * c * (3 - 2 * c);
             };
 
-            if (t < 1.15) {
-                this._fadeVal = Math.max(0, 1.0 - t / 1.10);
+            if (t < 1.35) {
+                if (!trState.groundClimbInit) {
+                    trState.groundClimbInit = true;
+                    trState.startPos = this.player.transform.position.clone();
+                    this.player.forcedLookTarget = trState.lookTarget;
+                    this.player.forcedLookSpeed = 7.0;
+                }
+                const u = smooth(t / 1.35);
+                const sp = trState.startPos;
+                const px = THREE.MathUtils.lerp(sp.x, 94.85, u);
+                const py = sp.y + u * 0.95 + Math.abs(Math.sin(u * Math.PI * 4)) * 0.035;
+                const pz = sp.z + u * 1.45;
+                this.player.transform.position.set(px, py, pz);
+                if (this.player.rb) this.player.rb.position.set(px, py, pz);
+                // Face forward (+Z) up the ground-floor stairs
+                trState.lookTarget.set(94.85, py + 1.55, pz + 2.8);
+                this.player.cinematicBobOffset = Math.sin(t * 11.0) * 0.028;
+
+                this._fadeVal = Math.max(0, 1.0 - Math.max(0, (t - 0.25) / 1.05));
                 this.engine.renderer.setPostProcessParams({ fade: this._fadeVal });
                 trState.stepTimer -= deltaTime;
-                if (trState.stepTimer <= 0 && t < 0.95) {
+                if (trState.stepTimer <= 0 && t < 1.15) {
                     trState.stepTimer = 0.30;
                     a.playSpatialOneShot('footstep_concrete', this.player.transform.position, { volume: 0.45 });
                 }
@@ -3426,20 +3449,21 @@ export class StoryDirector {
                 this.ui.setClockText('21:40');
                 this.world.store.resetStreetDoors?.();
                 a.stopSpatialLoop('street_music');
-                // Place player on the 3rd-floor stairs coming up toward Apartment #34
-                this.player.setPose(new THREE.Vector3(2.55, -0.78, 7.15), 0.12, 0.14);
+                // Place player on the 3rd-floor stairs facing forward (-Z) up toward Apartment #34
+                this.player.setPose(new THREE.Vector3(2.55, -0.78, 7.15), 0.14, 0.14);
+                trState.lookTarget.set(3.075, 1.32, 4.4);
                 this.player.forcedLookTarget = trState.lookTarget;
-                this.player.forcedLookSpeed = 5.0;
+                this.player.forcedLookSpeed = 6.0;
                 this._refreshObjectives();
             }
 
-            const rt = t - 1.15;
+            const rt = t - 1.35;
             this._fadeVal = Math.min(1.0, rt / 0.70);
             this.engine.renderer.setPostProcessParams({ fade: this._fadeVal });
 
-            if (rt < 1.35) {
-                // Climb the last steps onto the 3rd-floor landing
-                const u = smooth(rt / 1.35);
+            if (rt < 1.40) {
+                // Phase 2: Climb the last steps onto the 3rd-floor landing
+                const u = smooth(rt / 1.40);
                 const px = THREE.MathUtils.lerp(2.55, 3.05, u);
                 const py = THREE.MathUtils.lerp(-0.78, 0.05, u) + Math.abs(Math.sin(u * Math.PI * 4)) * 0.04;
                 const pz = THREE.MathUtils.lerp(7.15, 5.25, u);
@@ -3452,26 +3476,50 @@ export class StoryDirector {
                     trState.stepTimer = 0.30;
                     a.playSpatialOneShot('footstep_concrete', this.player.transform.position, { volume: 0.44 });
                 }
-            } else if (rt < 2.65) {
-                // Open front door & step inside Apartment #34
-                const u = smooth((rt - 1.35) / 1.30);
+            } else if (rt < 2.75) {
+                // Phase 3: Open front door & step inside Apartment #34
+                const u = smooth((rt - 1.40) / 1.35);
                 if (!trState.doorOpened) {
                     trState.doorOpened = true;
                     a.playSpatialOneShot('door_open', new THREE.Vector3(3.08, 1.1, 4.5), { volume: 0.62 });
                 }
-                const ang = Math.sin(Math.min(1, u * 1.1) * Math.PI * 0.5) * 1.35;
+                const ang = Math.sin(Math.min(1, u * 1.15) * Math.PI * 0.5) * 1.35;
                 if (fd) {
                     fd.transform.position.set(3.55 - Math.cos(ang) * 0.475, 1.075, 4.5 + Math.sin(ang) * 0.475);
                     fd.transform.rotation.y = ang;
                 }
                 const px = THREE.MathUtils.lerp(3.05, 3.08, u);
-                const pz = THREE.MathUtils.lerp(5.25, 3.82, u);
+                const pz = THREE.MathUtils.lerp(5.25, 3.65, u);
                 this.player.transform.position.set(px, 0.05, pz);
                 if (this.player.rb) this.player.rb.position.set(px, 0.05, pz);
                 trState.lookTarget.set(3.08, 1.38, 1.5);
                 this.player.cinematicBobOffset = Math.sin(rt * 9.5) * 0.025;
+            } else if (rt < 3.45) {
+                // Phase 4: Turn around to face the open front door
+                const u = smooth((rt - 2.75) / 0.70);
+                this.player.cinematicBobOffset = 0;
+                const turnAng = u * Math.PI; // 0 (-Z hallway) -> PI (+Z door)
+                trState.lookTarget.set(3.08 + Math.sin(turnAng) * 1.8, 1.35, 3.65 - Math.cos(turnAng) * 1.8);
+            } else if (rt < 4.15) {
+                // Phase 5: Close the front door behind player
+                const u = smooth((rt - 3.45) / 0.70);
+                const ang = (1.0 - u) * 1.35;
+                if (fd) {
+                    fd.transform.position.set(3.55 - Math.cos(ang) * 0.475, 1.075, 4.5 + Math.sin(ang) * 0.475);
+                    fd.transform.rotation.y = ang;
+                }
+                if (!trState.doorClosed && u >= 0.85) {
+                    trState.doorClosed = true;
+                    a.playSpatialOneShot('door_close', new THREE.Vector3(3.08, 1.1, 4.5), { volume: 0.65 });
+                }
+                trState.lookTarget.set(3.08, 1.32, 4.65);
+            } else if (rt < 4.85) {
+                // Phase 6: Turn back toward the hallway
+                const u = smooth((rt - 4.15) / 0.70);
+                const turnAng = Math.PI + u * Math.PI; // PI (+Z door) -> 2*PI (-Z hallway)
+                trState.lookTarget.set(3.08 + Math.sin(turnAng) * 1.8, 1.38, 3.65 - Math.cos(turnAng) * 1.8);
             } else {
-                // Restore front door closed behind player & unlock controls
+                // Restore front door closed behind player & unlock controls facing hallway
                 if (fd) {
                     fd.transform.position.set(3.075, 1.075, 4.5);
                     fd.transform.rotation.set(0, 0, 0);
@@ -3479,7 +3527,7 @@ export class StoryDirector {
                 if (this.world.frontDoor?.collider) this.world.frontDoor.collider.enabled = true;
                 this.player.cinematicBobOffset = 0;
                 this.player.forcedLookTarget = null;
-                this.player.setPose(new THREE.Vector3(3.08, 0.05, 3.82), 0, 0);
+                this.player.setPose(new THREE.Vector3(3.08, 0.05, 3.65), 0, 0);
                 if (this.player.rb) this.player.rb.useGravity = true;
                 if (this.player.collider) this.player.collider.enabled = true;
                 this._fadeVal = 1.0;

@@ -151,8 +151,8 @@ export function buildArticulatedHuman(options = {}) {
         const palm = new THREE.Mesh(new THREE.BoxGeometry(0.078, 0.095, 0.042), skinMat);
         palm.position.set(0, -0.28, 0);
         const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.045, 0.026), skinMat);
-        thumb.position.set(-sideX * 0.042, -0.265, -0.015);
-        thumb.rotation.z = sideX * 0.35;
+        thumb.position.set(sideX * 0.042, -0.265, -0.015);
+        thumb.rotation.z = -sideX * 0.35;
         elbowPivot.add(forearm, cuff, palm, thumb);
         shoulderPivot.add(shoulderCap, upperArm, elbowPivot);
         torsoPivot.add(shoulderPivot);
