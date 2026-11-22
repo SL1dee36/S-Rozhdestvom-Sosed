@@ -87,6 +87,7 @@
             <div class="frameless-content">
                 <h2 class="frameless-title" data-i18n="ui.settings.title">{{ui.settings.title}}</h2>
                 <div id="settings-panel" class="settings-panel">
+                    <div class="settings-section-title" data-i18n="ui.settings.sec_general">{{ui.settings.sec_general}}</div>
                     <div class="setting-row">
                         <label for="opt-language" data-i18n="ui.settings.language">{{ui.settings.language}}</label>
                         <select id="opt-language" class="setting-select">
@@ -97,16 +98,6 @@
                         </select>
                     </div>
                     <div class="setting-row">
-                        <label for="opt-mic-mode" data-i18n="ui.settings.mic_mode">{{ui.settings.mic_mode}}</label>
-                        <input type="checkbox" id="opt-mic-mode" checked>
-                    </div>
-                    <div class="mic-test-row">
-                        <button id="btn-test-mic" style="padding:5px 10px; font-size:12px;" data-i18n="ui.settings.test_mic">{{ui.settings.test_mic}}</button>
-                        <div class="mic-test-bar"><div id="mic-test-fill"></div></div>
-                    </div>
-                    <div id="mic-status" class="mic-note" data-i18n="ui.settings.mic_note_default">{{ui.settings.mic_note_default}}</div>
-
-                    <div class="setting-row">
                         <label for="opt-ps1-jitter" data-i18n="ui.settings.ps1_jitter">{{ui.settings.ps1_jitter}}</label>
                         <input type="checkbox" id="opt-ps1-jitter">
                     </div>
@@ -115,21 +106,64 @@
                         <input type="checkbox" id="opt-camera-tilt" checked>
                     </div>
                     <div class="setting-row">
-                        <label for="opt-motion-blur" data-i18n="ui.settings.motion_blur">{{ui.settings.motion_blur}}</label>
-                        <input type="checkbox" id="opt-motion-blur" checked>
+                        <label for="opt-brightness"><span data-i18n="ui.settings.brightness">{{ui.settings.brightness}}</span> (<span id="opt-brightness-val">70</span>%)</label>
+                        <input type="range" id="opt-brightness" min="0.5" max="1.8" step="0.05" value="0.7">
                     </div>
                     <div class="setting-row">
                         <label for="opt-vhs-intensity" data-i18n="ui.settings.vhs_intensity">{{ui.settings.vhs_intensity}}</label>
                         <input type="range" id="opt-vhs-intensity" min="0" max="1.5" step="0.05" value="0.5">
                     </div>
                     <div class="setting-row">
-                        <label for="opt-volume" data-i18n="ui.settings.volume">{{ui.settings.volume}}</label>
-                        <input type="range" id="opt-volume" min="0" max="1" step="0.05" value="0.85">
+                        <label for="opt-sensitivity"><span data-i18n="ui.settings.sensitivity">{{ui.settings.sensitivity}}</span> (<span id="opt-sensitivity-val">0.25</span>×)</label>
+                        <input type="range" id="opt-sensitivity" min="0.05" max="2.5" step="0.05" value="0.25">
+                    </div>
+
+                    <div class="settings-section-title" data-i18n="ui.settings.sec_audio">{{ui.settings.sec_audio}}</div>
+                    <div class="setting-row">
+                        <label for="opt-volume"><span data-i18n="ui.settings.volume">{{ui.settings.volume}}</span> (<span id="opt-volume-val">80</span>%)</label>
+                        <input type="range" id="opt-volume" min="0" max="1" step="0.05" value="0.8">
                     </div>
                     <div class="setting-row">
-                        <label for="opt-sensitivity"><span data-i18n="ui.settings.sensitivity">{{ui.settings.sensitivity}}</span> (<span id="opt-sensitivity-val">1.00</span>×)</label>
-                        <input type="range" id="opt-sensitivity" min="0.05" max="2.5" step="0.05" value="1.0">
+                        <label for="opt-vol-music"><span data-i18n="ui.settings.vol_music">{{ui.settings.vol_music}}</span> (<span id="opt-vol-music-val">50</span>%)</label>
+                        <input type="range" id="opt-vol-music" min="0" max="1" step="0.05" value="0.5">
                     </div>
+                    <div class="setting-row">
+                        <label for="opt-vol-ambient"><span data-i18n="ui.settings.vol_ambient">{{ui.settings.vol_ambient}}</span> (<span id="opt-vol-ambient-val">80</span>%)</label>
+                        <input type="range" id="opt-vol-ambient" min="0" max="1" step="0.05" value="0.8">
+                    </div>
+                    <div class="setting-row">
+                        <label for="opt-vol-sfx"><span data-i18n="ui.settings.vol_sfx">{{ui.settings.vol_sfx}}</span> (<span id="opt-vol-sfx-val">30</span>%)</label>
+                        <input type="range" id="opt-vol-sfx" min="0" max="1" step="0.05" value="0.3">
+                    </div>
+                    <div class="setting-row">
+                        <label for="opt-vol-voice"><span data-i18n="ui.settings.vol_voice">{{ui.settings.vol_voice}}</span> (<span id="opt-vol-voice-val">70</span>%)</label>
+                        <input type="range" id="opt-vol-voice" min="0" max="1" step="0.05" value="0.7">
+                    </div>
+                    <div class="setting-row">
+                        <label for="opt-spatial-audio" data-i18n="ui.settings.spatial_audio">{{ui.settings.spatial_audio}}</label>
+                        <input type="checkbox" id="opt-spatial-audio" checked>
+                    </div>
+                    <div class="setting-row">
+                        <label for="opt-audio-occlusion" data-i18n="ui.settings.audio_occlusion">{{ui.settings.audio_occlusion}}</label>
+                        <input type="checkbox" id="opt-audio-occlusion" checked>
+                    </div>
+                    <div class="setting-row">
+                        <label for="opt-audio-console" data-i18n="ui.settings.audio_console">{{ui.settings.audio_console}}</label>
+                        <input type="checkbox" id="opt-audio-console">
+                    </div>
+                    <div class="setting-row">
+                        <label for="opt-mic-mode" data-i18n="ui.settings.mic_mode">{{ui.settings.mic_mode}}</label>
+                        <input type="checkbox" id="opt-mic-mode" checked>
+                    </div>
+                    <div class="setting-row">
+                        <label for="opt-mic-sens"><span data-i18n="ui.settings.mic_sensitivity">{{ui.settings.mic_sensitivity}}</span> (<span id="opt-mic-sens-val">1.40</span>×)</label>
+                        <input type="range" id="opt-mic-sens" min="0.4" max="3.0" step="0.1" value="1.4">
+                    </div>
+                    <div class="mic-test-row">
+                        <button id="btn-test-mic" style="padding:5px 10px; font-size:12px;" data-i18n="ui.settings.test_mic">{{ui.settings.test_mic}}</button>
+                        <div class="mic-test-bar"><div id="mic-test-fill"></div></div>
+                    </div>
+                    <div id="mic-status" class="mic-note" data-i18n="ui.settings.mic_note_default">{{ui.settings.mic_note_default}}</div>
                 </div>
             </div>
         </div>

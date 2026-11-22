@@ -89,7 +89,39 @@ export class StoryDirector {
             fireworks: './assets/audio/fireworks.ogg',
             door_knock: './assets/audio/door_knock.ogg',
             door_bang: './assets/audio/door_bang.mp3',
-            tv_emergency_voice: './assets/audio/tv_emergency_voice.wav'
+            tv_emergency_voice: './assets/audio/tv_emergency_voice.wav',
+            // Generated audio files (previously procedural)
+            fridge_hum: './assets/audio/generated/fridge_hum.wav',
+            tv_static: './assets/audio/generated/tv_static.wav',
+            horror_drone: './assets/audio/generated/horror_drone.wav',
+            wind_snow: './assets/audio/generated/wind_snow.wav',
+            winter_street_music: './assets/audio/generated/winter_street_music.wav',
+            tv_broadcast: './assets/audio/generated/tv_broadcast.wav',
+            monster_breath: './assets/audio/generated/monster_breath.wav',
+            footstep_parquet: './assets/audio/generated/footstep_parquet.wav',
+            footstep_linoleum: './assets/audio/generated/footstep_linoleum.wav',
+            footstep_snow: './assets/audio/generated/footstep_snow.wav',
+            footstep_concrete: './assets/audio/generated/footstep_concrete.wav',
+            car_horn: './assets/audio/generated/car_horn.wav',
+            car_engine_pass: './assets/audio/generated/car_engine_pass.wav',
+            knife_drag: './assets/audio/generated/knife_drag.wav',
+            sniff: './assets/audio/generated/sniff.wav',
+            wood_creak: './assets/audio/generated/wood_creak.wav',
+            iron_door_creak: './assets/audio/generated/iron_door_creak.wav',
+            door_crash: './assets/audio/generated/door_crash.wav',
+            monster_roar: './assets/audio/generated/monster_roar.wav',
+            jumpscare: './assets/audio/generated/jumpscare.wav',
+            smoke_puff: './assets/audio/generated/smoke_puff.wav',
+            steam_hiss: './assets/audio/generated/steam_hiss.wav',
+            creak: './assets/audio/generated/creak.wav',
+            whisper_cue: './assets/audio/generated/whisper_cue.wav',
+            gasp: './assets/audio/generated/gasp.wav',
+            pickup: './assets/audio/generated/pickup.wav',
+            door_open: './assets/audio/generated/door_open.wav',
+            door_close: './assets/audio/generated/door_close.wav',
+            phone_ring: './assets/audio/generated/phone_ring.wav',
+            kettle_whistle: './assets/audio/generated/kettle_whistle.wav',
+            default_sfx: './assets/audio/generated/default_sfx.wav'
         }).then(() => {
             if (this.phase === 'menu') {
                 this.ensureMenuMusic();
@@ -1524,8 +1556,8 @@ export class StoryDirector {
             a.playSpatialOneShot('door_pound', new THREE.Vector3(-1.0, 1.0, -18.0), { volume: 0.45, maxDistance: 45 });
             setTimeout(() => {
                 if (this.act === 1) {
-                    if (w.roomLights.kitchen?.isOn()) w.lights.kitchenLight.intensity = 3.3;
-                    if (w.roomLights.hallway?.isOn()) w.lights.hallwayLight.intensity = 3.1;
+                    if (w.roomLights.kitchen?.isOn()) w.lights.kitchenLight.intensity = w.roomLights.kitchen.baseIntensity;
+                    if (w.roomLights.hallway?.isOn()) w.lights.hallwayLight.intensity = w.roomLights.hallway.baseIntensity;
                 }
             }, 650);
             this.ui.showSubtitle(tr('sub.suspense_flicker'), 3600);
@@ -3448,7 +3480,7 @@ export class StoryDirector {
                 this.world.setClockTime(-110);
                 this.ui.setClockText('21:40');
                 this.world.store.resetStreetDoors?.();
-                a.stopSpatialLoop('street_music');
+                a.stopLoop('street_music');
                 // Place player on the 3rd-floor stairs facing forward (-Z) up toward Apartment #34
                 this.player.setPose(new THREE.Vector3(2.55, -0.78, 7.15), 0.14, 0.14);
                 trState.lookTarget.set(3.075, 1.32, 4.4);

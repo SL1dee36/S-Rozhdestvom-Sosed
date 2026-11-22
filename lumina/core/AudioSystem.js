@@ -1,15 +1,50 @@
 import * as THREE from 'three';
 
+const MUSIC_KEYS = new Set([
+    'ogonyok_waltz', 'winter_street_music', 'melancholy_ambient',
+    'menu_music', 'credits_theme', 'street_music', 'melancholy'
+]);
+
+const AMBIENT_KEYS = new Set([
+    'wind', 'wind_snow', 'fridge_hum', 'clock_tick',
+    'horror_darkness', 'horror_drone', 'heartbeat',
+    'tv_static', 'tv_audio', 'tv_broadcast', 'white_noise'
+]);
+
+const VOICE_KEYS = new Set([
+    'tv_emergency_voice', 'tv_broadcast_voice', 'whisper_cue', 'gasp',
+    'monster_breath', 'monster_roar', 'jumpscare', 'sniff', 'knife_drag'
+]);
+
+const VALID_CATEGORIES = ['music', 'ambient', 'sfx', 'voice'];
+
 export class AudioSystem {
     constructor(camera) {
         this.camera = camera;
         this.ctx = null;
         this.masterGain = null;
-        this._masterVolume = 0.85;
+        this.categoryGains = {};
+
+        this._masterVolume = 0.80;
+        this._categoryVolumes = {
+            music: 0.50,
+            ambient: 0.80,
+            sfx: 0.30,
+            voice: 0.70
+        };
+        this.spatialAudioEnabled = true;
+        this.occlusionEnabled = true;
+        this.consoleLogging = false;
+
         this.buffers = new Map();
+        this.assetUrls = new Map();
         this.activeLoops = new Map();
         this._activeOneShotSources = new Map();
         this._tvBroadcastSource = null;
+        this._tvBroadcastInfo = null;
+
+        this.disabledSounds = new Set();
+        this.disabledCategories = new Set();
 
         this.micEnabled = true;
         this.micStream = null;
@@ -24,13 +59,63 @@ export class AudioSystem {
         this.oxygen = 1.0;
         this.isHoldingBreath = false;
         this._gaspCooldown = 0;
+        this._stepFootSide = false;
 
         this._tempPos = new THREE.Vector3();
         this._tempDir = new THREE.Vector3();
         this._tempUp = new THREE.Vector3(0, 1, 0);
         this._occlusionMeshes = [];
         this._raycaster = new THREE.Raycaster();
-        this._noiseBuffer = null;
+
+        this._exposeConsoleControls();
+    }
+
+    _exposeConsoleControls() {
+        if (typeof window === 'undefined') return;
+        const api = {
+            list: () => this.logPlayingSounds(),
+            playing: () => this.logPlayingSounds(),
+            all: () => this.logAllSounds(),
+            disable: (name) => this.disableSound(name),
+            off: (name) => this.disableSound(name),
+            enable: (name) => this.enableSound(name),
+            on: (name) => this.enableSound(name),
+            toggle: (name) => this.toggleSound(name),
+            logging: (enabled) => {
+                if (enabled === undefined) {
+                    console.log(`[Audio] Логирование в консоль: ${this.consoleLogging ? 'ВКЛ' : 'ВЫКЛ'}`);
+                    return this.consoleLogging;
+                }
+                this.setConsoleLogging(!!enabled);
+                return this.consoleLogging;
+            },
+            help: () => {
+                console.log(
+                    '%c[AudioDebug] Команды управления звуком:\n' +
+                    '  audioDebug.list()          — показать все играющие сейчас звуки\n' +
+                    '  audioDebug.all()           — список всех звуков и их статус (вкл/выкл)\n' +
+                    '  audioDebug.disable("имя")  — отключить звук или категорию (music/ambient/sfx/voice/all)\n' +
+                    '  audioDebug.enable("имя")   — включить звук или категорию (или "all")\n' +
+                    '  audioDebug.toggle("имя")   — переключить звук или категорию\n' +
+                    '  audioDebug.logging(false)  — вкл/выкл вывод играющих звуков в консоль',
+                    'color:#7dd3fc;font-weight:bold;'
+                );
+            }
+        };
+        window.audioDebug = api;
+        window.soundConsole = api;
+        if (!window._audioDebugBannerShown) {
+            window._audioDebugBannerShown = true;
+            console.info('%c[Audio] Консоль звуков активна. Введите audioDebug.help() для списка команд (list, disable, enable, toggle).', 'color:#86efac;font-weight:bold;');
+        }
+    }
+
+    _resolveCategory(id, bufferKey, explicitCategory = null) {
+        if (explicitCategory && VALID_CATEGORIES.includes(explicitCategory)) return explicitCategory;
+        if (MUSIC_KEYS.has(bufferKey) || MUSIC_KEYS.has(id)) return 'music';
+        if (VOICE_KEYS.has(bufferKey) || VOICE_KEYS.has(id)) return 'voice';
+        if (AMBIENT_KEYS.has(bufferKey) || AMBIENT_KEYS.has(id)) return 'ambient';
+        return 'sfx';
     }
 
     initContext() {
@@ -46,25 +131,273 @@ export class AudioSystem {
         this.masterGain.gain.value = this._masterVolume;
         this.masterGain.connect(this.ctx.destination);
 
-        const sampleRate = this.ctx.sampleRate;
-        const length = sampleRate * 2;
-        this._noiseBuffer = this.ctx.createBuffer(1, length, sampleRate);
-        const data = this._noiseBuffer.getChannelData(0);
-        let b0 = 0, b1 = 0, b2 = 0;
-        for (let i = 0; i < length; i++) {
-            const white = Math.random() * 2 - 1;
-            b0 = 0.99765 * b0 + white * 0.0990460;
-            b1 = 0.96300 * b1 + white * 0.2965164;
-            b2 = 0.57000 * b2 + white * 1.0526913;
-            data[i] = (b0 + b1 + b2 + white * 0.1848) * 0.16;
+        for (const cat of VALID_CATEGORIES) {
+            const g = this.ctx.createGain();
+            g.gain.value = this.disabledCategories.has(cat) ? 0 : (this._categoryVolumes[cat] ?? 1.0);
+            g.connect(this.masterGain);
+            this.categoryGains[cat] = g;
         }
         return this.ctx;
+    }
+
+    _getCategoryDest(category) {
+        this.initContext();
+        return this.categoryGains[category] || this.masterGain;
     }
 
     setMasterVolume(vol) {
         this._masterVolume = Math.max(0, Math.min(1, Number.isFinite(vol) ? vol : 0.85));
         if (this.masterGain && this.ctx) {
             this.masterGain.gain.setTargetAtTime(this._masterVolume, this.ctx.currentTime, 0.04);
+        }
+    }
+
+    getMasterVolume() {
+        return this._masterVolume;
+    }
+
+    setCategoryVolume(category, vol) {
+        if (!VALID_CATEGORIES.includes(category)) return;
+        const clamped = Math.max(0, Math.min(1, Number.isFinite(vol) ? vol : 1.0));
+        this._categoryVolumes[category] = clamped;
+        const node = this.categoryGains[category];
+        if (node && this.ctx) {
+            const effective = this.disabledCategories.has(category) ? 0 : clamped;
+            node.gain.setTargetAtTime(effective, this.ctx.currentTime, 0.04);
+        }
+    }
+
+    getCategoryVolume(category) {
+        return this._categoryVolumes[category] ?? 1.0;
+    }
+
+    setSpatialAudioEnabled(enabled) {
+        this.spatialAudioEnabled = !!enabled;
+        for (const entry of this.activeLoops.values()) {
+            if (entry.panner) {
+                entry.panner.panningModel = this.spatialAudioEnabled ? 'HRTF' : 'equalpower';
+                if (!this.spatialAudioEnabled) {
+                    entry.panner.rolloffFactor = 0;
+                } else {
+                    entry.panner.rolloffFactor = entry.rolloffFactor ?? 1.35;
+                }
+            }
+        }
+    }
+
+    setOcclusionEnabled(enabled) {
+        this.occlusionEnabled = !!enabled;
+        if (!this.occlusionEnabled && this.ctx) {
+            for (const entry of this.activeLoops.values()) {
+                entry._cachedOcc = false;
+                if (!entry.tvFilter && entry.filter) {
+                    entry.filter.frequency.setTargetAtTime(18000, this.ctx.currentTime, 0.08);
+                }
+            }
+        }
+    }
+
+    setConsoleLogging(enabled) {
+        this.consoleLogging = !!enabled;
+        console.log(`[Audio] Вывод играющих звуков в консоль: ${this.consoleLogging ? 'ВКЛ' : 'ВЫКЛ'}`);
+    }
+
+    setMicSensitivity(val) {
+        this.micSensitivity = Math.max(0.4, Math.min(3.0, Number.isFinite(val) ? val : 1.4));
+    }
+
+    isSoundDisabled(id, bufferKey = null, category = null) {
+        const cat = category || this._resolveCategory(id, bufferKey);
+        if (this.disabledCategories.has(cat)) return true;
+        if (id && this.disabledSounds.has(id)) return true;
+        if (bufferKey && this.disabledSounds.has(bufferKey)) return true;
+        return false;
+    }
+
+    disableSound(target) {
+        if (!target) {
+            console.warn('[Audio] Укажите имя звука, категорию (music/ambient/sfx/voice) или "all".');
+            return;
+        }
+        const key = String(target).trim();
+        if (key === 'all') {
+            VALID_CATEGORIES.forEach(c => this.disabledCategories.add(c));
+            this._refreshCategoryGains();
+            this._syncActiveLoopsMute();
+            console.log('%c[Audio 🔇] Все звуки отключены.', 'color:#f87171;font-weight:bold;');
+            return;
+        }
+        if (VALID_CATEGORIES.includes(key)) {
+            this.disabledCategories.add(key);
+            this._refreshCategoryGains();
+            console.log(`%c[Audio 🔇] Категория "${key}" отключена.`, 'color:#f87171;');
+            return;
+        }
+        this.disabledSounds.add(key);
+        this._syncActiveLoopsMute();
+        this.stopOneShotsByType(key);
+        if (key === 'tv_emergency_voice' || key === 'tv_broadcast_voice') {
+            this.stopTVBroadcast();
+        }
+        console.log(`%c[Audio 🔇] Звук "${key}" отключён.`, 'color:#f87171;');
+    }
+
+    enableSound(target) {
+        if (!target) {
+            console.warn('[Audio] Укажите имя звука, категорию (music/ambient/sfx/voice) или "all".');
+            return;
+        }
+        const key = String(target).trim();
+        if (key === 'all') {
+            this.disabledCategories.clear();
+            this.disabledSounds.clear();
+            this._refreshCategoryGains();
+            this._syncActiveLoopsMute();
+            console.log('%c[Audio 🔊] Все звуки включены.', 'color:#4ade80;font-weight:bold;');
+            return;
+        }
+        if (VALID_CATEGORIES.includes(key)) {
+            this.disabledCategories.delete(key);
+            this._refreshCategoryGains();
+            console.log(`%c[Audio 🔊] Категория "${key}" включена.`, 'color:#4ade80;');
+            return;
+        }
+        this.disabledSounds.delete(key);
+        this._syncActiveLoopsMute();
+        console.log(`%c[Audio 🔊] Звук "${key}" включён.`, 'color:#4ade80;');
+    }
+
+    toggleSound(target) {
+        const key = String(target || '').trim();
+        if (!key) return;
+        if (VALID_CATEGORIES.includes(key)) {
+            if (this.disabledCategories.has(key)) this.enableSound(key);
+            else this.disableSound(key);
+            return;
+        }
+        if (this.disabledSounds.has(key)) this.enableSound(key);
+        else this.disableSound(key);
+    }
+
+    _refreshCategoryGains() {
+        if (!this.ctx) return;
+        for (const cat of VALID_CATEGORIES) {
+            const node = this.categoryGains[cat];
+            if (!node) continue;
+            const target = this.disabledCategories.has(cat) ? 0 : (this._categoryVolumes[cat] ?? 1.0);
+            node.gain.setTargetAtTime(target, this.ctx.currentTime, 0.03);
+        }
+    }
+
+    _syncActiveLoopsMute() {
+        if (!this.ctx) return;
+        for (const entry of this.activeLoops.values()) {
+            const muted = this.isSoundDisabled(entry.id, entry.bufferKey, entry.category);
+            entry.muted = muted;
+            if (muted) {
+                entry.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03);
+            } else {
+                entry.gain.gain.setTargetAtTime(entry.baseVolume, this.ctx.currentTime, 0.05);
+            }
+        }
+    }
+
+    getPlayingSounds() {
+        const now = performance.now();
+        const result = [];
+        for (const entry of this.activeLoops.values()) {
+            result.push({
+                id: entry.id,
+                sound: entry.bufferKey || entry.id,
+                type: 'loop',
+                category: entry.category,
+                volume: Number(entry.baseVolume.toFixed(2)),
+                muted: this.isSoundDisabled(entry.id, entry.bufferKey, entry.category),
+                spatial: !!entry.isSpatial,
+                playingSec: Number(((now - entry.startedAt) / 1000).toFixed(1))
+            });
+        }
+        for (const [type, list] of this._activeOneShotSources.entries()) {
+            for (const item of list) {
+                result.push({
+                    id: type,
+                    sound: item.bufferKey || type,
+                    type: 'oneshot',
+                    category: item.category,
+                    volume: Number((item.volume ?? 0.7).toFixed(2)),
+                    muted: false,
+                    spatial: !!item.isSpatial,
+                    playingSec: Number(((now - item.startedAt) / 1000).toFixed(2))
+                });
+            }
+        }
+        if (this._tvBroadcastSource && this._tvBroadcastInfo) {
+            result.push({
+                id: 'tv_broadcast_voice',
+                sound: 'tv_emergency_voice',
+                type: 'voice',
+                category: 'voice',
+                volume: 0.85,
+                muted: this.isSoundDisabled('tv_broadcast_voice', 'tv_emergency_voice', 'voice'),
+                spatial: true,
+                playingSec: Number(((now - this._tvBroadcastInfo.startedAt) / 1000).toFixed(1))
+            });
+        }
+        return result;
+    }
+
+    logPlayingSounds() {
+        const list = this.getPlayingSounds();
+        if (list.length === 0) {
+            console.log('[Audio] Сейчас ни один звук не играет.');
+            return list;
+        }
+        console.log(`%c[Audio] Сейчас играет звуков: ${list.length}`, 'color:#7dd3fc;font-weight:bold;');
+        console.table(list);
+        return list;
+    }
+
+    logAllSounds() {
+        const rows = [];
+        for (const [key, url] of this.assetUrls.entries()) {
+            const cat = this._resolveCategory(key, key);
+            rows.push({
+                sound: key,
+                category: cat,
+                loaded: this.buffers.has(key),
+                enabled: !this.isSoundDisabled(key, key, cat),
+                file: url
+            });
+        }
+        rows.sort((a, b) => a.category.localeCompare(b.category) || a.sound.localeCompare(b.sound));
+        console.table(rows);
+        return rows;
+    }
+
+    _logEvent(action, id, bufferKey, category, extra = '') {
+        if (!this.consoleLogging) return;
+        const activeLoopIds = Array.from(this.activeLoops.keys());
+        const suffix = extra ? ` | ${extra}` : '';
+        if (action === 'LOOP') {
+            console.log(
+                `%c[Audio ▶ LOOP]%c ${id} (${bufferKey}) [${category}]${suffix} | Активные циклы (${activeLoopIds.length}): ${activeLoopIds.join(', ')}`,
+                'color:#38bdf8;font-weight:bold;', 'color:inherit;'
+            );
+        } else if (action === 'SFX') {
+            console.log(
+                `%c[Audio ▶ SFX]%c ${id} (${bufferKey}) [${category}]${suffix}`,
+                'color:#a3e635;font-weight:bold;', 'color:inherit;'
+            );
+        } else if (action === 'STOP') {
+            console.log(
+                `%c[Audio ■ STOP]%c ${id}${suffix} | Осталось циклов: ${activeLoopIds.length}`,
+                'color:#94a3b8;font-weight:bold;', 'color:inherit;'
+            );
+        } else if (action === 'MUTED') {
+            console.log(
+                `%c[Audio 🔇 MUTED]%c ${id} (${bufferKey}) [${category}] — отключён через консоль`,
+                'color:#f87171;font-weight:bold;', 'color:inherit;'
+            );
         }
     }
 
@@ -75,6 +408,9 @@ export class AudioSystem {
     async loadAudioAssets(manifest) {
         this.initContext();
         const entries = Object.entries(manifest);
+        for (const [key, url] of entries) {
+            this.assetUrls.set(key, url);
+        }
         await Promise.all(entries.map(async ([key, url]) => {
             try {
                 const res = await fetch(url);
@@ -135,11 +471,11 @@ export class AudioSystem {
     createPanner(position, options = {}) {
         this.initContext();
         const panner = this.ctx.createPanner();
-        panner.panningModel = 'HRTF';
+        panner.panningModel = this.spatialAudioEnabled ? 'HRTF' : 'equalpower';
         panner.distanceModel = 'inverse';
         panner.refDistance = options.refDistance ?? 1.6;
         panner.maxDistance = options.maxDistance ?? 38;
-        panner.rolloffFactor = options.rolloffFactor ?? 1.35;
+        panner.rolloffFactor = this.spatialAudioEnabled ? (options.rolloffFactor ?? 1.35) : 0;
         if (position) {
             panner.positionX.value = position.x;
             panner.positionY.value = position.y;
@@ -149,7 +485,7 @@ export class AudioSystem {
     }
 
     computeOcclusion(sourcePos) {
-        if (!this.camera || !sourcePos || this._occlusionMeshes.length === 0) return false;
+        if (!this.occlusionEnabled || !this.camera || !sourcePos || this._occlusionMeshes.length === 0) return false;
         this.camera.getWorldPosition(this._tempPos);
         const dir = new THREE.Vector3().subVectors(sourcePos, this._tempPos);
         const dist = dir.length();
@@ -163,7 +499,11 @@ export class AudioSystem {
 
     startSpatialLoop(id, bufferKey, position, options = {}) {
         this.initContext();
-        this.stopLoop(id);
+        this.stopLoop(id, true);
+
+        const resolvedKey = bufferKey === 'white_noise' ? 'tv_static' : (bufferKey || id);
+        const category = this._resolveCategory(id, resolvedKey, options.category);
+        const muted = this.isSoundDisabled(id, resolvedKey, category);
 
         const panner = this.createPanner(position, options);
         const filter = this.ctx.createBiquadFilter();
@@ -171,17 +511,16 @@ export class AudioSystem {
         filter.frequency.value = options.tvFilter ? 1150 : 18000;
         filter.Q.value = options.tvFilter ? 1.4 : 0.7;
 
+        const baseVol = options.volume ?? 0.4;
         const gain = this.ctx.createGain();
-        gain.gain.value = options.volume ?? 0.4;
+        gain.gain.value = muted ? 0 : baseVol;
 
         filter.connect(gain);
         gain.connect(panner);
-        panner.connect(this.masterGain);
+        panner.connect(this._getCategoryDest(category));
 
         let sourceNode = null;
-        let extraStop = null;
-
-        const buf = bufferKey ? this.buffers.get(bufferKey) : null;
+        const buf = this.buffers.get(resolvedKey) || this.buffers.get(id) || null;
         if (buf) {
             sourceNode = this.ctx.createBufferSource();
             sourceNode.buffer = buf;
@@ -189,32 +528,42 @@ export class AudioSystem {
             if (options.playbackRate) sourceNode.playbackRate.value = options.playbackRate;
             sourceNode.connect(filter);
             sourceNode.start(0, options.offset || 0);
-        } else {
-            extraStop = this._startProceduralLoop(bufferKey || id, filter);
+        } else if (this.consoleLogging) {
+            console.warn(`[Audio] Аудиофайл для цикла "${resolvedKey}" ещё не загружен.`);
         }
 
         const entry = {
             id,
+            bufferKey: resolvedKey,
+            category,
             panner,
             filter,
             gain,
             sourceNode,
-            extraStop,
             position: position ? position.clone() : new THREE.Vector3(),
+            isSpatial: !!position,
             tvFilter: !!options.tvFilter,
-            baseVolume: options.volume ?? 0.4,
+            baseVolume: baseVol,
+            muted,
+            startedAt: performance.now(),
             refDistance: options.refDistance ?? 1.6,
             maxDistance: options.maxDistance ?? 38,
             rolloffFactor: options.rolloffFactor ?? 1.35,
             checkOcclusion: options.checkOcclusion !== false
         };
         this.activeLoops.set(id, entry);
+
+        if (muted) {
+            this._logEvent('MUTED', id, resolvedKey, category);
+        } else {
+            this._logEvent('LOOP', id, resolvedKey, category, `vol=${baseVol.toFixed(2)}`);
+        }
         return entry;
     }
 
     updateLoopPosition(id, pos) {
         const entry = this.activeLoops.get(id);
-        if (!entry || !pos) return;
+        if (!entry || !pos || !this.ctx) return;
         entry.position.copy(pos);
         entry.panner.positionX.setTargetAtTime(pos.x, this.ctx.currentTime, 0.03);
         entry.panner.positionY.setTargetAtTime(pos.y, this.ctx.currentTime, 0.03);
@@ -225,288 +574,23 @@ export class AudioSystem {
         const entry = this.activeLoops.get(id);
         if (!entry || !this.ctx) return;
         entry.baseVolume = volume;
-        entry.gain.gain.setTargetAtTime(volume, this.ctx.currentTime, ramp);
+        const target = this.isSoundDisabled(entry.id, entry.bufferKey, entry.category) ? 0 : volume;
+        entry.gain.gain.setTargetAtTime(target, this.ctx.currentTime, ramp);
     }
 
-    stopLoop(id) {
+    stopLoop(id, silent = false) {
         const entry = this.activeLoops.get(id);
         if (!entry) return;
         try { if (entry.sourceNode) entry.sourceNode.stop(); } catch (e) {}
-        try { if (entry.extraStop) entry.extraStop(); } catch (e) {}
         try { entry.panner.disconnect(); } catch (e) {}
         this.activeLoops.delete(id);
-    }
-
-    _startProceduralLoop(kind, dest) {
-        const ctx = this.ctx;
-        const nodes = [];
-        let timer = null;
-
-        if (kind === 'fridge_hum') {
-            const osc = ctx.createOscillator();
-            osc.type = 'sawtooth';
-            osc.frequency.value = 50;
-            const osc2 = ctx.createOscillator();
-            osc2.type = 'triangle';
-            osc2.frequency.value = 100.5;
-            const lp = ctx.createBiquadFilter();
-            lp.type = 'lowpass';
-            lp.frequency.value = 190;
-            const g = ctx.createGain();
-            g.gain.value = 0.42;
-            osc.connect(lp);
-            osc2.connect(lp);
-            lp.connect(g);
-            g.connect(dest);
-            osc.start();
-            osc2.start();
-            nodes.push(osc, osc2);
-            timer = setInterval(() => {
-                if (Math.random() < 0.35 && ctx.state === 'running') {
-                    const n = ctx.createBufferSource();
-                    n.buffer = this._noiseBuffer;
-                    const bp = ctx.createBiquadFilter();
-                    bp.type = 'bandpass';
-                    bp.frequency.value = 480 + Math.random() * 250;
-                    const rg = ctx.createGain();
-                    const t = ctx.currentTime;
-                    rg.gain.setValueAtTime(0.01, t);
-                    rg.gain.linearRampToValueAtTime(0.34, t + 0.15);
-                    rg.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
-                    n.connect(bp);
-                    bp.connect(rg);
-                    rg.connect(dest);
-                    n.start(t);
-                    n.stop(t + 0.95);
-                }
-            }, 3500);
-        } else if (kind === 'tv_static' || kind === 'white_noise') {
-            const src = ctx.createBufferSource();
-            src.buffer = this._noiseBuffer;
-            src.loop = true;
-            const g = ctx.createGain();
-            g.gain.value = 0.4;
-            src.connect(g);
-            g.connect(dest);
-            src.start();
-            nodes.push(src);
-        } else if (kind === 'horror_drone' || kind === 'horror_darkness') {
-            const osc1 = ctx.createOscillator();
-            osc1.type = 'sawtooth';
-            osc1.frequency.value = 46;
-            const osc2 = ctx.createOscillator();
-            osc2.type = 'sine';
-            osc2.frequency.value = 48.2;
-            const lp = ctx.createBiquadFilter();
-            lp.type = 'lowpass';
-            lp.frequency.value = 140;
-            const g = ctx.createGain();
-            g.gain.value = 0.35;
-            osc1.connect(lp);
-            osc2.connect(lp);
-            lp.connect(g);
-            g.connect(dest);
-            osc1.start();
-            osc2.start();
-            nodes.push(osc1, osc2);
-        } else if (kind === 'wind_snow') {
-            const src = ctx.createBufferSource();
-            src.buffer = this._noiseBuffer;
-            src.loop = true;
-            const bp = ctx.createBiquadFilter();
-            bp.type = 'bandpass';
-            bp.frequency.value = 340;
-            bp.Q.value = 2.2;
-            const lfo = ctx.createOscillator();
-            lfo.frequency.value = 0.18;
-            const lfoGain = ctx.createGain();
-            lfoGain.gain.value = 160;
-            lfo.connect(lfoGain);
-            lfoGain.connect(bp.frequency);
-            src.connect(bp);
-            bp.connect(dest);
-            src.start();
-            lfo.start();
-            nodes.push(src, lfo);
-        } else if (kind === 'winter_street_music') {
-            // Nostalgic post-Soviet winter night street ambient music (warm detuned electric pad + soft bells)
-            const chords = [
-                [220.00, 261.63, 329.63, 392.00], // Am7
-                [174.61, 220.00, 261.63, 329.63], // Fmaj7
-                [146.83, 220.00, 261.63, 349.23], // Dm7
-                [164.81, 207.65, 246.94, 329.63]  // E7
-            ];
-            const bellNotes = [523.25, 659.25, 587.33, 440.00, 493.88, 659.25, 783.99, 659.25];
-            let stepIdx = 0;
-            const playBar = () => {
-                if (ctx.state !== 'running') return;
-                const now = ctx.currentTime;
-                const chord = chords[stepIdx % chords.length];
-                const lp = ctx.createBiquadFilter();
-                lp.type = 'lowpass';
-                lp.frequency.value = 920;
-                lp.connect(dest);
-
-                for (let i = 0; i < chord.length; i++) {
-                    const osc = ctx.createOscillator();
-                    osc.type = i === 0 ? 'triangle' : 'sine';
-                    osc.frequency.value = chord[i] * (i === 0 ? 0.5 : 1.0);
-                    osc.detune.value = (i % 2 === 0 ? -4 : 4) + (Math.random() - 0.5) * 3;
-                    const g = ctx.createGain();
-                    const peak = i === 0 ? 0.22 : 0.11;
-                    g.gain.setValueAtTime(0.0008, now);
-                    g.gain.linearRampToValueAtTime(peak, now + 0.85);
-                    g.gain.exponentialRampToValueAtTime(0.0008, now + 3.7);
-                    osc.connect(g);
-                    g.connect(lp);
-                    osc.start(now);
-                    osc.stop(now + 3.8);
-                }
-
-                // Soft wintry music-box / celesta note on top
-                if (stepIdx % 2 === 0 || Math.random() < 0.65) {
-                    const bOsc = ctx.createOscillator();
-                    bOsc.type = 'sine';
-                    bOsc.frequency.value = bellNotes[stepIdx % bellNotes.length];
-                    const bg = ctx.createGain();
-                    const bt = now + 0.6 + Math.random() * 0.6;
-                    bg.gain.setValueAtTime(0.0008, bt);
-                    bg.gain.linearRampToValueAtTime(0.085, bt + 0.04);
-                    bg.gain.exponentialRampToValueAtTime(0.0008, bt + 2.2);
-                    bOsc.connect(bg);
-                    bg.connect(dest);
-                    bOsc.start(bt);
-                    bOsc.stop(bt + 2.3);
-                }
-                stepIdx++;
-            };
-            playBar();
-            timer = setInterval(playBar, 3600);
-        } else if (kind === 'tv_broadcast') {
-            // Retro Soviet TV program audio (muffled announcer speech cadence + variety show melody + subtle CRT hum)
-            const hum = ctx.createOscillator();
-            hum.type = 'sine';
-            hum.frequency.value = 50;
-            const humG = ctx.createGain();
-            humG.gain.value = 0.04;
-            hum.connect(humG);
-            humG.connect(dest);
-            hum.start();
-            nodes.push(hum);
-
-            const melody = [329.63, 392.00, 440.00, 392.00, 349.23, 329.63, 293.66, 329.63];
-            let tvTick = 0;
-            timer = setInterval(() => {
-                if (ctx.state !== 'running') return;
-                const now = ctx.currentTime;
-                const phase = tvTick % 16;
-                if (phase < 10) {
-                    // Muffled TV announcer / movie dialogue syllable burst
-                    if (Math.random() < 0.78) {
-                        const vOsc = ctx.createOscillator();
-                        vOsc.type = 'sawtooth';
-                        const baseF = (phase % 5 < 3 ? 135 : 210) + Math.random() * 45;
-                        vOsc.frequency.setValueAtTime(baseF, now);
-                        vOsc.frequency.linearRampToValueAtTime(baseF * (0.85 + Math.random() * 0.3), now + 0.14);
-                        const form = ctx.createBiquadFilter();
-                        form.type = 'bandpass';
-                        form.frequency.value = 750 + Math.random() * 650;
-                        form.Q.value = 3.2;
-                        const vg = ctx.createGain();
-                        const dur = 0.09 + Math.random() * 0.11;
-                        vg.gain.setValueAtTime(0.001, now);
-                        vg.gain.linearRampToValueAtTime(0.18, now + 0.02);
-                        vg.gain.exponentialRampToValueAtTime(0.001, now + dur);
-                        vOsc.connect(form);
-                        form.connect(vg);
-                        vg.connect(dest);
-                        vOsc.start(now);
-                        vOsc.stop(now + dur + 0.02);
-                    }
-                } else {
-                    // Retro TV variety show jingle / music snippet
-                    const note = melody[tvTick % melody.length];
-                    const mOsc = ctx.createOscillator();
-                    mOsc.type = 'triangle';
-                    mOsc.frequency.value = note;
-                    const mg = ctx.createGain();
-                    mg.gain.setValueAtTime(0.001, now);
-                    mg.gain.linearRampToValueAtTime(0.11, now + 0.03);
-                    mg.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
-                    mOsc.connect(mg);
-                    mg.connect(dest);
-                    mOsc.start(now);
-                    mOsc.stop(now + 0.36);
-                }
-                tvTick++;
-            }, 220);
-        } else if (kind === 'heartbeat') {
-            timer = setInterval(() => {
-                if (ctx.state === 'running') {
-                    this._triggerHeartbeatPulse(dest);
-                }
-            }, 720);
-        } else if (kind === 'monster_breath') {
-            timer = setInterval(() => {
-                if (ctx.state === 'running') {
-                    this._triggerMonsterBreath(dest);
-                }
-            }, 1350);
-        } else {
-            const osc = ctx.createOscillator();
-            osc.type = 'sine';
-            osc.frequency.value = 60;
-            const g = ctx.createGain();
-            g.gain.value = 0.08;
-            osc.connect(g);
-            g.connect(dest);
-            osc.start();
-            nodes.push(osc);
+        if (!silent) {
+            this._logEvent('STOP', id, entry.bufferKey, entry.category);
         }
-
-        return () => {
-            if (timer) clearInterval(timer);
-            nodes.forEach(n => { try { n.stop(); } catch (e) {} });
-        };
     }
 
-    _triggerHeartbeatPulse(dest) {
-        const t = this.ctx.currentTime;
-        [0, 0.19].forEach((offset, idx) => {
-            const osc = this.ctx.createOscillator();
-            const g = this.ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(idx === 0 ? 64 : 54, t + offset);
-            osc.frequency.exponentialRampToValueAtTime(28, t + offset + 0.14);
-            g.gain.setValueAtTime(0.001, t + offset);
-            g.gain.linearRampToValueAtTime(idx === 0 ? 0.55 : 0.35, t + offset + 0.02);
-            g.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.18);
-            osc.connect(g);
-            g.connect(dest);
-            osc.start(t + offset);
-            osc.stop(t + offset + 0.2);
-        });
-    }
-
-    _triggerMonsterBreath(dest) {
-        const t = this.ctx.currentTime;
-        const src = this.ctx.createBufferSource();
-        src.buffer = this._noiseBuffer;
-        const bp = this.ctx.createBiquadFilter();
-        bp.type = 'bandpass';
-        bp.frequency.setValueAtTime(260, t);
-        bp.frequency.linearRampToValueAtTime(460, t + 0.45);
-        bp.frequency.linearRampToValueAtTime(190, t + 0.95);
-        bp.Q.value = 3.0;
-        const g = this.ctx.createGain();
-        g.gain.setValueAtTime(0.001, t);
-        g.gain.linearRampToValueAtTime(0.45, t + 0.3);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 1.0);
-        src.connect(bp);
-        bp.connect(g);
-        g.connect(dest);
-        src.start(t);
-        src.stop(t + 1.05);
+    stopSpatialLoop(id, silent = false) {
+        return this.stopLoop(id, silent);
     }
 
     stopOneShotsByType(type) {
@@ -527,6 +611,28 @@ export class AudioSystem {
 
     playSpatialOneShot(type, position, options = {}) {
         this.initContext();
+        const autoBufferMap = {
+            door_pound: 'door_bang',
+            glass_break: 'glass_break',
+            doorbell_soviet: 'doorbell',
+            door_knock: 'door_knock'
+        };
+        const resolvedBufferKey = options.bufferKey || autoBufferMap[type] || type;
+        const category = this._resolveCategory(type, resolvedBufferKey, options.category);
+
+        if (this.isSoundDisabled(type, resolvedBufferKey, category)) {
+            this._logEvent('MUTED', type, resolvedBufferKey, category);
+            return null;
+        }
+
+        const buf = this.buffers.get(resolvedBufferKey) || this.buffers.get(type) || this.buffers.get('default_sfx');
+        if (!buf) {
+            if (this.consoleLogging) {
+                console.warn(`[Audio] Аудиофайл "${resolvedBufferKey}" ещё не загружен.`);
+            }
+            return null;
+        }
+
         const t = this.ctx.currentTime;
         const dest = this.createPanner(position, options);
         const filter = this.ctx.createBiquadFilter();
@@ -534,623 +640,59 @@ export class AudioSystem {
         const occluded = position && options.checkOcclusion !== false ? this.computeOcclusion(position) : false;
         filter.frequency.value = occluded ? 1850 : 18000;
 
+        const isFootstep = typeof type === 'string' && type.startsWith('footstep_');
+        let vol = options.volume ?? 0.7;
+        if (isFootstep && options.heavy) vol *= 1.35;
+        const effectiveVol = vol * (occluded ? 0.88 : 1.0);
+
         const gain = this.ctx.createGain();
-        gain.gain.value = (options.volume ?? 0.7) * (occluded ? 0.88 : 1.0);
+        gain.gain.value = effectiveVol;
 
         filter.connect(gain);
-        gain.connect(dest);
-        dest.connect(this.masterGain);
+        if (position) {
+            gain.connect(dest);
+            dest.connect(this._getCategoryDest(category));
+        } else {
+            gain.connect(this._getCategoryDest(category));
+        }
 
-        const autoBufferMap = {
-            door_pound: 'door_bang',
-            glass_break: 'glass_break',
-            doorbell_soviet: 'doorbell',
-            door_knock: 'door_knock'
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        if (options.playbackRate !== undefined) {
+            src.playbackRate.value = options.playbackRate;
+        } else if (isFootstep) {
+            this._stepFootSide = !this._stepFootSide;
+            const footMul = this._stepFootSide ? 0.94 : 1.06;
+            src.playbackRate.value = footMul * (0.94 + Math.random() * 0.12);
+        } else {
+            src.playbackRate.value = 0.96 + Math.random() * 0.08;
+        }
+
+        src.connect(filter);
+
+        const list = this._activeOneShotSources.get(type) || [];
+        const entry = {
+            src,
+            gain,
+            bufferKey: resolvedBufferKey,
+            category,
+            volume: effectiveVol,
+            isSpatial: !!position,
+            startedAt: performance.now()
         };
-        const resolvedBufferKey = options.bufferKey || autoBufferMap[type] || null;
-
-        if (resolvedBufferKey && this.buffers.has(resolvedBufferKey)) {
-            const src = this.ctx.createBufferSource();
-            src.buffer = this.buffers.get(resolvedBufferKey);
-            src.playbackRate.value = options.playbackRate ?? (0.94 + Math.random() * 0.10);
-            src.connect(filter);
-            const list = this._activeOneShotSources.get(type) || [];
-            const entry = { src, gain };
-            list.push(entry);
-            this._activeOneShotSources.set(type, list);
-            src.onended = () => {
-                const cur = this._activeOneShotSources.get(type);
-                if (cur) {
-                    const idx = cur.indexOf(entry);
-                    if (idx >= 0) cur.splice(idx, 1);
-                }
-            };
-            src.start(t, options.offset || 0, options.duration);
-            return entry;
-        }
-
-        switch (type) {
-            case 'footstep_parquet':
-            case 'footstep_linoleum':
-            case 'footstep_snow':
-            case 'footstep_concrete': {
-                this._stepFootSide = !this._stepFootSide;
-                const footMul = this._stepFootSide ? 0.92 : 1.09;
-                const randOff = Math.random() * Math.max(0.1, (this._noiseBuffer.duration || 2.0) - 0.35);
-                const heavyMul = options.heavy ? 1.55 : (0.68 + Math.random() * 0.24);
-
-                // Primary impact / crunch layer with randomized buffer grain & pitch
-                const src = this.ctx.createBufferSource();
-                src.buffer = this._noiseBuffer;
-                src.playbackRate.value = (0.82 + Math.random() * 0.38) * footMul;
-
-                const bp = this.ctx.createBiquadFilter();
-                bp.type = 'bandpass';
-                const freqMap = {
-                    footstep_parquet: 210,
-                    footstep_linoleum: 350,
-                    footstep_snow: 1350,
-                    footstep_concrete: 540
-                };
-                bp.frequency.value = freqMap[type] * footMul * (0.78 + Math.random() * 0.46);
-                bp.Q.value = type === 'footstep_snow'
-                    ? (0.65 + Math.random() * 0.55)
-                    : (1.7 + Math.random() * 1.4);
-
-                const dur = type === 'footstep_snow'
-                    ? (0.16 + Math.random() * 0.10)
-                    : (0.10 + Math.random() * 0.06);
-                const fg = this.ctx.createGain();
-                fg.gain.setValueAtTime(0.008, t);
-                fg.gain.linearRampToValueAtTime(heavyMul, t + 0.012 + Math.random() * 0.012);
-                fg.gain.exponentialRampToValueAtTime(0.001, t + dur);
-                src.connect(bp);
-                bp.connect(fg);
-                fg.connect(filter);
-                src.start(t, randOff, dur + 0.04);
-
-                // Secondary character layer for natural surface variety (snow heel-toe crunch, wood creak, concrete grit)
-                if (type === 'footstep_snow') {
-                    // Deep packed-snow thump + delayed crisp toe crunch
-                    const thump = this.ctx.createOscillator();
-                    thump.type = 'triangle';
-                    thump.frequency.setValueAtTime((95 + Math.random() * 35) * footMul, t);
-                    thump.frequency.exponentialRampToValueAtTime(42, t + 0.075);
-                    const tg = this.ctx.createGain();
-                    tg.gain.setValueAtTime(0.001, t);
-                    tg.gain.linearRampToValueAtTime(0.28 * heavyMul, t + 0.01);
-                    tg.gain.exponentialRampToValueAtTime(0.001, t + 0.085);
-                    thump.connect(tg);
-                    tg.connect(filter);
-                    thump.start(t);
-                    thump.stop(t + 0.09);
-
-                    const t2 = t + 0.032 + Math.random() * 0.028;
-                    const src2 = this.ctx.createBufferSource();
-                    src2.buffer = this._noiseBuffer;
-                    src2.playbackRate.value = 1.05 + Math.random() * 0.45;
-                    const hp = this.ctx.createBiquadFilter();
-                    hp.type = 'bandpass';
-                    hp.frequency.value = 2100 + Math.random() * 1100;
-                    hp.Q.value = 1.1;
-                    const g2 = this.ctx.createGain();
-                    g2.gain.setValueAtTime(0.005, t2);
-                    g2.gain.linearRampToValueAtTime(0.45 * heavyMul, t2 + 0.015);
-                    g2.gain.exponentialRampToValueAtTime(0.001, t2 + 0.11);
-                    src2.connect(hp);
-                    hp.connect(g2);
-                    g2.connect(filter);
-                    src2.start(t2, Math.random() * 1.2, 0.14);
-                } else if (type === 'footstep_parquet' && Math.random() < 0.38) {
-                    const creak = this.ctx.createOscillator();
-                    creak.type = 'sine';
-                    const f0 = 620 + Math.random() * 480;
-                    creak.frequency.setValueAtTime(f0, t + 0.01);
-                    creak.frequency.exponentialRampToValueAtTime(f0 * 0.72, t + 0.07);
-                    const cg = this.ctx.createGain();
-                    cg.gain.setValueAtTime(0.001, t + 0.01);
-                    cg.gain.linearRampToValueAtTime(0.09 * heavyMul, t + 0.025);
-                    cg.gain.exponentialRampToValueAtTime(0.001, t + 0.075);
-                    creak.connect(cg);
-                    cg.connect(filter);
-                    creak.start(t + 0.01);
-                    creak.stop(t + 0.08);
-                } else if (type === 'footstep_concrete' && Math.random() < 0.45) {
-                    const grit = this.ctx.createBufferSource();
-                    grit.buffer = this._noiseBuffer;
-                    const gbp = this.ctx.createBiquadFilter();
-                    gbp.type = 'highpass';
-                    gbp.frequency.value = 1800 + Math.random() * 1200;
-                    const gg = this.ctx.createGain();
-                    gg.gain.setValueAtTime(0.004, t + 0.015);
-                    gg.gain.linearRampToValueAtTime(0.24 * heavyMul, t + 0.025);
-                    gg.gain.exponentialRampToValueAtTime(0.001, t + 0.085);
-                    grit.connect(gbp);
-                    gbp.connect(gg);
-                    gg.connect(filter);
-                    grit.start(t + 0.015, Math.random() * 1.2, 0.09);
-                }
-                break;
+        list.push(entry);
+        this._activeOneShotSources.set(type, list);
+        src.onended = () => {
+            const cur = this._activeOneShotSources.get(type);
+            if (cur) {
+                const idx = cur.indexOf(entry);
+                if (idx >= 0) cur.splice(idx, 1);
             }
-            case 'car_horn': {
-                // Classic Soviet dual-tone car horn (Zhiguli / Volga)
-                const hornDur = 0.44;
-                const hbp = this.ctx.createBiquadFilter();
-                hbp.type = 'bandpass';
-                hbp.frequency.value = 880;
-                hbp.Q.value = 1.6;
-                const hg = this.ctx.createGain();
-                hg.gain.setValueAtTime(0.001, t);
-                hg.gain.linearRampToValueAtTime(0.55, t + 0.025);
-                hg.gain.setValueAtTime(0.52, t + hornDur - 0.06);
-                hg.gain.exponentialRampToValueAtTime(0.001, t + hornDur);
-                hbp.connect(hg);
-                hg.connect(filter);
-                for (const freq of [392, 493.88]) {
-                    const osc = this.ctx.createOscillator();
-                    osc.type = 'sawtooth';
-                    osc.frequency.value = freq * (0.98 + Math.random() * 0.04);
-                    osc.connect(hbp);
-                    osc.start(t);
-                    osc.stop(t + hornDur + 0.02);
-                }
-                break;
-            }
-            case 'car_engine_pass': {
-                // Low Soviet engine rumble + winter tire hiss on snowy asphalt
-                const engDur = 0.85;
-                const osc = this.ctx.createOscillator();
-                osc.type = 'sawtooth';
-                osc.frequency.value = 54 + Math.random() * 14;
-                const lp = this.ctx.createBiquadFilter();
-                lp.type = 'lowpass';
-                lp.frequency.value = 185;
-                const eg = this.ctx.createGain();
-                eg.gain.setValueAtTime(0.001, t);
-                eg.gain.linearRampToValueAtTime(0.32, t + 0.22);
-                eg.gain.exponentialRampToValueAtTime(0.001, t + engDur);
-                osc.connect(lp);
-                lp.connect(eg);
-                eg.connect(filter);
-                osc.start(t);
-                osc.stop(t + engDur + 0.02);
-
-                const tire = this.ctx.createBufferSource();
-                tire.buffer = this._noiseBuffer;
-                const tbp = this.ctx.createBiquadFilter();
-                tbp.type = 'bandpass';
-                tbp.frequency.value = 420 + Math.random() * 140;
-                tbp.Q.value = 0.8;
-                const tg = this.ctx.createGain();
-                tg.gain.setValueAtTime(0.001, t);
-                tg.gain.linearRampToValueAtTime(0.22, t + 0.22);
-                tg.gain.exponentialRampToValueAtTime(0.001, t + engDur);
-                tire.connect(tbp);
-                tbp.connect(tg);
-                tg.connect(filter);
-                tire.start(t, Math.random() * 0.9, engDur + 0.02);
-                break;
-            }
-            case 'knife_drag': {
-                const shuf = this.ctx.createBufferSource();
-                shuf.buffer = this._noiseBuffer;
-                const sbp = this.ctx.createBiquadFilter();
-                sbp.type = 'bandpass';
-                sbp.frequency.value = 480 + Math.random() * 120;
-                sbp.Q.value = 1.4;
-                const sg = this.ctx.createGain();
-                sg.gain.setValueAtTime(0.001, t);
-                sg.gain.linearRampToValueAtTime(0.65, t + 0.06);
-                sg.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
-                shuf.connect(sbp);
-                sbp.connect(sg);
-                sg.connect(filter);
-                shuf.start(t);
-                shuf.stop(t + 0.48);
-                break;
-            }
-            case 'sniff': {
-                [0, 0.42].forEach(off => {
-                    const src = this.ctx.createBufferSource();
-                    src.buffer = this._noiseBuffer;
-                    const bp = this.ctx.createBiquadFilter();
-                    bp.type = 'bandpass';
-                    bp.frequency.setValueAtTime(950, t + off);
-                    bp.frequency.linearRampToValueAtTime(1900, t + off + 0.22);
-                    bp.Q.value = 4.5;
-                    const sg = this.ctx.createGain();
-                    sg.gain.setValueAtTime(0.01, t + off);
-                    sg.gain.linearRampToValueAtTime(0.75, t + off + 0.09);
-                    sg.gain.exponentialRampToValueAtTime(0.001, t + off + 0.28);
-                    src.connect(bp);
-                    bp.connect(sg);
-                    sg.connect(filter);
-                    src.start(t + off);
-                    src.stop(t + off + 0.3);
-                });
-                break;
-            }
-            case 'doorbell_soviet': {
-                const bellBuf = this.buffers.get('doorbell');
-                if (bellBuf) {
-                    const src = this.ctx.createBufferSource();
-                    src.buffer = bellBuf;
-                    src.connect(filter);
-                    src.start(t);
-                }
-                break;
-            }
-            case 'door_pound': {
-                const bangBuf = this.buffers.get('door_bang');
-                if (bangBuf) {
-                    const src = this.ctx.createBufferSource();
-                    src.buffer = bangBuf;
-                    src.playbackRate.value = options.playbackRate ?? (0.88 + Math.random() * 0.14);
-                    src.connect(filter);
-                    src.start(t);
-                } else {
-                    const thumpNoise = this.ctx.createBufferSource();
-                    thumpNoise.buffer = this._noiseBuffer;
-                    const lp = this.ctx.createBiquadFilter();
-                    lp.type = 'lowpass';
-                    lp.frequency.setValueAtTime(420, t);
-                    lp.frequency.exponentialRampToValueAtTime(80, t + 0.22);
-                    const ng = this.ctx.createGain();
-                    ng.gain.setValueAtTime(1.1, t);
-                    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
-                    thumpNoise.connect(lp);
-                    lp.connect(ng);
-                    ng.connect(filter);
-                    thumpNoise.start(t);
-                    thumpNoise.stop(t + 0.25);
-                }
-                break;
-            }
-            case 'wood_creak': {
-                [0, 0.09, 0.19].forEach((off, idx) => {
-                    const src = this.ctx.createBufferSource();
-                    src.buffer = this._noiseBuffer;
-                    const bp = this.ctx.createBiquadFilter();
-                    bp.type = 'bandpass';
-                    bp.frequency.setValueAtTime(360 + idx * 95, t + off);
-                    bp.Q.value = 3.2;
-                    const cg = this.ctx.createGain();
-                    cg.gain.setValueAtTime(0.01, t + off);
-                    cg.gain.linearRampToValueAtTime(0.45, t + off + 0.025);
-                    cg.gain.exponentialRampToValueAtTime(0.001, t + off + 0.14);
-                    src.connect(bp);
-                    bp.connect(cg);
-                    cg.connect(filter);
-                    src.start(t + off);
-                    src.stop(t + off + 0.16);
-                });
-                break;
-            }
-            case 'iron_door_creak': {
-                // Heavy Soviet rusted iron entrance door: metallic latch clank + prolonged screeching/groaning hinge
-                const latchOsc = this.ctx.createOscillator();
-                latchOsc.type = 'triangle';
-                latchOsc.frequency.setValueAtTime(190, t);
-                latchOsc.frequency.exponentialRampToValueAtTime(75, t + 0.09);
-                const latchGain = this.ctx.createGain();
-                latchGain.gain.setValueAtTime(0.45, t);
-                latchGain.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
-                latchOsc.connect(latchGain);
-                latchGain.connect(filter);
-                latchOsc.start(t);
-                latchOsc.stop(t + 0.12);
-
-                // Single-stage rusty iron hinge groan (tail removed)
-                [
-                    { off: 0.08, dur: 0.48, f0: 215, f1: 310, f2: 185 }
-                ].forEach((seg) => {
-                    const osc = this.ctx.createOscillator();
-                    osc.type = 'sawtooth';
-                    osc.frequency.setValueAtTime(seg.f0, t + seg.off);
-                    osc.frequency.linearRampToValueAtTime(seg.f1, t + seg.off + seg.dur * 0.45);
-                    osc.frequency.linearRampToValueAtTime(seg.f2, t + seg.off + seg.dur);
-
-                    const bp = this.ctx.createBiquadFilter();
-                    bp.type = 'bandpass';
-                    bp.frequency.setValueAtTime(seg.f1 * 1.4, t + seg.off);
-                    bp.Q.value = 5.5;
-
-                    const cg = this.ctx.createGain();
-                    cg.gain.setValueAtTime(0.001, t + seg.off);
-                    cg.gain.linearRampToValueAtTime(0.28, t + seg.off + 0.08);
-                    cg.gain.linearRampToValueAtTime(0.22, t + seg.off + seg.dur * 0.72);
-                    cg.gain.exponentialRampToValueAtTime(0.001, t + seg.off + seg.dur);
-
-                    osc.connect(bp);
-                    bp.connect(cg);
-                    cg.connect(filter);
-                    osc.start(t + seg.off);
-                    osc.stop(t + seg.off + seg.dur + 0.03);
-                });
-
-                // Metallic friction scrape noise
-                const scrape = this.ctx.createBufferSource();
-                scrape.buffer = this._noiseBuffer;
-                const sbp = this.ctx.createBiquadFilter();
-                sbp.type = 'bandpass';
-                sbp.frequency.setValueAtTime(520, t + 0.08);
-                sbp.Q.value = 2.8;
-                const sg = this.ctx.createGain();
-                sg.gain.setValueAtTime(0.001, t + 0.08);
-                sg.gain.linearRampToValueAtTime(0.22, t + 0.22);
-                sg.gain.exponentialRampToValueAtTime(0.001, t + 0.56);
-                scrape.connect(sbp);
-                sbp.connect(sg);
-                sg.connect(filter);
-                scrape.start(t + 0.08);
-                scrape.stop(t + 0.58);
-                break;
-            }
-            case 'door_crash': {
-                const bangBuf = this.buffers.get('door_bang');
-                if (bangBuf) {
-                    const s1 = this.ctx.createBufferSource();
-                    s1.buffer = bangBuf;
-                    s1.playbackRate.value = 0.72;
-                    s1.connect(filter);
-                    s1.start(t);
-
-                    const s2 = this.ctx.createBufferSource();
-                    s2.buffer = bangBuf;
-                    s2.playbackRate.value = 0.56;
-                    s2.connect(filter);
-                    s2.start(t + 0.07);
-                }
-                const noise = this.ctx.createBufferSource();
-                noise.buffer = this._noiseBuffer;
-                const lp = this.ctx.createBiquadFilter();
-                lp.type = 'lowpass';
-                lp.frequency.setValueAtTime(1600, t);
-                lp.frequency.exponentialRampToValueAtTime(140, t + 0.75);
-                const ng = this.ctx.createGain();
-                ng.gain.setValueAtTime(0.95, t);
-                ng.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
-                noise.connect(lp);
-                lp.connect(ng);
-                ng.connect(filter);
-                noise.start(t);
-                noise.stop(t + 0.85);
-                break;
-            }
-            case 'monster_roar':
-            case 'jumpscare': {
-                const isJumpscare = type === 'jumpscare';
-                const dur = isJumpscare ? 1.05 : 0.85;
-                // Layered guttural breath/roar using formant-filtered noise + sub impact (no 8-bit square wave)
-                const formants = isJumpscare ? [240, 620, 1180] : [165, 420, 860];
-                formants.forEach((freq, idx) => {
-                    const ns = this.ctx.createBufferSource();
-                    ns.buffer = this._noiseBuffer;
-                    ns.playbackRate.value = 0.75 + idx * 0.15;
-                    const bp = this.ctx.createBiquadFilter();
-                    bp.type = 'bandpass';
-                    bp.frequency.setValueAtTime(freq * 1.15, t);
-                    bp.frequency.exponentialRampToValueAtTime(freq * 0.62, t + dur);
-                    bp.Q.value = 2.6;
-                    const fg = this.ctx.createGain();
-                    fg.gain.setValueAtTime(0.01, t);
-                    fg.gain.linearRampToValueAtTime(isJumpscare ? 0.85 : 0.65, t + 0.04);
-                    fg.gain.exponentialRampToValueAtTime(0.001, t + dur);
-                    ns.connect(bp);
-                    bp.connect(fg);
-                    fg.connect(filter);
-                    ns.start(t);
-                    ns.stop(t + dur + 0.05);
-                });
-                const sub = this.ctx.createOscillator();
-                sub.type = 'sine';
-                sub.frequency.setValueAtTime(isJumpscare ? 95 : 72, t);
-                sub.frequency.exponentialRampToValueAtTime(28, t + 0.45);
-                const sg = this.ctx.createGain();
-                sg.gain.setValueAtTime(0.85, t);
-                sg.gain.exponentialRampToValueAtTime(0.001, t + 0.48);
-                sub.connect(sg);
-                sg.connect(filter);
-                sub.start(t);
-                sub.stop(t + 0.5);
-                break;
-            }
-            case 'smoke_puff': {
-                // Realistic cigarette draw (tobacco crackle + warm inhale + soft exhale)
-                const inhale = this.ctx.createBufferSource();
-                inhale.buffer = this._noiseBuffer;
-                const bpIn = this.ctx.createBiquadFilter();
-                bpIn.type = 'bandpass';
-                bpIn.frequency.setValueAtTime(1150, t);
-                bpIn.frequency.linearRampToValueAtTime(1650, t + 0.55);
-                bpIn.Q.value = 2.4;
-                const gIn = this.ctx.createGain();
-                gIn.gain.setValueAtTime(0.001, t);
-                gIn.gain.linearRampToValueAtTime(0.32, t + 0.15);
-                gIn.gain.linearRampToValueAtTime(0.26, t + 0.50);
-                gIn.gain.exponentialRampToValueAtTime(0.001, t + 0.72);
-                inhale.connect(bpIn);
-                bpIn.connect(gIn);
-                gIn.connect(this.masterGain);
-                inhale.start(t);
-                inhale.stop(t + 0.75);
-
-                // Subtle ember crackles during draw
-                [0.08, 0.19, 0.31, 0.44].forEach((cOff) => {
-                    const cr = this.ctx.createBufferSource();
-                    cr.buffer = this._noiseBuffer;
-                    const hp = this.ctx.createBiquadFilter();
-                    hp.type = 'highpass';
-                    hp.frequency.value = 3200;
-                    const cg = this.ctx.createGain();
-                    cg.gain.setValueAtTime(0.24, t + cOff);
-                    cg.gain.exponentialRampToValueAtTime(0.001, t + cOff + 0.035);
-                    cr.connect(hp);
-                    hp.connect(cg);
-                    cg.connect(this.masterGain);
-                    cr.start(t + cOff);
-                    cr.stop(t + cOff + 0.04);
-                });
-
-                // Soft exhale breath after draw
-                const exhale = this.ctx.createBufferSource();
-                exhale.buffer = this._noiseBuffer;
-                const bpEx = this.ctx.createBiquadFilter();
-                bpEx.type = 'bandpass';
-                bpEx.frequency.setValueAtTime(680, t + 0.85);
-                bpEx.frequency.exponentialRampToValueAtTime(380, t + 1.55);
-                bpEx.Q.value = 1.6;
-                const gEx = this.ctx.createGain();
-                gEx.gain.setValueAtTime(0.001, t + 0.85);
-                gEx.gain.linearRampToValueAtTime(0.28, t + 1.02);
-                gEx.gain.exponentialRampToValueAtTime(0.001, t + 1.58);
-                exhale.connect(bpEx);
-                bpEx.connect(gEx);
-                gEx.connect(this.masterGain);
-                exhale.start(t + 0.85);
-                exhale.stop(t + 1.62);
-                break;
-            }
-            case 'steam_hiss': {
-                const ns = this.ctx.createBufferSource();
-                ns.buffer = this._noiseBuffer;
-                const hp = this.ctx.createBiquadFilter();
-                hp.type = 'highpass';
-                hp.frequency.value = 2400;
-                const sg = this.ctx.createGain();
-                sg.gain.setValueAtTime(0.01, t);
-                sg.gain.linearRampToValueAtTime(0.35, t + 0.12);
-                sg.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
-                ns.connect(hp);
-                hp.connect(sg);
-                sg.connect(filter);
-                ns.start(t);
-                ns.stop(t + 1.25);
-                break;
-            }
-            case 'creak': {
-                const osc = this.ctx.createOscillator();
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(340, t);
-                osc.frequency.linearRampToValueAtTime(220, t + 0.45);
-                const cg = this.ctx.createGain();
-                cg.gain.setValueAtTime(0.01, t);
-                cg.gain.linearRampToValueAtTime(0.28, t + 0.1);
-                cg.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
-                osc.connect(cg);
-                cg.connect(filter);
-                osc.start(t);
-                osc.stop(t + 0.6);
-                break;
-            }
-            case 'whisper_cue': {
-                const ns = this.ctx.createBufferSource();
-                ns.buffer = this._noiseBuffer;
-                const bp = this.ctx.createBiquadFilter();
-                bp.type = 'bandpass';
-                bp.frequency.value = 1400;
-                bp.Q.value = 5;
-                const wg = this.ctx.createGain();
-                wg.gain.setValueAtTime(0.001, t);
-                wg.gain.linearRampToValueAtTime(0.14, t + 0.08);
-                wg.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-                ns.connect(bp);
-                bp.connect(wg);
-                wg.connect(this.masterGain);
-                ns.start(t);
-                ns.stop(t + 0.38);
-                break;
-            }
-            case 'gasp': {
-                const ns = this.ctx.createBufferSource();
-                ns.buffer = this._noiseBuffer;
-                const bp = this.ctx.createBiquadFilter();
-                bp.type = 'bandpass';
-                bp.frequency.setValueAtTime(800, t);
-                bp.frequency.exponentialRampToValueAtTime(1900, t + 0.25);
-                bp.Q.value = 3.2;
-                const gg = this.ctx.createGain();
-                gg.gain.setValueAtTime(0.01, t);
-                gg.gain.linearRampToValueAtTime(0.7, t + 0.08);
-                gg.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
-                ns.connect(bp);
-                bp.connect(gg);
-                gg.connect(this.masterGain);
-                ns.start(t);
-                ns.stop(t + 0.48);
-                break;
-            }
-            case 'pickup':
-            case 'door_open': {
-                const osc = this.ctx.createOscillator();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(type === 'pickup' ? 320 : 140, t);
-                osc.frequency.exponentialRampToValueAtTime(type === 'pickup' ? 520 : 90, t + 0.12);
-                const pg = this.ctx.createGain();
-                pg.gain.setValueAtTime(0.18, t);
-                pg.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
-                osc.connect(pg);
-                pg.connect(filter);
-                osc.start(t);
-                osc.stop(t + 0.16);
-                break;
-            }
-            case 'phone_ring': {
-                // Classic Soviet rotary phone / alarm double-bell trill
-                [0, 0.42].forEach(burstOff => {
-                    for (let k = 0; k < 5; k++) {
-                        const off = burstOff + k * 0.055;
-                        const osc1 = this.ctx.createOscillator();
-                        const osc2 = this.ctx.createOscillator();
-                        osc1.type = 'triangle';
-                        osc2.type = 'sine';
-                        osc1.frequency.setValueAtTime(1180 + (k % 2) * 260, t + off);
-                        osc2.frequency.setValueAtTime(1760 - (k % 2) * 190, t + off);
-                        const rg = this.ctx.createGain();
-                        rg.gain.setValueAtTime(0.28, t + off);
-                        rg.gain.exponentialRampToValueAtTime(0.002, t + off + 0.048);
-                        osc1.connect(rg);
-                        osc2.connect(rg);
-                        rg.connect(filter);
-                        osc1.start(t + off);
-                        osc2.start(t + off);
-                        osc1.stop(t + off + 0.05);
-                        osc2.stop(t + off + 0.05);
-                    }
-                });
-                break;
-            }
-            case 'kettle_whistle': {
-                // Eerie rising & warbling steam kettle whistle on the stove
-                const osc = this.ctx.createOscillator();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(1850, t);
-                osc.frequency.linearRampToValueAtTime(2420, t + 0.65);
-                osc.frequency.linearRampToValueAtTime(2280, t + 1.45);
-                const wg = this.ctx.createGain();
-                wg.gain.setValueAtTime(0.001, t);
-                wg.gain.linearRampToValueAtTime(0.24, t + 0.25);
-                wg.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
-                osc.connect(wg);
-                wg.connect(filter);
-                osc.start(t);
-                osc.stop(t + 1.55);
-                break;
-            }
-            default: {
-                const osc = this.ctx.createOscillator();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(200, t);
-                osc.frequency.exponentialRampToValueAtTime(80, t + 0.2);
-                const dg = this.ctx.createGain();
-                dg.gain.setValueAtTime(0.25, t);
-                dg.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
-                osc.connect(dg);
-                dg.connect(filter);
-                osc.start(t);
-                osc.stop(t + 0.25);
-            }
-        }
+            try { dest.disconnect(); } catch (e) {}
+        };
+        src.start(t, options.offset || 0, options.duration);
+        this._logEvent('SFX', type, resolvedBufferKey, category, `vol=${effectiveVol.toFixed(2)}`);
+        return entry;
     }
 
     stopTVBroadcast() {
@@ -1158,18 +700,24 @@ export class AudioSystem {
             try { this._tvBroadcastSource.stop(); } catch (e) {}
             try { this._tvBroadcastSource.disconnect(); } catch (e) {}
             this._tvBroadcastSource = null;
+            this._tvBroadcastInfo = null;
+            this._logEvent('STOP', 'tv_broadcast_voice', 'tv_emergency_voice', 'voice');
         }
     }
 
     speakTVBroadcast(text, tvPosition) {
         this.initContext();
         this.stopTVBroadcast();
+        if (this.isSoundDisabled('tv_broadcast_voice', 'tv_emergency_voice', 'voice')) {
+            this._logEvent('MUTED', 'tv_broadcast_voice', 'tv_emergency_voice', 'voice');
+            return;
+        }
         const t = this.ctx.currentTime;
         const panner = this.createPanner(tvPosition, { refDistance: 3.5, maxDistance: 22 });
         const g = this.ctx.createGain();
         g.gain.value = 0.85;
         g.connect(panner);
-        panner.connect(this.masterGain);
+        panner.connect(this._getCategoryDest('voice'));
 
         const voiceBuf = this.buffers.get('tv_emergency_voice');
         if (voiceBuf) {
@@ -1178,8 +726,13 @@ export class AudioSystem {
             src.connect(g);
             src.start(t);
             this._tvBroadcastSource = src;
+            this._tvBroadcastInfo = { startedAt: performance.now() };
+            this._logEvent('SFX', 'tv_broadcast_voice', 'tv_emergency_voice', 'voice', 'vol=0.85');
             src.onended = () => {
-                if (this._tvBroadcastSource === src) this._tvBroadcastSource = null;
+                if (this._tvBroadcastSource === src) {
+                    this._tvBroadcastSource = null;
+                    this._tvBroadcastInfo = null;
+                }
             };
         }
     }
@@ -1263,15 +816,18 @@ export class AudioSystem {
         let loopIdx = 0;
         for (const entry of this.activeLoops.values()) {
             loopIdx++;
+            if (this.isSoundDisabled(entry.id, entry.bufferKey, entry.category)) {
+                entry.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.04);
+                continue;
+            }
             const dist = this.camera ? this._tempPos.distanceTo(entry.position) : 0;
             const maxD = entry.maxDistance ?? 38;
             let distCutoff = 1.0;
-            if (entry.rolloffFactor > 0 && dist > entry.refDistance) {
+            if (this.spatialAudioEnabled && entry.rolloffFactor > 0 && dist > entry.refDistance) {
                 const norm = Math.max(0, Math.min(1, (dist - entry.refDistance) / Math.max(0.5, maxD - entry.refDistance)));
                 distCutoff = Math.pow(1.0 - norm, 1.8);
             }
-            if (!entry.tvFilter && entry.checkOcclusion) {
-                // Only raycast audio occlusion every 6th frame and when within audible range
+            if (!entry.tvFilter && entry.checkOcclusion && this.occlusionEnabled) {
                 if (dist <= maxD + 1.0 && (loopIdx % 6) === this._occStep) {
                     entry._cachedOcc = this.computeOcclusion(entry.position);
                 }
@@ -1280,7 +836,10 @@ export class AudioSystem {
                 const targetGain = entry.baseVolume * distCutoff * (occ ? 0.20 : 1.0);
                 entry.filter.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.1);
                 entry.gain.gain.setTargetAtTime(targetGain, this.ctx.currentTime, 0.1);
-            } else if (entry.rolloffFactor > 0) {
+            } else {
+                if (!entry.tvFilter && entry.filter) {
+                    entry.filter.frequency.setTargetAtTime(18000, this.ctx.currentTime, 0.1);
+                }
                 entry.gain.gain.setTargetAtTime(entry.baseVolume * distCutoff, this.ctx.currentTime, 0.1);
             }
         }
@@ -1288,4 +847,3 @@ export class AudioSystem {
 }
 
 export default AudioSystem;
-

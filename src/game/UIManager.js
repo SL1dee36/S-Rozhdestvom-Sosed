@@ -3,7 +3,8 @@ import { t, getLanguage, setLanguage, applyDOMTranslations, onLanguageChange } f
 const ENDINGS_STORAGE_KEY = 'zarechnoe_unlocked_endings';
 const SENSITIVITY_STORAGE_KEY = 'zarechnoe_mouse_sensitivity';
 const CAMERA_TILT_STORAGE_KEY = 'zarechnoe_camera_tilt';
-const MOTION_BLUR_STORAGE_KEY = 'zarechnoe_motion_blur';
+const BRIGHTNESS_STORAGE_KEY = 'zarechnoe_brightness';
+const AUDIO_SETTINGS_STORAGE_KEY = 'zarechnoe_audio_settings';
 
 const ENDINGS_CATALOG = [
     { id: 1, titleKey: 'ui.ending1.title', descKey: 'ui.ending1.desc' },
@@ -88,9 +89,24 @@ export class UIManager {
             micStatus: document.getElementById('mic-status'),
             chkPs1: document.getElementById('opt-ps1-jitter'),
             chkCameraTilt: document.getElementById('opt-camera-tilt'),
-            chkMotionBlur: document.getElementById('opt-motion-blur'),
+            rngBrightness: document.getElementById('opt-brightness'),
+            brightnessVal: document.getElementById('opt-brightness-val'),
             rngVhs: document.getElementById('opt-vhs-intensity'),
             rngVol: document.getElementById('opt-volume'),
+            volVal: document.getElementById('opt-volume-val'),
+            rngVolMusic: document.getElementById('opt-vol-music'),
+            volMusicVal: document.getElementById('opt-vol-music-val'),
+            rngVolAmbient: document.getElementById('opt-vol-ambient'),
+            volAmbientVal: document.getElementById('opt-vol-ambient-val'),
+            rngVolSfx: document.getElementById('opt-vol-sfx'),
+            volSfxVal: document.getElementById('opt-vol-sfx-val'),
+            rngVolVoice: document.getElementById('opt-vol-voice'),
+            volVoiceVal: document.getElementById('opt-vol-voice-val'),
+            chkSpatialAudio: document.getElementById('opt-spatial-audio'),
+            chkAudioOcclusion: document.getElementById('opt-audio-occlusion'),
+            chkAudioConsole: document.getElementById('opt-audio-console'),
+            rngMicSens: document.getElementById('opt-mic-sens'),
+            micSensVal: document.getElementById('opt-mic-sens-val'),
             rngSens: document.getElementById('opt-sensitivity'),
             sensVal: document.getElementById('opt-sensitivity-val')
         };
@@ -124,9 +140,86 @@ export class UIManager {
             this._renderEndings();
         });
         this.applyVHSIntensity(this.el.rngVhs ? parseFloat(this.el.rngVhs.value) : 0.2);
+        this.applyBrightness(this._loadSavedBrightness());
         this.applySensitivity(this._loadSavedSensitivity());
         this.applyCameraTilt(this._loadSavedBool(CAMERA_TILT_STORAGE_KEY, true));
-        this.applyMotionBlur(this._loadSavedBool(MOTION_BLUR_STORAGE_KEY, true));
+        this._loadAndApplyAudioSettings();
+    }
+
+    _loadSavedBrightness() {
+        try {
+            const raw = localStorage.getItem(BRIGHTNESS_STORAGE_KEY);
+            const parsed = raw !== null ? parseFloat(raw) : NaN;
+            if (Number.isFinite(parsed)) return Math.max(0.5, Math.min(1.8, parsed));
+        } catch (e) {}
+        return 0.7;
+    }
+
+    applyBrightness(value) {
+        const b = Number.isFinite(value) ? Math.max(0.5, Math.min(1.8, value)) : 0.7;
+        if (this.el.rngBrightness) this.el.rngBrightness.value = String(b);
+        if (this.el.brightnessVal) this.el.brightnessVal.textContent = String(Math.round(b * 100));
+        try { localStorage.setItem(BRIGHTNESS_STORAGE_KEY, String(b)); } catch (e) {}
+        this.engine.renderer?.setPostProcessParams?.({ brightness: b });
+    }
+
+    _loadAndApplyAudioSettings() {
+        const defaults = {
+            master: 0.80,
+            music: 0.50,
+            ambient: 0.80,
+            sfx: 0.30,
+            voice: 0.70,
+            spatial: true,
+            occlusion: true,
+            consoleLog: false,
+            micSens: 1.4
+        };
+        let saved = {};
+        try {
+            const raw = localStorage.getItem(AUDIO_SETTINGS_STORAGE_KEY);
+            if (raw) saved = JSON.parse(raw) || {};
+        } catch (e) {}
+        this._audioSettings = { ...defaults, ...saved };
+        this._applyAudioSettings(false);
+    }
+
+    _saveAudioSettings() {
+        try {
+            localStorage.setItem(AUDIO_SETTINGS_STORAGE_KEY, JSON.stringify(this._audioSettings));
+        } catch (e) {}
+    }
+
+    _applyAudioSettings(save = true) {
+        const s = this._audioSettings;
+        const a = this.engine.audioSystem;
+        if (a) {
+            a.setMasterVolume(s.master);
+            a.setCategoryVolume('music', s.music);
+            a.setCategoryVolume('ambient', s.ambient);
+            a.setCategoryVolume('sfx', s.sfx);
+            a.setCategoryVolume('voice', s.voice);
+            a.setSpatialAudioEnabled(s.spatial);
+            a.setOcclusionEnabled(s.occlusion);
+            a.consoleLogging = !!s.consoleLog;
+            a.setMicSensitivity(s.micSens);
+        }
+        if (this.el.rngVol) this.el.rngVol.value = String(s.master);
+        if (this.el.volVal) this.el.volVal.textContent = String(Math.round(s.master * 100));
+        if (this.el.rngVolMusic) this.el.rngVolMusic.value = String(s.music);
+        if (this.el.volMusicVal) this.el.volMusicVal.textContent = String(Math.round(s.music * 100));
+        if (this.el.rngVolAmbient) this.el.rngVolAmbient.value = String(s.ambient);
+        if (this.el.volAmbientVal) this.el.volAmbientVal.textContent = String(Math.round(s.ambient * 100));
+        if (this.el.rngVolSfx) this.el.rngVolSfx.value = String(s.sfx);
+        if (this.el.volSfxVal) this.el.volSfxVal.textContent = String(Math.round(s.sfx * 100));
+        if (this.el.rngVolVoice) this.el.rngVolVoice.value = String(s.voice);
+        if (this.el.volVoiceVal) this.el.volVoiceVal.textContent = String(Math.round(s.voice * 100));
+        if (this.el.chkSpatialAudio) this.el.chkSpatialAudio.checked = !!s.spatial;
+        if (this.el.chkAudioOcclusion) this.el.chkAudioOcclusion.checked = !!s.occlusion;
+        if (this.el.chkAudioConsole) this.el.chkAudioConsole.checked = !!s.consoleLog;
+        if (this.el.rngMicSens) this.el.rngMicSens.value = String(s.micSens);
+        if (this.el.micSensVal) this.el.micSensVal.textContent = Number(s.micSens).toFixed(2);
+        if (save) this._saveAudioSettings();
     }
 
     _loadSavedBool(key, defaultVal = true) {
@@ -147,13 +240,6 @@ export class UIManager {
         if (this.el.chkCameraTilt) this.el.chkCameraTilt.checked = this._cameraTiltEnabled;
         try { localStorage.setItem(CAMERA_TILT_STORAGE_KEY, this._cameraTiltEnabled ? '1' : '0'); } catch (e) {}
         if (this.callbacks.onCameraTiltChange) this.callbacks.onCameraTiltChange(this._cameraTiltEnabled);
-    }
-
-    applyMotionBlur(enabled) {
-        this._motionBlurEnabled = !!enabled;
-        if (this.el.chkMotionBlur) this.el.chkMotionBlur.checked = this._motionBlurEnabled;
-        try { localStorage.setItem(MOTION_BLUR_STORAGE_KEY, this._motionBlurEnabled ? '1' : '0'); } catch (e) {}
-        this.engine.renderer?.setMotionBlur?.(this._motionBlurEnabled);
     }
 
     _setMicStatus(key) {
@@ -312,8 +398,8 @@ export class UIManager {
             this.applyCameraTilt(e.target.checked);
         });
 
-        this.el.chkMotionBlur?.addEventListener('change', (e) => {
-            this.applyMotionBlur(e.target.checked);
+        this.el.rngBrightness?.addEventListener('input', (e) => {
+            this.applyBrightness(parseFloat(e.target.value));
         });
 
         this.el.rngVhs?.addEventListener('input', (e) => {
@@ -322,8 +408,43 @@ export class UIManager {
 
         this.el.rngVol?.addEventListener('input', (e) => {
             this.engine.audioSystem.initContext();
-            this.engine.audioSystem.setMasterVolume(parseFloat(e.target.value));
+            this._audioSettings.master = parseFloat(e.target.value);
+            this._applyAudioSettings(true);
             if (this.callbacks.onEnsureMenuMusic) this.callbacks.onEnsureMenuMusic();
+        });
+
+        const bindCatSlider = (el, key) => {
+            el?.addEventListener('input', (e) => {
+                this.engine.audioSystem.initContext();
+                this._audioSettings[key] = parseFloat(e.target.value);
+                this._applyAudioSettings(true);
+                if (this.callbacks.onEnsureMenuMusic) this.callbacks.onEnsureMenuMusic();
+            });
+        };
+        bindCatSlider(this.el.rngVolMusic, 'music');
+        bindCatSlider(this.el.rngVolAmbient, 'ambient');
+        bindCatSlider(this.el.rngVolSfx, 'sfx');
+        bindCatSlider(this.el.rngVolVoice, 'voice');
+
+        this.el.chkSpatialAudio?.addEventListener('change', (e) => {
+            this._audioSettings.spatial = e.target.checked;
+            this._applyAudioSettings(true);
+        });
+
+        this.el.chkAudioOcclusion?.addEventListener('change', (e) => {
+            this._audioSettings.occlusion = e.target.checked;
+            this._applyAudioSettings(true);
+        });
+
+        this.el.chkAudioConsole?.addEventListener('change', (e) => {
+            this._audioSettings.consoleLog = e.target.checked;
+            this._applyAudioSettings(true);
+            this.engine.audioSystem?.setConsoleLogging?.(e.target.checked);
+        });
+
+        this.el.rngMicSens?.addEventListener('input', (e) => {
+            this._audioSettings.micSens = parseFloat(e.target.value);
+            this._applyAudioSettings(true);
         });
 
         this.el.rngSens?.addEventListener('input', (e) => {
@@ -398,16 +519,16 @@ export class UIManager {
                 }
             } catch (e) {}
         }
-        return this.el.rngSens ? parseFloat(this.el.rngSens.value) : 1.0;
+        return this.el.rngSens ? parseFloat(this.el.rngSens.value) : 0.25;
     }
 
     getSensitivityMultiplier() {
-        const raw = this.el.rngSens ? parseFloat(this.el.rngSens.value) : 1.0;
-        return Number.isFinite(raw) ? Math.max(0.05, Math.min(2.5, raw)) : 1.0;
+        const raw = this.el.rngSens ? parseFloat(this.el.rngSens.value) : 0.25;
+        return Number.isFinite(raw) ? Math.max(0.05, Math.min(2.5, raw)) : 0.25;
     }
 
     applySensitivity(value) {
-        const mult = Number.isFinite(value) ? Math.max(0.05, Math.min(2.5, value)) : 1.0;
+        const mult = Number.isFinite(value) ? Math.max(0.05, Math.min(2.5, value)) : 0.25;
         if (this.el.rngSens) this.el.rngSens.value = String(mult);
         if (this.el.sensVal) this.el.sensVal.textContent = mult.toFixed(2);
         if (typeof localStorage !== 'undefined') {

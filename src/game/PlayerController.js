@@ -43,8 +43,6 @@ export class PlayerController extends Component {
         this.cinematicRollOffset = 0;
         this.cameraTiltEnabled = true;
         this._dynamicTiltRoll = 0;
-        this._motionBlurX = 0;
-        this._motionBlurY = 0;
 
         this._bobTime = 0;
         this._stepTimer = 0;
@@ -1867,6 +1865,14 @@ export class PlayerController extends Component {
         };
     }
 
+    _setPeepholeLensVisible(visible) {
+        const meshes = this.world?.frontDoor?.peepMeshes;
+        if (!Array.isArray(meshes)) return;
+        for (const m of meshes) {
+            if (m) m.visible = !!visible;
+        }
+    }
+
     exitPeephole(instant = false) {
         if (!this.isPeephole && !this._peepholeAnim) return;
         const flap = this.world?.frontDoor?.peepFlapPivot;
@@ -1878,6 +1884,7 @@ export class PlayerController extends Component {
             this._handAnchor.visible = true;
             if (this._peepholeHand) this._peepholeHand.visible = false;
             if (flap) flap.rotation.z = 0;
+            this._setPeepholeLensVisible(true);
             this.transform.position.copy(this._exitSafePos);
             if (this.rb) {
                 this.rb.position.copy(this._exitSafePos);
@@ -1994,6 +2001,7 @@ export class PlayerController extends Component {
                 const e = smooth((t - 0.90) / 0.55);
                 if (hand) hand.visible = false;
                 if (flap) flap.rotation.z = 1.65;
+                if (e > 0.15) this._setPeepholeLensVisible(false);
                 this.transform.position.lerpVectors(anim.approachPos, anim.peepPos, e);
                 this.yaw = anim.targetYaw;
                 this.pitch = THREE.MathUtils.lerp(-0.02, -0.08, e);
@@ -2011,6 +2019,7 @@ export class PlayerController extends Component {
                 this.engine.renderer.setFOV(95);
                 if (hand) hand.visible = false;
                 if (flap) flap.rotation.z = 1.65;
+                this._setPeepholeLensVisible(false);
                 this.controlsLocked = false;
                 this._peepholeAnim = null;
             }
@@ -2018,6 +2027,7 @@ export class PlayerController extends Component {
             // Phase 1 (0.00..0.45s): Pull eye back from the peephole & close shutter with hand
             if (t < 0.45) {
                 const e = smooth(t / 0.45);
+                if (e > 0.55) this._setPeepholeLensVisible(true);
                 this.transform.position.lerpVectors(anim.startPos, anim.approachPos, e);
                 this.yaw = anim.targetYaw;
                 this.pitch = THREE.MathUtils.lerp(anim.startPitch, anim.targetPitch, e);
@@ -2090,6 +2100,7 @@ export class PlayerController extends Component {
                 this.engine.renderer.setFOV(75);
                 if (hand) hand.visible = false;
                 if (flap) flap.rotation.z = 0;
+                this._setPeepholeLensVisible(true);
                 this._handAnchor.visible = true;
                 this.isPeephole = false;
                 this.controlsLocked = false;
@@ -2221,21 +2232,6 @@ export class PlayerController extends Component {
             targetTiltRoll = strafeRoll + turnRoll + walkSway;
         }
         this._dynamicTiltRoll = THREE.MathUtils.lerp(this._dynamicTiltRoll, targetTiltRoll, Math.min(1, deltaTime * 8.5));
-
-        // Directional velocity motion blur driven by head-turn & sprint speed (toggleable in Settings)
-        const targetMbX = (!this.controlsLocked || this.allowLookWhileLocked)
-            ? THREE.MathUtils.clamp(delta.x * 0.00055, -0.016, 0.016)
-            : 0;
-        const targetMbY = (!this.controlsLocked || this.allowLookWhileLocked)
-            ? THREE.MathUtils.clamp(-delta.y * 0.00042, -0.012, 0.012)
-            : 0;
-        const mbRate = Math.min(1, deltaTime * 14.0);
-        this._motionBlurX = THREE.MathUtils.lerp(this._motionBlurX, targetMbX, mbRate);
-        this._motionBlurY = THREE.MathUtils.lerp(this._motionBlurY, targetMbY, mbRate);
-        this.engine.renderer?.setPostProcessParams?.({
-            motionBlurX: Math.abs(this._motionBlurX) > 0.0002 ? this._motionBlurX : 0,
-            motionBlurY: Math.abs(this._motionBlurY) > 0.0002 ? this._motionBlurY : 0
-        });
 
         const swayRoll = (this.cigaretteActive ? Math.sin(performance.now() * 0.0022) * 0.025 : 0)
             + (this.cinematicRollOffset || 0)

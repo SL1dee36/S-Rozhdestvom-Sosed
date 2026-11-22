@@ -1281,7 +1281,7 @@ export class KhrushchevkaBuilder {
         hallLight.position.set(-0.75, 2.48, -1.0);
         this.scene.add(hallLight);
 
-        const kitchenLight = new THREE.PointLight(0xffdc9e, 3.3, 12.0, 1.15);
+        const kitchenLight = new THREE.PointLight(0xffdc9e, 1.9, 12.0, 1.15);
         kitchenLight.position.set(3.1, 2.45, -2.0);
         this.scene.add(kitchenLight);
 
@@ -1293,11 +1293,11 @@ export class KhrushchevkaBuilder {
         ovenLight.position.set(3.45, 0.45, -2.10);
         this.scene.add(ovenLight);
 
-        const hallwayLight = new THREE.PointLight(0xffd5a8, 3.1, 12.0, 1.15);
+        const hallwayLight = new THREE.PointLight(0xffd5a8, 1.8, 12.0, 1.15);
         hallwayLight.position.set(3.1, 2.42, 2.2);
         this.scene.add(hallwayLight);
 
-        const bathroomLight = new THREE.PointLight(0xd4edff, 2.9, 8.5, 1.15);
+        const bathroomLight = new THREE.PointLight(0xd4edff, 1.7, 8.5, 1.15);
         bathroomLight.position.set(5.1, 2.42, 2.55);
         this.scene.add(bathroomLight);
 
@@ -1675,7 +1675,11 @@ export class KhrushchevkaBuilder {
             mesh: doorLeaf,
             collider: frontCol,
             clawDecal,
-            peepFlapPivot
+            peepFlapPivot,
+            peepRing,
+            peepLens,
+            peepLensOut,
+            peepMeshes: [peepRing, peepLens, peepLensOut]
         };
 
         const escapeGO = new GameObject('EntranceEscapeZone');
@@ -4318,7 +4322,7 @@ export class KhrushchevkaBuilder {
                 id: 'hall',
                 label: 'room.in_hall',
                 light: this.world.lights.hallLight,
-                baseIntensity: 3.7,
+                baseIntensity: 2.1,
                 emissiveColor: 0xffe4b2,
                 fixturePos: new THREE.Vector3(-0.75, 2.52, -1.0),
                 isChandelier: true,
@@ -4331,7 +4335,7 @@ export class KhrushchevkaBuilder {
                 id: 'kitchen',
                 label: 'room.in_kitchen',
                 light: this.world.lights.kitchenLight,
-                baseIntensity: 3.3,
+                baseIntensity: 1.9,
                 emissiveColor: 0xffdc9e,
                 fixturePos: new THREE.Vector3(3.1, 2.55, -2.0),
                 switches: [
@@ -4342,7 +4346,7 @@ export class KhrushchevkaBuilder {
                 id: 'hallway',
                 label: 'room.in_hallway',
                 light: this.world.lights.hallwayLight,
-                baseIntensity: 3.1,
+                baseIntensity: 1.8,
                 emissiveColor: 0xffd5a8,
                 fixturePos: new THREE.Vector3(3.1, 2.55, 2.2),
                 switches: [
@@ -4353,7 +4357,7 @@ export class KhrushchevkaBuilder {
                 id: 'bathroom',
                 label: 'room.in_bathroom',
                 light: this.world.lights.bathroomLight,
-                baseIntensity: 2.9,
+                baseIntensity: 1.7,
                 emissiveColor: 0xd4edff,
                 fixturePos: new THREE.Vector3(5.1, 2.55, 2.55),
                 switches: [
@@ -5003,17 +5007,9 @@ export class KhrushchevkaBuilder {
 
         this.world.skyClouds = [];
 
-        const fogCanvas = document.createElement('canvas');
-        fogCanvas.width = 128;
-        fogCanvas.height = 128;
-        const fctx = fogCanvas.getContext('2d');
-        const grad = fctx.createRadialGradient(64, 64, 6, 64, 64, 62);
-        grad.addColorStop(0.0, 'rgba(18, 25, 42, 0.42)');
-        grad.addColorStop(0.55, 'rgba(14, 20, 34, 0.22)');
-        grad.addColorStop(1.0, 'rgba(11, 16, 28, 0.0)');
-        fctx.fillStyle = grad;
-        fctx.fillRect(0, 0, 128, 128);
-        const fogTex = new THREE.CanvasTexture(fogCanvas);
+        const fogTex = this.tex.loadGenerated('distant_fog.svg', 1, 1);
+        fogTex.minFilter = THREE.LinearFilter;
+        fogTex.magFilter = THREE.LinearFilter;
 
         this.world.distantFogLayers = [];
         const fogSpecs = [

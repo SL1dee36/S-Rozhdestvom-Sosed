@@ -26,21 +26,31 @@ export const ru = {
 
     // Settings
     'ui.settings.title': 'НАСТРОЙКИ',
+    'ui.settings.sec_general': 'Основные и графика',
+    'ui.settings.sec_audio': 'Подробные настройки звука',
     'ui.settings.language': 'Язык / Language',
     'ui.settings.mic_mode': 'Микрофон в игре (стелс на звук)',
+    'ui.settings.mic_sensitivity': 'Чувствительность микрофона',
     'ui.settings.test_mic': 'Подключить / Проверить микрофон',
     'ui.settings.mic_note_default': 'Если микрофона нет - снимите галочку для режима «Без микрофона».',
     'ui.settings.mic_not_found': 'Микрофон не найден - включён режим «Без микрофона»',
     'ui.settings.mic_active': 'Микрофон активен (говорите тихо во время охоты!)',
     'ui.settings.mic_disabled': 'Режим «Без микрофона»: не дёргайте мышью и держите [ПРОБЕЛ] в укрытии',
     'ui.settings.mic_no_access': 'Нет доступа к микрофону. Включён режим «Без микрофона».',
-    'ui.settings.mic_testing': 'Микрофон подключён! Проверка уровня шума (5 сек)...',
+    'ui.settings.mic_testing': 'Микрофон подключён! Проверка уровня шума...',
     'ui.settings.mic_menu_denied': 'Доступ к микрофону не получен - включён режим «Без микрофона». Нажмите кнопку выше, чтобы запросить снова.',
-    'ui.settings.ps1_jitter': 'PS1-дрожание полигонов (Vertex Jitter)',
+    'ui.settings.ps1_jitter': 'PS1-дрожание полигонов',
     'ui.settings.camera_tilt': 'Наклон камеры при движении и поворотах',
-    'ui.settings.motion_blur': 'Размытие в движении (Motion Blur)',
+    'ui.settings.brightness': 'Яркость экрана',
     'ui.settings.vhs_intensity': 'Зернистость и резкость PS1',
-    'ui.settings.volume': 'Громкость звука',
+    'ui.settings.volume': 'Общая громкость',
+    'ui.settings.vol_music': 'Громкость музыки',
+    'ui.settings.vol_ambient': 'Громкость окружения',
+    'ui.settings.vol_sfx': 'Громкость эффектов',
+    'ui.settings.vol_voice': 'Громкость голосов',
+    'ui.settings.spatial_audio': 'Объёмный 3D-звук',
+    'ui.settings.audio_occlusion': 'Приглушение звука за стенами',
+    'ui.settings.audio_console': 'Вывод играющих звуков в консоль',
     'ui.settings.sensitivity': 'Чувствительность мыши',
 
     // Pause Menu
@@ -453,7 +463,6 @@ export const ru = {
     'dlg.lyokha.opt3': 'Как вообще жизнь в районе? Не скучно?',
     'dlg.lyokha.reply_t3': 'Тихо у нас, спальный район же. Только фонарь во дворе опять барахлит — полдвора в темноте. Но зимой здесь красиво, особенно когда фейерверки в полночь запускают.',
 
-    // Horror & Reworked Monster AI Additions
     'tv.horror_ticker': '★ ОН УЖЕ В ТВОЁМ ПОДЪЕЗДЕ ★ НЕ ОТКРЫВАЙ ДВЕРЬ ★ ПРОВЕРЬ ГЛАЗОК ★',
     'tv.horror_weather': 'В КВАРТИРЕ 34 ОЖИДАЕТСЯ...',
     'sub.peephole_stalker': 'Кто-то стоит в темноте на лестничной площадке... И смотрит прямо в глазок.',

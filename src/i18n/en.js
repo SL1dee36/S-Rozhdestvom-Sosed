@@ -25,8 +25,11 @@ export const en = {
 
     // Settings
     'ui.settings.title': 'SETTINGS',
+    'ui.settings.sec_general': 'General & Graphics',
+    'ui.settings.sec_audio': 'Detailed Audio Settings',
     'ui.settings.language': 'Language / Язык',
     'ui.settings.mic_mode': 'In-game Microphone (noise stealth)',
+    'ui.settings.mic_sensitivity': 'Microphone Sensitivity',
     'ui.settings.test_mic': 'Connect / Test Microphone',
     'ui.settings.mic_note_default': 'No microphone? Uncheck this for "No Microphone" mode.',
     'ui.settings.mic_not_found': 'Microphone not found — switched to "No Microphone" mode',
@@ -37,9 +40,16 @@ export const en = {
     'ui.settings.mic_menu_denied': 'Microphone access not granted — "No Microphone" mode enabled. Click the button above to try again.',
     'ui.settings.ps1_jitter': 'PS1 Polygon Jitter (Vertex Jitter)',
     'ui.settings.camera_tilt': 'Camera Tilt on Movement & Turning',
-    'ui.settings.motion_blur': 'Motion Blur',
+    'ui.settings.brightness': 'Screen Brightness',
     'ui.settings.vhs_intensity': 'PS1 Film Grain & Sharpness',
     'ui.settings.volume': 'Master Volume',
+    'ui.settings.vol_music': 'Music Volume',
+    'ui.settings.vol_ambient': 'Ambient Volume',
+    'ui.settings.vol_sfx': 'SFX Volume (Footsteps, Doors)',
+    'ui.settings.vol_voice': 'Voices & Monster Volume',
+    'ui.settings.spatial_audio': '3D Spatial Audio (HRTF)',
+    'ui.settings.audio_occlusion': 'Wall Sound Occlusion',
+    'ui.settings.audio_console': 'Log Playing Sounds to Console',
     'ui.settings.sensitivity': 'Mouse Sensitivity',
 
     // Pause Menu

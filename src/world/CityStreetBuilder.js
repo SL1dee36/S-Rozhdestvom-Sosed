@@ -768,17 +768,9 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
     // 7. MOVING CITY TRAFFIC (Rare Soviet Cars with Headlights & Taillights)
     // =========================================================================
     // Soft radial-gradient headlight ground-pool texture for realistic car illumination
-    const hlPoolCanvas = document.createElement('canvas');
-    hlPoolCanvas.width = 128;
-    hlPoolCanvas.height = 128;
-    const hCtx = hlPoolCanvas.getContext('2d');
-    const hGrad = hCtx.createRadialGradient(64, 108, 6, 64, 68, 62);
-    hGrad.addColorStop(0.0, 'rgba(255, 244, 198, 0.72)');
-    hGrad.addColorStop(0.45, 'rgba(255, 232, 168, 0.28)');
-    hGrad.addColorStop(1.0, 'rgba(255, 224, 140, 0.0)');
-    hCtx.fillStyle = hGrad;
-    hCtx.fillRect(0, 0, 128, 128);
-    const hlPoolTex = new THREE.CanvasTexture(hlPoolCanvas);
+    const hlPoolTex = tex.loadGenerated('headlight_pool.svg', 1, 1);
+    hlPoolTex.minFilter = THREE.LinearFilter;
+    hlPoolTex.magFilter = THREE.LinearFilter;
     const hlPoolMat = new THREE.MeshBasicMaterial({
         map: hlPoolTex,
         transparent: true,

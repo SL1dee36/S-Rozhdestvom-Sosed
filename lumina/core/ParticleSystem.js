@@ -22,20 +22,11 @@ export class ParticleEmitter extends Component {
         this._initParticles();
 
         let spriteMap = null;
-        if ((this.mode === 'smoke' || this.mode === 'steam') && typeof document !== 'undefined') {
-            const c = document.createElement('canvas');
-            c.width = 32;
-            c.height = 32;
-            const ctx = c.getContext('2d');
-            if (ctx) {
-                const grad = ctx.createRadialGradient(16, 16, 1, 16, 16, 15);
-                grad.addColorStop(0, 'rgba(255,255,255,0.9)');
-                grad.addColorStop(0.5, 'rgba(235,240,248,0.4)');
-                grad.addColorStop(1, 'rgba(255,255,255,0)');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, 32, 32);
+        if (this.mode === 'smoke' || this.mode === 'steam') {
+            if (!ParticleEmitter._smokeTex) {
+                ParticleEmitter._smokeTex = new THREE.TextureLoader().load('./assets/textures/generated/particle_smoke.svg');
             }
-            spriteMap = new THREE.CanvasTexture(c);
+            spriteMap = ParticleEmitter._smokeTex;
         }
 
         this.material = new THREE.PointsMaterial({
