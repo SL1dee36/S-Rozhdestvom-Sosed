@@ -177,8 +177,11 @@ class MapEditor {
 
         this.overrides = getEffectiveMapOverrides();
         for (const obj of this.builder.editableObjects) {
-            obj.userData.logicalVisible = obj.visible;
+            obj.userData.logicalVisible = obj.userData._zoneCulled
+                ? (obj.userData._savedVisBeforeCull !== false)
+                : obj.visible;
         }
+        this.activeLocation = 'apartment';
 
         this._editorHelpersGroup = new THREE.Group();
         this._editorHelpersGroup.name = '__EditorHelpersRoot';
@@ -812,6 +815,9 @@ class MapEditor {
 
         for (const obj of this.builder.editableObjects) {
             if (obj.userData.deleted) obj.visible = false;
+        }
+        if (this.activeLocation && this.world.setVisibilityZone) {
+            this.world.setVisibilityZone(this.activeLocation, true);
         }
         this._applyNoCeilingVisibility();
     }
@@ -2344,6 +2350,11 @@ class MapEditor {
             target.copy(this.world.patrolWaypoints[this.selected.index]);
         }
 
+        const targetLoc = target.x > 30 ? 'store' : 'apartment';
+        if (this.activeLocation !== 'all' && this.activeLocation !== targetLoc) {
+            this.setActiveLocation(targetLoc, false);
+        }
+
         if (this.camMode === 'top') {
             this.orthoCam.position.x = target.x;
             this.orthoCam.position.z = target.z;
@@ -2360,12 +2371,76 @@ class MapEditor {
         this._flyCamState.pitch = eul.x;
     }
 
-    _flyToPreset(key) {
+    setActiveLocation(loc, flyCamera = true) {
+        const nextLoc = (loc === 'store' || loc === 'all') ? loc : 'apartment';
+        const changed = this.activeLocation !== nextLoc;
+        this.activeLocation = nextLoc;
+
+        if (this.world.setVisibilityZone) {
+            this.world.setVisibilityZone(nextLoc, true);
+        } else if (this.world.updateVisibilityCulling) {
+            this.world.updateVisibilityCulling(null, false, nextLoc === 'store');
+        }
+        this._applyNoCeilingVisibility();
+
+        if (this._gridHelper) {
+            if (nextLoc === 'store') {
+                this._gridHelper.position.set(75, 0, 25);
+            } else {
+                this._gridHelper.position.set(0, 0, 0);
+            }
+        }
+
+        for (const btn of document.querySelectorAll('[data-location]')) {
+            btn.classList.toggle('active', btn.dataset.location === nextLoc);
+        }
+
+        if (flyCamera && nextLoc !== 'all') {
+            const activeCam = this.camMode === 'top' ? this.orthoCam : this.perspectiveCam;
+            const curX = this.camMode === 'walk' ? this._walkState.pos.x : activeCam.position.x;
+            if (nextLoc === 'store' && curX <= 30) {
+                if (this.camMode === 'walk') {
+                    this._walkState.pos.set(96.0, 0.0, 52.5);
+                    this._walkState.yaw = Math.PI;
+                    this._walkState.pitch = 0;
+                    this._syncWalkCamera();
+                } else {
+                    this._flyToPreset('street', true);
+                }
+            } else if (nextLoc === 'apartment' && curX > 30) {
+                if (this.camMode === 'walk') {
+                    this._walkState.pos.copy(this.world.playerSpawn.position);
+                    this._walkState.yaw = this.world.playerSpawn.yaw;
+                    this._walkState.pitch = this.world.playerSpawn.pitch;
+                    this._syncWalkCamera();
+                } else {
+                    this._flyToPreset('overview', true);
+                }
+            }
+        }
+
+        if (changed) {
+            const labels = {
+                apartment: 'Локация: Квартира / Двор',
+                store: 'Локация: Подъезд №2 / Улица / Магазин',
+                all: 'Локация: Все зоны'
+            };
+            this._showToast(labels[nextLoc]);
+        }
+    }
+
+    _flyToPreset(key, skipLocationSwitch = false) {
         const p = ROOM_PRESETS[key];
         if (!p) return;
+        if (!skipLocationSwitch) {
+            const presetLoc = (p.look[0] > 30 || p.pos[0] > 30) ? 'store' : 'apartment';
+            if (this.activeLocation !== 'all' && this.activeLocation !== presetLoc) {
+                this.setActiveLocation(presetLoc, false);
+            }
+        }
         if (this.camMode === 'top') {
             this.orthoCam.position.set(p.look[0], 22, p.look[2]);
-            this.orthoZoom = key === 'overview' ? 0.65 : key === 'courtyard' ? 0.45 : 1.5;
+            this.orthoZoom = key === 'overview' ? 0.65 : key === 'courtyard' ? 0.45 : key === 'street' ? 0.40 : 1.5;
             this._applyViewportSize();
             return;
         }
@@ -2385,7 +2460,12 @@ class MapEditor {
             if (!obj || obj.userData.deleted) continue;
             const mod = this.overrides.modifiedObjects[name];
             const baseVis = mod && mod.visible !== undefined ? mod.visible : (obj.userData.initialTransform?.visible !== false);
-            obj.visible = this.noCeiling ? false : baseVis;
+            if (obj.userData._zoneCulled) {
+                obj.userData._savedVisBeforeCull = this.noCeiling ? false : baseVis;
+                obj.visible = false;
+            } else {
+                obj.visible = this.noCeiling ? false : baseVis;
+            }
         }
     }
 
@@ -4659,6 +4739,10 @@ class MapEditor {
         document.getElementById('add-light').addEventListener('click', () => this.addCustomLight());
         document.getElementById('add-waypoint').addEventListener('click', () => this.addPatrolWaypoint(null));
 
+        for (const btn of document.querySelectorAll('[data-location]')) {
+            btn.addEventListener('click', () => this.setActiveLocation(btn.dataset.location, true));
+        }
+
         for (const btn of document.querySelectorAll('[data-preset]')) {
             btn.addEventListener('click', () => this._flyToPreset(btn.dataset.preset));
         }
@@ -4721,7 +4805,11 @@ class MapEditor {
             commitObjs(targets => {
                 for (const o of targets) {
                     o.userData.logicalVisible = e.target.checked;
-                    o.visible = e.target.checked;
+                    if (o.userData._zoneCulled) {
+                        o.userData._savedVisBeforeCull = e.target.checked;
+                    } else {
+                        o.visible = e.target.checked;
+                    }
                 }
             });
         });

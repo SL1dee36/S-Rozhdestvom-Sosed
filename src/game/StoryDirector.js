@@ -3266,7 +3266,6 @@ export class StoryDirector {
         };
 
         this.engine.audioSystem.playSpatialOneShot('toilet_use', new THREE.Vector3(4.72, 0.35, 3.14), { volume: 0.55, duration: 2.2 });
-        this.ui.showSubtitle(tr('sub.toilet_peeing_hint'), 5500);
     }
 
     _updateToiletPeeSequence(deltaTime) {

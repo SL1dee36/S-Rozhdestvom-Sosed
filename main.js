@@ -69,3 +69,60 @@ engine.addUpdateCallback((deltaTime) => {
 ui.applyVHSIntensity(0.5);
 ui.showMainMenu();
 engine.start();
+
+// Startup splash: black screen -> LuminaEngine by @slide36 -> fade out to main menu
+(() => {
+    const splash = document.getElementById('engine-splash');
+    if (!splash) return;
+
+    let finished = false;
+    const timers = [];
+    const schedule = (fn, ms) => {
+        const id = setTimeout(fn, ms);
+        timers.push(id);
+        return id;
+    };
+
+    const finishSplash = (fast = false) => {
+        if (finished) return;
+        finished = true;
+        for (const id of timers) clearTimeout(id);
+        window.removeEventListener('keydown', onSkip);
+        splash.removeEventListener('pointerdown', onSkip);
+
+        if (fast) {
+            splash.style.transitionDuration = '0.4s';
+            splash.classList.add('splash-text-out', 'splash-fadeout');
+            setTimeout(() => splash.classList.add('hidden'), 430);
+        } else {
+            splash.classList.add('splash-fadeout');
+            setTimeout(() => splash.classList.add('hidden'), 950);
+        }
+    };
+
+    let canSkip = false;
+    const onSkip = (e) => {
+        if (!canSkip) return;
+        if (e.type === 'keydown' && !['Space', 'Enter', 'Escape'].includes(e.code)) return;
+        finishSplash(true);
+    };
+    window.addEventListener('keydown', onSkip);
+    splash.addEventListener('pointerdown', onSkip);
+
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            schedule(() => {
+                canSkip = true;
+                splash.classList.add('splash-play');
+            }, 350);
+
+            schedule(() => {
+                splash.classList.add('splash-text-out');
+            }, 2550);
+
+            schedule(() => {
+                finishSplash(false);
+            }, 3200);
+        });
+    });
+})();

@@ -388,64 +388,89 @@ export class KhrushchevkaBuilder {
                     if (!obj.userData._zoneCulled) {
                         obj.userData._savedVisBeforeCull = obj.visible;
                         obj.userData._zoneCulled = true;
-                        obj.visible = false;
                     }
+                    obj.visible = false;
                 } else if (obj.userData._zoneCulled) {
                     obj.userData._zoneCulled = false;
-                    obj.visible = obj.userData._savedVisBeforeCull !== undefined ? obj.userData._savedVisBeforeCull : true;
+                    if (obj.userData.deleted) {
+                        obj.visible = false;
+                    } else {
+                        obj.visible = obj.userData._savedVisBeforeCull !== undefined ? obj.userData._savedVisBeforeCull : true;
+                    }
                 }
             }
         };
 
-        let currentInStore = null;
+        let currentMode = null;
         const savedDefaultFog = this.scene.fog || null;
         const streetSnowMist = new THREE.FogExp2(0x152030, 0.022);
 
-        this.world.updateVisibilityCulling = (playerPos, _isPeephole = false, inStore = false) => {
-            const isInStore = !!(inStore || (playerPos && playerPos.x > 30));
-            if (currentInStore === isInStore) return;
-            currentInStore = isInStore;
+        const restoreApartmentLights = (L) => {
+            for (const [k, light] of Object.entries(L)) {
+                if (!light || k === 'ambient') continue;
+                if (light.userData._savedVisBeforeStore !== undefined) {
+                    light.visible = light.userData._savedVisBeforeStore;
+                } else {
+                    light.visible = true;
+                }
+            }
+            for (const gl of this.world.garlandLights || []) {
+                if (gl.userData._savedVisBeforeStore !== undefined) {
+                    gl.visible = gl.userData._savedVisBeforeStore;
+                } else {
+                    gl.visible = true;
+                }
+            }
+        };
+
+        this.world.setVisibilityZone = (mode = 'apartment', force = false) => {
+            const nextMode = (mode === 'store' || mode === 'all') ? mode : 'apartment';
+            if (!force && currentMode === nextMode) return;
+            const prevMode = currentMode;
+            currentMode = nextMode;
 
             const L = this.world.lights || {};
             const storeLights = this.world.store?.lights || [];
 
-            if (isInStore) {
-                // Player is on the Street / Grocery Store: show ONLY street+store, completely hide apartment, stairwell & courtyard
+            if (nextMode === 'store') {
+                // Street / Podiezd #2 / Grocery Store: show ONLY street+store, completely hide apartment, stairwell & courtyard
                 setZoneCulled(storeItems, false);
                 setZoneCulled(apartmentAndWorldItems, true);
                 this.scene.fog = streetSnowMist;
                 for (const sl of storeLights) sl.visible = true;
-                for (const [k, light] of Object.entries(L)) {
-                    if (!light || k === 'ambient') continue;
-                    light.userData._savedVisBeforeStore = light.visible;
-                    light.visible = false;
+                if (prevMode !== 'store') {
+                    for (const [k, light] of Object.entries(L)) {
+                        if (!light || k === 'ambient') continue;
+                        light.userData._savedVisBeforeStore = light.visible;
+                        light.visible = false;
+                    }
+                    for (const gl of this.world.garlandLights || []) {
+                        gl.userData._savedVisBeforeStore = gl.visible;
+                        gl.visible = false;
+                    }
                 }
-                for (const gl of this.world.garlandLights || []) {
-                    gl.userData._savedVisBeforeStore = gl.visible;
-                    gl.visible = false;
-                }
+            } else if (nextMode === 'all') {
+                // Editor overview: show both zones simultaneously
+                setZoneCulled(storeItems, false);
+                setZoneCulled(apartmentAndWorldItems, false);
+                this.scene.fog = null;
+                for (const sl of storeLights) sl.visible = true;
+                restoreApartmentLights(L);
             } else {
-                // Player is in the Apartment / Courtyard: completely hide street, podiezd #2 & grocery store
+                // Apartment / Courtyard: completely hide street, podiezd #2 & grocery store
                 setZoneCulled(storeItems, true);
                 setZoneCulled(apartmentAndWorldItems, false);
                 this.scene.fog = savedDefaultFog;
                 for (const sl of storeLights) sl.visible = false;
-                for (const [k, light] of Object.entries(L)) {
-                    if (!light || k === 'ambient') continue;
-                    if (light.userData._savedVisBeforeStore !== undefined) {
-                        light.visible = light.userData._savedVisBeforeStore;
-                    } else {
-                        light.visible = true;
-                    }
-                }
-                for (const gl of this.world.garlandLights || []) {
-                    if (gl.userData._savedVisBeforeStore !== undefined) {
-                        gl.visible = gl.userData._savedVisBeforeStore;
-                    } else {
-                        gl.visible = true;
-                    }
-                }
+                restoreApartmentLights(L);
             }
+        };
+
+        this.world.getVisibilityZone = () => currentMode;
+
+        this.world.updateVisibilityCulling = (playerPos, _isPeephole = false, inStore = false) => {
+            const isInStore = !!(inStore || (playerPos && playerPos.x > 30));
+            this.world.setVisibilityZone(isInStore ? 'store' : 'apartment');
         };
         // Immediately cull the inactive zone on startup
         this.world.updateVisibilityCulling(this.world.playerSpawn?.position, false, false);
