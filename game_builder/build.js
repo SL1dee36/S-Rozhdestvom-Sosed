@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = __dirname;
-const OUTPUT_EXE = path.join(ROOT, 'dist', 'NewYearsEve-1.4.3.exe');
+const OUTPUT_EXE = path.join(ROOT, 'dist', 'NewYearsEve-1.4.5.exe');
 
 function isGameRunning() {
     if (process.platform !== 'win32') return false;
@@ -47,7 +47,7 @@ if (fs.existsSync(distDir)) {
     fs.rmSync(distDir, { recursive: true, force: true });
 }
 
-console.log('[2/2] Сборка "NewYearsEve-1.4.3.exe"...');
+console.log('[2/2] Сборка "NewYearsEve-1.4.5.exe"...');
 const buildCode = runNpm(['run', 'build']);
 if (buildCode !== 0) {
     console.error('[ERROR] Ошибка при сборке .exe.');
