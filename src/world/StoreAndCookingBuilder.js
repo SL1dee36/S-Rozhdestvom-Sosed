@@ -1330,6 +1330,73 @@ export function buildGroceryStore(builder) {
     meatPackHighlight.position.set(meatPackX, meatPackY + 0.004, meatPackZ);
     scene.add(meatPackHighlight);
 
+    // --- Collectible Pack 3: Fresh Bread (loaf + rye brick) on the Bakery Rack (West wall) ---
+    const breadPackX = bakeryX + 0.34;
+    const breadPackY = OY + 0.99;
+    const breadPackZ = OZ - 0.25;
+    const breadPackGO = new GameObject('StoreBreadPack');
+    breadPackGO.transform.position.set(breadPackX, breadPackY, breadPackZ);
+    const bpBaton = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.068, 0.28, 7), breadLightMat);
+    bpBaton.rotation.x = Math.PI / 2;
+    bpBaton.position.set(0, 0.07, -0.06);
+    const bpRye = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.22), breadDarkMat);
+    bpRye.position.set(0, 0.06, 0.12);
+    const bpHit = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.45, 0.68), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false }));
+    bpHit.position.set(0.06, 0.10, 0);
+    breadPackGO.transform.add(bpBaton, bpRye, bpHit);
+    engine.addGameObject(breadPackGO);
+    reg(breadPackGO.transform, 'StoreBreadPack', 'gameplay', { gameObject: breadPackGO });
+    const breadPackHighlight = createHighlightRing(0.20);
+    breadPackHighlight.position.set(breadPackX, breadPackY + 0.008, breadPackZ);
+    scene.add(breadPackHighlight);
+
+    // --- Collectible Pack 4: New Year Tangerines on the entrance fruit crates ---
+    const tangPackX = OX + 4.80;
+    const tangPackY = OY + 0.56;
+    const tangPackZ = OZ + 4.45;
+    const tangerinesPackGO = new GameObject('StoreTangerinesPack');
+    tangerinesPackGO.transform.position.set(tangPackX, tangPackY, tangPackZ);
+    const tpBag = new THREE.Mesh(new THREE.SphereGeometry(0.14, 7, 6), new THREE.MeshStandardMaterial({ color: 0xf4a236, roughness: 0.65, transparent: true, opacity: 0.55 }));
+    tpBag.scale.set(1.15, 0.85, 1.15);
+    tpBag.position.y = 0.09;
+    tangerinesPackGO.transform.add(tpBag);
+    for (let tIdx = 0; tIdx < 6; tIdx++) {
+        const ang = (tIdx / 6) * Math.PI * 2;
+        const orb = new THREE.Mesh(new THREE.SphereGeometry(0.048, 6, 5), orangeMat);
+        orb.position.set(Math.cos(ang) * 0.075, 0.06 + (tIdx % 2) * 0.05, Math.sin(ang) * 0.075);
+        tangerinesPackGO.transform.add(orb);
+    }
+    const tpHit = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.48, 0.62), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false }));
+    tpHit.position.set(0, 0.12, 0);
+    tangerinesPackGO.transform.add(tpHit);
+    engine.addGameObject(tangerinesPackGO);
+    reg(tangerinesPackGO.transform, 'StoreTangerinesPack', 'gameplay', { gameObject: tangerinesPackGO });
+    const tangerinesPackHighlight = createHighlightRing(0.22);
+    tangerinesPackHighlight.position.set(tangPackX, tangPackY + 0.01, tangPackZ);
+    scene.add(tangerinesPackHighlight);
+
+    // --- Collectible Pack 5: Festive Sweets & Tea Box on Center Gondola 1 (БАКАЛЕЯ · НАПИТКИ) ---
+    const treatsPackX = gondola1X + 0.30;
+    const treatsPackY = OY + 1.098;
+    const treatsPackZ = gondolaZ + 0.25;
+    const treatsPackGO = new GameObject('StoreTreatsPack');
+    treatsPackGO.transform.position.set(treatsPackX, treatsPackY, treatsPackZ);
+    const trChoc = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.055, 0.24), builder._ps1Mat({ color: 0x8a1c1c, roughness: 0.5 }));
+    trChoc.position.set(0, 0.028, -0.04);
+    const trRibbon = new THREE.Mesh(new THREE.BoxGeometry(0.185, 0.058, 0.03), goldTinsel);
+    trRibbon.position.set(0, 0.028, -0.04);
+    const trTea = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.14, 0.08), materials.teaBox);
+    trTea.rotation.y = Math.PI / 2;
+    trTea.position.set(0, 0.07, 0.13);
+    const trHit = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.45, 0.65), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false }));
+    trHit.position.set(0.08, 0.10, 0);
+    treatsPackGO.transform.add(trChoc, trRibbon, trTea, trHit);
+    engine.addGameObject(treatsPackGO);
+    reg(treatsPackGO.transform, 'StoreTreatsPack', 'gameplay', { gameObject: treatsPackGO });
+    const treatsPackHighlight = createHighlightRing(0.20);
+    treatsPackHighlight.position.set(treatsPackX, treatsPackY + 0.006, treatsPackZ);
+    scene.add(treatsPackHighlight);
+
     // --- Wooden Crates with New Year Tangerines, Potatoes & Cabbages near entrance ---
     const entranceCrateColors = [orangeMat, orangeMat, builder._ps1Mat({ color: 0xc22b22, roughness: 0.45 })];
     for (let c = 0; c < 3; c++) {
@@ -1546,6 +1613,8 @@ export function buildGroceryStore(builder) {
         exitDoor: exitDoorGO,
         ironDoor: ironDoorGO,
         isOnPodiezdReturnStairs: city.isOnPodiezdReturnStairs,
+        setStairBlockerEnabled: city.setStairBlockerEnabled,
+        isNearStairBlocker: city.isNearStairBlocker,
         triggerReturnWindowSilhouette: city.triggerReturnWindowSilhouette,
         isStoreDoorOpen: () => storeDoorOpen,
         setStoreDoorOpen: (open) => {
@@ -1570,11 +1639,18 @@ export function buildGroceryStore(builder) {
             ironDoorTargetAngle = ironDoorBaseYaw;
             ironDoorGO.transform.rotation.y = ironDoorBaseYaw;
             ironDoorCol.enabled = true;
+            city.setStairBlockerEnabled?.(true);
         },
         olivierPackGO,
         olivierPackHighlight,
         meatPackGO,
         meatPackHighlight,
+        breadPackGO,
+        breadPackHighlight,
+        tangerinesPackGO,
+        tangerinesPackHighlight,
+        treatsPackGO,
+        treatsPackHighlight,
         npcs: storeNPCs,
         lights: storeLights,
         updateNPCs: (dt, playerPos, activeNpcId = null) => {

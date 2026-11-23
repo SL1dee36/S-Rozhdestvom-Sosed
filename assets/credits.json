@@ -187,5 +187,104 @@
     "license": "Custom",
     "source": "",
     "category": "audio"
+  },
+  {
+    "key": "tv_channel_switch",
+    "file": "generated/tv_channel_switch.ogg",
+    "originalTitle": "File:Clickick switch.ogg",
+    "author": "Wikimedia Commons",
+    "license": "Public domain",
+    "source": "https://commons.wikimedia.org/wiki/File:Clickick_switch.ogg",
+    "category": "audio"
+  },
+  {
+    "key": "street_ambient",
+    "file": "street_ambient.mp3",
+    "originalTitle": "File:Bourne woods windy 2020-05-05 0753.mp3",
+    "author": "Wikimedia Commons",
+    "license": "CC BY-SA 4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Bourne_woods_windy_2020-05-05_0753.mp3",
+    "category": "audio"
+  },
+  {
+    "key": "store_ambient",
+    "file": "store_ambient.ogg",
+    "originalTitle": "File:Supermarket prize scan packing bought stuff people.ogg",
+    "author": "Wikimedia Commons",
+    "license": "Public domain",
+    "source": "https://commons.wikimedia.org/wiki/File:Supermarket_prize_scan_packing_bought_stuff_people.ogg",
+    "category": "audio"
+  },
+  {
+    "key": "power_outage",
+    "file": "generated/power_outage.ogg",
+    "originalTitle": "File:Aggressive electric buzzing.ogg",
+    "author": "Wikimedia Commons",
+    "license": "Public domain",
+    "source": "https://commons.wikimedia.org/wiki/File:Aggressive_electric_buzzing.ogg",
+    "category": "audio"
+  },
+  {
+    "key": "toilet_use",
+    "file": "generated/toilet_use.ogg",
+    "originalTitle": "File:Pouring water in mug in sink.ogg",
+    "author": "Wikimedia Commons",
+    "license": "Public domain",
+    "source": "https://commons.wikimedia.org/wiki/File:Pouring_water_in_mug_in_sink.ogg",
+    "category": "audio"
+  },
+  {
+    "key": "toilet_flush",
+    "file": "generated/toilet_flush.ogg",
+    "originalTitle": "File:Toilet flushing 01.ogg",
+    "author": "Wikimedia Commons",
+    "license": "CC BY-SA 4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Toilet_flushing_01.ogg",
+    "category": "audio"
+  },
+  {
+    "key": "firework_pop",
+    "file": "generated/firework_pop.ogg",
+    "originalTitle": "File:Part of fireworks.ogg",
+    "author": "Wikimedia Commons",
+    "license": "Public domain",
+    "source": "https://commons.wikimedia.org/wiki/File:Part_of_fireworks.ogg",
+    "category": "audio"
+  },
+  {
+    "key": "footstep_run_concrete",
+    "file": "generated/footstep_run_concrete.mp3",
+    "originalTitle": "File:Footstep on Gravel (Gravity Sound).mp3",
+    "author": "Gravity Sound",
+    "license": "CC BY 4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Footstep_on_Gravel_(Gravity_Sound).mp3",
+    "category": "audio"
+  },
+  {
+    "key": "footstep_run_snow",
+    "file": "generated/footstep_run_snow.ogg",
+    "originalTitle": "File:Man walking on the snow.ogg",
+    "author": "Wikimedia Commons",
+    "license": "CC BY-SA 3.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Man_walking_on_the_snow.ogg",
+    "category": "audio"
+  },
+  {
+    "key": "monster_step_heavy",
+    "file": "generated/monster_step_heavy.ogg",
+    "originalTitle": "File:Dull thud.ogg",
+    "author": "Wikimedia Commons",
+    "license": "Public domain",
+    "source": "https://commons.wikimedia.org/wiki/File:Dull_thud.ogg",
+    "category": "audio"
+  },
+  {
+    "key": "monster_breath_heavy",
+    "file": "monster_breath_heavy.ogg",
+    "originalTitle": "File:Breathing man.ogg",
+    "author": "Wikimedia Commons",
+    "license": "Public domain",
+    "source": "https://commons.wikimedia.org/wiki/File:Breathing_man.ogg",
+    "category": "audio"
   }
 ]

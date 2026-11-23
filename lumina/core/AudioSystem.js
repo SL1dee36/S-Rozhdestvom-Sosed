@@ -8,12 +8,13 @@ const MUSIC_KEYS = new Set([
 const AMBIENT_KEYS = new Set([
     'wind', 'wind_snow', 'fridge_hum', 'clock_tick',
     'horror_darkness', 'horror_drone', 'heartbeat',
-    'tv_static', 'tv_audio', 'tv_broadcast', 'white_noise'
+    'tv_static', 'tv_audio', 'tv_broadcast', 'white_noise',
+    'street_ambient', 'store_ambient'
 ]);
 
 const VOICE_KEYS = new Set([
     'tv_emergency_voice', 'tv_broadcast_voice', 'whisper_cue', 'gasp',
-    'monster_breath', 'monster_roar', 'jumpscare', 'sniff', 'knife_drag'
+    'monster_breath', 'monster_breath_heavy', 'monster_roar', 'jumpscare', 'sniff', 'knife_drag'
 ]);
 
 const VALID_CATEGORIES = ['music', 'ambient', 'sfx', 'voice'];

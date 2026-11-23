@@ -122,7 +122,19 @@ export class StoryDirector {
             door_close: './assets/audio/generated/door_close.wav',
             phone_ring: './assets/audio/generated/phone_ring.wav',
             kettle_whistle: './assets/audio/generated/kettle_whistle.wav',
-            default_sfx: './assets/audio/generated/default_sfx.wav'
+            default_sfx: './assets/audio/generated/default_sfx.wav',
+            // Stage 5: Real organic & atmospheric audio assets
+            tv_channel_switch: './assets/audio/generated/tv_channel_switch.ogg',
+            street_ambient: './assets/audio/street_ambient.mp3',
+            store_ambient: './assets/audio/store_ambient.ogg',
+            power_outage: './assets/audio/generated/power_outage.ogg',
+            toilet_use: './assets/audio/generated/toilet_use.ogg',
+            toilet_flush: './assets/audio/generated/toilet_flush.ogg',
+            firework_pop: './assets/audio/generated/firework_pop.ogg',
+            footstep_run_concrete: './assets/audio/generated/footstep_run_concrete.mp3',
+            footstep_run_snow: './assets/audio/generated/footstep_run_snow.ogg',
+            monster_step_heavy: './assets/audio/generated/monster_step_heavy.ogg',
+            monster_breath_heavy: './assets/audio/monster_breath_heavy.ogg'
         }).then(() => {
             if (this.phase === 'menu') {
                 this.ensureMenuMusic();
@@ -307,7 +319,7 @@ export class StoryDirector {
                         this._startToiletPeeSequence();
                         return;
                     }
-                    this.engine.audioSystem.playSpatialOneShot('steam_hiss', w.toilet.transform.position, { volume: 0.45 });
+                    this.engine.audioSystem.playSpatialOneShot('toilet_flush', w.toilet.transform.position, { volume: 0.65 });
                     this.ui.showSubtitle(tr('sub.toilet_flush'), 2600);
                 }
             });
@@ -720,7 +732,7 @@ export class StoryDirector {
             onInteract: () => {
                 if (this.act === 0 || this.act === 1) {
                     const ch = w.crtTV.nextChannel();
-                    this.engine.audioSystem.playSpatialOneShot('pickup', w.tvGameObject.transform.position, { volume: 0.45 });
+                    this._playTVChannelAudio(ch);
                     this.ui.showSubtitle(tr(`sub.tv_channel_${ch}`), 2600);
                     return;
                 }
@@ -927,6 +939,57 @@ export class StoryDirector {
                     this._refreshObjectives();
                 }
             });
+
+            if (w.store.breadPackGO) {
+                w.store.breadPackGO.addComponent(Interactable, {
+                    maxDistance: 2.65,
+                    promptText: () => tr('prompt.store_take_bread'),
+                    canInteract: () => this.act === 0 && this._inStore && !this.prologueTasks.shopBread,
+                    onInteract: () => {
+                        this.prologueTasks.shopBread = true;
+                        w.store.breadPackGO.transform.visible = false;
+                        w.store.breadPackHighlight.visible = false;
+                        this._syncShoppingBasketVisuals();
+                        this.engine.audioSystem.playSpatialOneShot('pickup', w.store.breadPackGO.transform.position);
+                        this.ui.showSubtitle(tr('sub.store_got_bread'), 3000);
+                        this._refreshObjectives();
+                    }
+                });
+            }
+
+            if (w.store.tangerinesPackGO) {
+                w.store.tangerinesPackGO.addComponent(Interactable, {
+                    maxDistance: 2.65,
+                    promptText: () => tr('prompt.store_take_tangerines'),
+                    canInteract: () => this.act === 0 && this._inStore && !this.prologueTasks.shopTangerines,
+                    onInteract: () => {
+                        this.prologueTasks.shopTangerines = true;
+                        w.store.tangerinesPackGO.transform.visible = false;
+                        w.store.tangerinesPackHighlight.visible = false;
+                        this._syncShoppingBasketVisuals();
+                        this.engine.audioSystem.playSpatialOneShot('pickup', w.store.tangerinesPackGO.transform.position);
+                        this.ui.showSubtitle(tr('sub.store_got_tangerines'), 3000);
+                        this._refreshObjectives();
+                    }
+                });
+            }
+
+            if (w.store.treatsPackGO) {
+                w.store.treatsPackGO.addComponent(Interactable, {
+                    maxDistance: 2.65,
+                    promptText: () => tr('prompt.store_take_treats'),
+                    canInteract: () => this.act === 0 && this._inStore && !this.prologueTasks.shopTreats,
+                    onInteract: () => {
+                        this.prologueTasks.shopTreats = true;
+                        w.store.treatsPackGO.transform.visible = false;
+                        w.store.treatsPackHighlight.visible = false;
+                        this._syncShoppingBasketVisuals();
+                        this.engine.audioSystem.playSpatialOneShot('pickup', w.store.treatsPackGO.transform.position);
+                        this.ui.showSubtitle(tr('sub.store_got_treats'), 3000);
+                        this._refreshObjectives();
+                    }
+                });
+            }
 
             w.store.exitDoor.addComponent(Interactable, {
                 maxDistance: 2.6,
@@ -1445,12 +1508,17 @@ export class StoryDirector {
         });
     }
 
+    _hasAllStoreItems() {
+        const p = this.prologueTasks || {};
+        return !!(p.shopOlivierPack && p.shopMeatPack && p.shopBread && p.shopTangerines && p.shopTreats);
+    }
+
     _syncShoppingBasketVisuals() {
         const p = this.prologueTasks || {};
-        const hasAny = !!(p.shopOlivierPack || p.shopMeatPack);
+        const hasAny = !!(p.shopOlivierPack || p.shopMeatPack || p.shopBread || p.shopTangerines || p.shopTreats);
         this.player.setShoppingBasketContents?.({
-            olivier: !!p.shopOlivierPack,
-            meat: !!p.shopMeatPack
+            olivier: !!(p.shopOlivierPack || p.shopBread || p.shopTreats),
+            meat: !!(p.shopMeatPack || p.shopTangerines)
         });
         if (!p.shopPaid) {
             this.player.setHeldItem(hasAny ? 'shoppingBasket' : null);
@@ -1466,7 +1534,7 @@ export class StoryDirector {
         const buildChoices = () => {
             const choices = [];
             if (npcId === 'galya' && !this.prologueTasks.shopPaid) {
-                const hasItems = this.prologueTasks.shopOlivierPack && this.prologueTasks.shopMeatPack;
+                const hasItems = this._hasAllStoreItems();
                 choices.push({
                     id: 'pay',
                     primary: true,
@@ -1497,8 +1565,9 @@ export class StoryDirector {
                     return;
                 }
                 if (choice.id === 'pay') {
-                    if (this.prologueTasks.shopOlivierPack && this.prologueTasks.shopMeatPack) {
+                    if (this._hasAllStoreItems()) {
                         this.prologueTasks.shopPaid = true;
+                        this.world.store?.setStairBlockerEnabled?.(false);
                         this.player.setHeldItem('groceryBag');
                         this.engine.audioSystem.playSpatialOneShot('pickup', this.player.transform.position, { volume: 0.55 });
                         this._refreshObjectives();
@@ -1608,11 +1677,12 @@ export class StoryDirector {
             this.ui.showSubtitle(tr('sub.suspense_pipes'), 3800);
         } else if (count >= 8 && !this._horrorEventsTriggered.has(3)) {
             this._horrorEventsTriggered.add(3);
-            // Event 3: Lights flicker in apartment + distant thud from neighbor house + horror level 2 on TV
+            // Event 3: Lights flicker in apartment + electrical buzz + distant thud from neighbor house + horror level 2 on TV
             w.crtTV.setHorrorLevel?.(2);
             if (w.lights.kitchenLight) w.lights.kitchenLight.intensity = 0.2;
             if (w.lights.hallwayLight) w.lights.hallwayLight.intensity = 0.15;
             this.engine.renderer.triggerGlitch(0.5);
+            a.playSpatialOneShot('power_outage', new THREE.Vector3(2.8, 2.2, 1.5), { volume: 0.48, duration: 1.2 });
             a.playSpatialOneShot('door_pound', new THREE.Vector3(-1.0, 1.0, -18.0), { volume: 0.45, maxDistance: 45 });
             setTimeout(() => {
                 if (this.act === 1) {
@@ -1667,9 +1737,23 @@ export class StoryDirector {
         ]);
     }
 
+    _playTVChannelAudio(channel) {
+        const a = this.engine.audioSystem;
+        const tvPos = this.world.tvGameObject?.transform?.position || new THREE.Vector3(1.58, 0.94, -1.0);
+        a.playSpatialOneShot('tv_channel_switch', tvPos, { volume: 0.65 });
+        const key = channel === 'ogonyok' ? 'ogonyok_waltz' : (channel === 'static' ? 'tv_static' : 'tv_broadcast');
+        const vol = channel === 'ogonyok' ? 0.40 : (channel === 'static' ? 0.24 : 0.34);
+        a.startSpatialLoop('tv_audio', key, tvPos, {
+            volume: vol,
+            tvFilter: true,
+            refDistance: 1.4,
+            maxDistance: 14
+        });
+    }
+
     stopAllAudioLoops() {
         const a = this.engine.audioSystem;
-        ['menu_music', 'tv_audio', 'fridge_hum', 'clock_tick', 'wind', 'horror_darkness', 'heartbeat', 'monster_breath', 'melancholy'].forEach(id => a.stopLoop(id));
+        ['menu_music', 'tv_audio', 'fridge_hum', 'clock_tick', 'wind', 'horror_darkness', 'heartbeat', 'monster_breath', 'melancholy', 'street_music', 'street_ambient', 'store_ambient'].forEach(id => a.stopLoop(id));
         a.stopTVBroadcast?.();
         this.engine.renderer.setPostProcessParams({ fade: 1.0, panic: 0.0, wakeVignette: 0.0 });
         this.ui.setWakePrompt('', false);
@@ -1845,6 +1929,12 @@ export class StoryDirector {
                 w.store.meatPackGO.transform.visible = true;
                 w.store.olivierPackHighlight.visible = true;
                 w.store.meatPackHighlight.visible = true;
+                if (w.store.breadPackGO) w.store.breadPackGO.transform.visible = true;
+                if (w.store.breadPackHighlight) w.store.breadPackHighlight.visible = true;
+                if (w.store.tangerinesPackGO) w.store.tangerinesPackGO.transform.visible = true;
+                if (w.store.tangerinesPackHighlight) w.store.tangerinesPackHighlight.visible = true;
+                if (w.store.treatsPackGO) w.store.treatsPackGO.transform.visible = true;
+                if (w.store.treatsPackHighlight) w.store.treatsPackHighlight.visible = true;
             }
             if (w.cooking) {
                 w.cooking.dropHighlight.visible = false;
@@ -1972,6 +2062,9 @@ export class StoryDirector {
 
         this.prologueTasks = {
             fridgeChecked: false,
+            shopBread: false,
+            shopTangerines: false,
+            shopTreats: false,
             shopOlivierPack: false,
             shopMeatPack: false,
             shopPaid: false,
@@ -2354,6 +2447,9 @@ export class StoryDirector {
                     ]);
                 } else {
                     this.ui.setObjectives(tr('obj.act1.shop_title'), [
+                        { text: tr('obj.store.bread'), done: !!p.shopBread },
+                        { text: tr('obj.store.tangerines'), done: !!p.shopTangerines },
+                        { text: tr('obj.store.treats'), done: !!p.shopTreats },
                         { text: tr('obj.act1.store_olivier_pack'), done: !!p.shopOlivierPack },
                         { text: tr('obj.act1.store_meat_pack'), done: !!p.shopMeatPack },
                         { text: tr('obj.act1.store_pay'), done: !!p.shopPaid },
@@ -2616,6 +2712,9 @@ export class StoryDirector {
         if (w.store && this._inStore) {
             updateDecorFrame(w.store.olivierPackHighlight, !this.prologueTasks?.shopOlivierPack);
             updateDecorFrame(w.store.meatPackHighlight, !this.prologueTasks?.shopMeatPack);
+            if (w.store.breadPackHighlight) updateDecorFrame(w.store.breadPackHighlight, !this.prologueTasks?.shopBread);
+            if (w.store.tangerinesPackHighlight) updateDecorFrame(w.store.tangerinesPackHighlight, !this.prologueTasks?.shopTangerines);
+            if (w.store.treatsPackHighlight) updateDecorFrame(w.store.treatsPackHighlight, !this.prologueTasks?.shopTreats);
         }
 
         // Animate wing unfolding or tablecloth spreading in real time while the player holds KeyE on the table
@@ -3166,7 +3265,7 @@ export class StoryDirector {
             linePositions
         };
 
-        this.engine.audioSystem.playSpatialOneShot('steam_hiss', new THREE.Vector3(4.72, 0.35, 3.14), { volume: 0.38 });
+        this.engine.audioSystem.playSpatialOneShot('toilet_use', new THREE.Vector3(4.72, 0.35, 3.14), { volume: 0.55, duration: 2.2 });
         this.ui.showSubtitle(tr('sub.toilet_peeing_hint'), 5500);
     }
 
@@ -3179,9 +3278,9 @@ export class StoryDirector {
         this.ui.setHoldProgress(progress);
 
         st.soundTimer += deltaTime;
-        if (st.soundTimer >= 1.65 && st.elapsed < st.duration - 0.5) {
+        if (st.soundTimer >= 2.05 && st.elapsed < st.duration - 0.5) {
             st.soundTimer = 0;
-            this.engine.audioSystem.playSpatialOneShot('steam_hiss', new THREE.Vector3(4.72, 0.35, 3.14), { volume: 0.28 });
+            this.engine.audioSystem.playSpatialOneShot('toilet_use', new THREE.Vector3(4.72, 0.35, 3.14), { volume: 0.45, duration: 2.2 });
         }
 
         // Compute parabolic urine stream from hip along player's aim direction (can be aimed higher!)
@@ -3331,7 +3430,7 @@ export class StoryDirector {
         if (this.phase === 'prologue_tv_sitting') {
             if (input.wasKeyJustPressed('KeyE') && this.world.crtTV) {
                 const ch = this.world.crtTV.nextChannel();
-                this.engine.audioSystem.playSpatialOneShot('pickup', this.world.tvGameObject.transform.position, { volume: 0.45 });
+                this._playTVChannelAudio(ch);
                 this.ui.showSubtitle(tr(`sub.tv_channel_${ch}`), 2800);
             }
             if (this.phaseTimer >= 2.2) {
@@ -3501,7 +3600,9 @@ export class StoryDirector {
                     this.world.setClockTime(-128);
                     this.ui.setClockText('21:22');
                     this.world.store.resetStreetDoors?.();
-                    a.startSpatialLoop('street_music', 'winter_street_music', null, { volume: 0.26, checkOcclusion: false });
+                    a.startSpatialLoop('street_music', 'winter_street_music', null, { volume: 0.20, checkOcclusion: false });
+                a.startSpatialLoop('street_ambient', 'street_ambient', null, { volume: 0.34, checkOcclusion: false });
+                a.startSpatialLoop('store_ambient', 'store_ambient', null, { volume: 0.0, checkOcclusion: false });
                     const sp = this.world.store.streetSpawnPos || this.world.store.spawnPos;
                     this.player.setPose(sp, this.world.store.streetSpawnYaw ?? 0, -0.04);
                     if (this.player.rb) this.player.rb.useGravity = true;
@@ -3584,6 +3685,8 @@ export class StoryDirector {
                 this.ui.setClockText('21:40');
                 this.world.store.resetStreetDoors?.();
                 a.stopLoop('street_music');
+                a.stopLoop('street_ambient');
+                a.stopLoop('store_ambient');
                 // Place player on the 3rd-floor stairs facing forward (-Z) up toward Apartment #34
                 this.player.setPose(new THREE.Vector3(2.55, -0.78, 7.15), 0.14, 0.14);
                 trState.lookTarget.set(3.075, 1.32, 4.4);
@@ -3678,6 +3781,11 @@ export class StoryDirector {
         if (this._inStore && this.world.store?.updateNPCs) {
             const pPos = this.player.transform.position;
             this.world.store.updateNPCs(deltaTime, pPos, this._activeNpcId);
+            // Crossfade between winter street ambient and Produkty 24 supermarket ambient
+            const insideShop = pPos.z <= 6.35;
+            this.engine.audioSystem.setLoopVolume('street_ambient', insideShop ? 0.04 : 0.36, 0.35);
+            this.engine.audioSystem.setLoopVolume('store_ambient', insideShop ? 0.32 : 0.0, 0.35);
+            this.engine.audioSystem.setLoopVolume('street_music', insideShop ? 0.08 : 0.20, 0.35);
             // Automatically close the store door once the player steps inside before paying
             if (this.world.store.isStoreDoorOpen() && !this.prologueTasks.shopPaid && pPos.z < 5.05) {
                 this.world.store.setStoreDoorOpen(false);
@@ -3688,6 +3796,12 @@ export class StoryDirector {
             if (this.prologueTasks.shopPaid && !this._horrorEventsTriggered.has('street_window_silhouette') && pPos.z > 32.0 && pPos.z < 46.5) {
                 this._horrorEventsTriggered.add('street_window_silhouette');
                 this.world.store.triggerReturnWindowSilhouette?.();
+            }
+            // Staircase blocker warning when player tries to go back upstairs before buying groceries
+            if (this._stairWarnCooldown > 0) this._stairWarnCooldown -= deltaTime;
+            if (!this.prologueTasks.shopPaid && this.world.store.isNearStairBlocker?.(pPos) && (this._stairWarnCooldown || 0) <= 0) {
+                this._stairWarnCooldown = 3.2;
+                this.ui.showSubtitle(tr('sub.stair_need_groceries'), 3200);
             }
             // If player bought groceries and walked back up the stairs inside their Podiezd, smoothly return to 3rd floor!
             if (this.prologueTasks.shopPaid && this.world.store.isOnPodiezdReturnStairs?.(pPos)) {
@@ -4191,6 +4305,7 @@ export class StoryDirector {
                 if (this.world.lights.ovenLight) this.world.lights.ovenLight.intensity = 0;
                 if (this.world.steamEmitter) this.world.steamEmitter.setActive(false);
                 a.stopLoop('fridge_hum');
+                a.playSpatialOneShot('power_outage', new THREE.Vector3(2.8, 2.2, 1.5), { volume: 0.72, duration: 2.0 });
 
                 this.world.crtTV.setMode('static', false);
                 a.startSpatialLoop('tv_audio', 'tv_static', new THREE.Vector3(1.58, 0.94, -1.0), { volume: 0.24, tvFilter: true });
@@ -4304,6 +4419,8 @@ export class StoryDirector {
         this._escapeDoorSlammed = false;
         this._escapePlacedInCourtyard = false;
         this._escapeStepTimer = 0;
+        this._escapeBobStepIdx = -1;
+        this._escapeYardStepIdx = -1;
         this._escapeFireworkTimer = 0;
         this._escapeStartPos = this.player.transform.position.clone();
         this._escapeLookTarget = new THREE.Vector3(2.52, -0.5, 7.2);
@@ -4355,12 +4472,18 @@ export class StoryDirector {
             }
             this.player.transform.position.set(px, py, pz);
             if (this.player.rb) this.player.rb.position.set(px, py, pz);
-            this.player.cinematicBobOffset = Math.sin(t * 14.0) * 0.045;
+            const bobPhase = t * 14.0;
+            this.player.cinematicBobOffset = Math.sin(bobPhase) * 0.048;
 
-            this._escapeStepTimer -= deltaTime;
-            if (this._escapeStepTimer <= 0) {
-                this._escapeStepTimer = 0.21;
-                a.playSpatialOneShot('footstep_concrete', this.player.transform.position, { heavy: true, volume: 0.72 });
+            // Synchronize running footsteps strictly with the head-bobbing trough cycle (1 step per downward bob)
+            const bobStepIdx = Math.floor((bobPhase + Math.PI * 0.5) / (Math.PI * 2));
+            if (bobStepIdx !== this._escapeBobStepIdx) {
+                this._escapeBobStepIdx = bobStepIdx;
+                a.playSpatialOneShot('footstep_run_concrete', this.player.transform.position, {
+                    volume: 0.58,
+                    duration: 0.32,
+                    playbackRate: 1.05 + Math.random() * 0.12
+                });
             }
 
             if (t >= 2.65) {
@@ -4419,12 +4542,18 @@ export class StoryDirector {
 
         this.player.transform.position.set(nx, -8.38, nz);
         if (this.player.rb) this.player.rb.position.set(nx, -8.38, nz);
-        this.player.cinematicBobOffset = Math.sin(ct * 11.5) * 0.052;
+        const yardBobPhase = ct * 11.5;
+        this.player.cinematicBobOffset = Math.sin(yardBobPhase) * 0.052;
 
-        this._escapeStepTimer -= deltaTime;
-        if (this._escapeStepTimer <= 0 && ct < totalCourtyardDur - 0.5) {
-            this._escapeStepTimer = 0.27;
-            a.playSpatialOneShot('footstep_snow', this.player.transform.position, { volume: 0.48 });
+        // Synchronize snow running steps strictly with head-bobbing troughs
+        const yardStepIdx = Math.floor((yardBobPhase + Math.PI * 0.5) / (Math.PI * 2));
+        if (yardStepIdx !== this._escapeYardStepIdx && ct < totalCourtyardDur - 0.5) {
+            this._escapeYardStepIdx = yardStepIdx;
+            a.playSpatialOneShot('footstep_run_snow', this.player.transform.position, {
+                volume: 0.52,
+                duration: 0.36,
+                playbackRate: 1.25 + Math.random() * 0.14
+            });
         }
 
         this._escapeFireworkTimer -= deltaTime;
@@ -4437,6 +4566,13 @@ export class StoryDirector {
                 -15 - Math.random() * 12
             );
             this.world.fireworksEmitter.burstFirework(origin, colors[Math.floor(Math.random() * colors.length)]);
+            a.playSpatialOneShot('firework_pop', origin, {
+                volume: 0.58,
+                duration: 0.95,
+                offset: Math.random() * 1.2,
+                playbackRate: 0.88 + Math.random() * 0.24,
+                maxDistance: 75
+            });
         }
 
         if (ct >= totalCourtyardDur) {
@@ -4517,6 +4653,13 @@ export class StoryDirector {
                     -14 - Math.random() * 12
                 );
                 this.world.fireworksEmitter.burstFirework(origin, colors[Math.floor(Math.random() * colors.length)]);
+                this.engine.audioSystem.playSpatialOneShot('firework_pop', origin, {
+                    volume: 0.52,
+                    duration: 0.95,
+                    offset: Math.random() * 1.2,
+                    playbackRate: 0.88 + Math.random() * 0.24,
+                    maxDistance: 70
+                });
             }
 
             if (t >= 1.0 && t <= 8.5) {

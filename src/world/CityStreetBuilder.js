@@ -597,6 +597,13 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
     builder._registerLight(podStairLight3, 'storePodStairLight3', 'Подъезд №2 (3 этаж)', 'store');
     streetLights.push(podStairLight2, podStairLight3);
 
+    // Staircase blocker on 1st floor of Podiezd #2: prevents going back upstairs until groceries are paid for
+    const stairBlockerGO = new GameObject('StorePodiezdStairBlocker');
+    stairBlockerGO.transform.position.set(PX - 0.35, OY + 1.25, PZ_N + 3.68);
+    const stairBlockerCol = stairBlockerGO.addComponent(BoxCollider, new THREE.Vector3(4.6, 2.5, 0.28));
+    stairBlockerGO.addComponent(RigidBody, { bodyType: 'static' });
+    engine.addGameObject(stairBlockerGO);
+
     // Editable Gameplay Logic Zones: Return-Home Stair Trigger & Podiezd Player Spawn Point
     const returnZoneGO = new GameObject('StorePodiezdReturnZone');
     returnZoneGO.transform.position.set(PX, OY + 1.55, PZ_N + 5.5);
@@ -678,9 +685,119 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
     addCityBlock('StoreCityBlock_West1', 41.0, 36.0, 6.0, 14.5, 22.0, brickFacadeMat, 'east');
     addCityBlock('StoreCityBlock_SouthMid', 66.0, 52.0, 26.0, 14.5, 6.0, darkFacadeMat, 'north');
 
-    // Invisible boundary blockers closing avenue ends so player cannot walk off the edge of the world
-    builder._addStaticBox('StoreCityBoundW', 45.5, OY + 1.5, 21.2, 0.6, 3.0, 10.0, materials.glass, { blocker: false, castShadow: false }).mesh.visible = false;
-    builder._addStaticBox('StoreCityBoundE', 103.0, OY + 1.5, 21.2, 0.6, 3.0, 10.0, materials.glass, { blocker: false, castShadow: false }).mesh.visible = false;
+    // Invisible full-perimeter boundary blockers closing every edge & avenue end so player can never walk off the map
+    // (Leaves doorways open at Produkty 24 x=52.2..67.8 and Podiezd #2 x=93..99; cars ignore static physics and pass freely)
+    builder._addStaticBox('StoreCityBoundW', 45.2, OY + 1.8, 29.0, 0.6, 3.6, 48.0, materials.glass, { blocker: false, castShadow: false }).mesh.visible = false;
+    builder._addStaticBox('StoreCityBoundE', 102.8, OY + 1.8, 29.0, 0.6, 3.6, 48.0, materials.glass, { blocker: false, castShadow: false }).mesh.visible = false;
+    builder._addStaticBox('StoreCityBoundNW', 48.6, OY + 1.8, 6.4, 7.6, 3.6, 0.6, materials.glass, { blocker: false, castShadow: false }).mesh.visible = false;
+    builder._addStaticBox('StoreCityBoundNE', 85.4, OY + 1.8, 6.4, 35.6, 3.6, 0.6, materials.glass, { blocker: false, castShadow: false }).mesh.visible = false;
+    builder._addStaticBox('StoreCityBoundSW', 69.0, OY + 1.8, 50.6, 48.0, 3.6, 0.6, materials.glass, { blocker: false, castShadow: false }).mesh.visible = false;
+    builder._addStaticBox('StoreCityBoundSE', 101.2, OY + 1.8, 50.6, 4.4, 3.6, 0.6, materials.glass, { blocker: false, castShadow: false }).mesh.visible = false;
+
+    // Visual Soviet concrete fences (ПО-2 style) & snowdrifts closing every gap between apartment blocks
+    const concreteFenceMat = builder._ps1Mat({ map: materials.concrete.map, color: 0x7d8288, roughness: 0.95 });
+    const addConcreteFence = (name, x, z, len, rotY = 0) => {
+        const g = new THREE.Group();
+        g.position.set(x, OY, z);
+        g.rotation.y = rotY;
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(len, 2.25, 0.16), concreteFenceMat);
+        panel.position.y = 1.125;
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(len + 0.08, 0.14, 0.24), snowMat);
+        cap.position.y = 2.30;
+        const baseDrift = new THREE.Mesh(new THREE.BoxGeometry(len + 0.2, 0.36, 0.72), snowMat);
+        baseDrift.position.set(0, 0.16, 0);
+        g.add(panel, cap, baseDrift);
+        const postCount = Math.max(2, Math.round(len / 2.6) + 1);
+        for (let i = 0; i < postCount; i++) {
+            const px = -len * 0.5 + (i / (postCount - 1)) * len;
+            const post = new THREE.Mesh(new THREE.BoxGeometry(0.22, 2.35, 0.24), concreteFenceMat);
+            post.position.set(px, 1.175, 0);
+            g.add(post);
+        }
+        const fGO = new GameObject(name);
+        fGO.transform.position.set(x, OY, z);
+        fGO.transform.rotation.y = rotY;
+        g.position.set(0, 0, 0);
+        g.rotation.y = 0;
+        fGO.transform.add(g);
+        fGO.addComponent(BoxCollider, new THREE.Vector3(len, 2.4, 0.36), new THREE.Vector3(0, 1.2, 0));
+        fGO.addComponent(RigidBody, { bodyType: 'static' });
+        engine.addGameObject(fGO);
+        reg(fGO.transform, name, 'store', { gameObject: fGO });
+    };
+
+    // Close all visible gaps between buildings around the neighborhood perimeter
+    addConcreteFence('StoreGapFence_NW', 51.1, 6.2, 3.0, 0);          // Between NorthW & Produkty 24
+    addConcreteFence('StoreGapFence_NE1', 70.9, 6.2, 6.6, 0);         // Between Produkty 24 & NorthE
+    addConcreteFence('StoreGapFence_NE2', 99.0, 6.2, 6.4, 0);         // Between NorthE & East2
+    addConcreteFence('StoreGapFence_SW', 48.8, 50.4, 8.8, 0);         // Between West1 & SouthMid
+    addConcreteFence('StoreGapFence_S_Pod', 81.2, 50.6, 4.8, 0);      // Between SouthMid & PodiezdHouseL
+    addConcreteFence('StoreGapFence_W_N', 45.2, 13.0, 8.2, Math.PI / 2);  // West sidewalk north of avenue
+    addConcreteFence('StoreGapFence_E_S', 103.2, 49.2, 4.6, Math.PI / 2); // East gap south of East1
+
+    // Soviet Metal Dumpster Enclosures («Мусорные баки») with solid colliders, lids & trash bags
+    const dumpsterGreenMat = builder._ps1Mat({ color: 0x2d4a3a, roughness: 0.85, metalness: 0.25 });
+    const dumpsterRustMat = builder._ps1Mat({ color: 0x543c2c, roughness: 0.90, metalness: 0.20 });
+    const trashBagMat = builder._ps1Mat({ color: 0x17191d, roughness: 0.65 });
+    const addDumpsterYard = (name, x, z, rotY = 0, count = 3) => {
+        const yardW = count * 1.18 + 0.55;
+        const yardGO = new GameObject(name);
+        yardGO.transform.position.set(x, OY, z);
+        yardGO.transform.rotation.y = rotY;
+
+        // Concrete pad + low 3-sided metal enclosure wall
+        const pad = new THREE.Mesh(new THREE.BoxGeometry(yardW, 0.08, 1.65), materials.concrete);
+        pad.position.set(0, 0.04, 0);
+        const backWall = new THREE.Mesh(new THREE.BoxGeometry(yardW, 1.35, 0.08), concreteFenceMat);
+        backWall.position.set(0, 0.72, -0.78);
+        const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.35, 1.56), concreteFenceMat);
+        sideL.position.set(-yardW * 0.5 + 0.04, 0.72, 0);
+        const sideR = sideL.clone();
+        sideR.position.x = yardW * 0.5 - 0.04;
+        yardGO.transform.add(pad, backWall, sideL, sideR);
+
+        for (let i = 0; i < count; i++) {
+            const bx = -((count - 1) * 1.12) * 0.5 + i * 1.12;
+            const binMat = i % 2 === 0 ? dumpsterGreenMat : dumpsterRustMat;
+            const bin = new THREE.Group();
+            bin.position.set(bx, 0.08, -0.05);
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.96, 0.82), binMat);
+            body.position.y = 0.52;
+            const rim = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.06, 0.88), binMat);
+            rim.position.y = 1.00;
+            const lid = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.05, 0.86), binMat);
+            lid.position.set(0, 1.05, i === 1 ? -0.08 : 0);
+            lid.rotation.x = i === 1 ? -0.28 : 0.0;
+            const lidSnow = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.05, 0.78), snowMat);
+            lidSnow.position.set(0, 1.09, i === 1 ? -0.08 : 0);
+            lidSnow.rotation.x = lid.rotation.x;
+            bin.add(body, rim, lid, lidSnow);
+            // Overflowing black garbage bags inside the open middle bin or beside the bins
+            if (i === 1) {
+                const bagIn = new THREE.Mesh(new THREE.DodecahedronGeometry(0.24, 0), trashBagMat);
+                bagIn.position.set(0.08, 0.95, 0.06);
+                bin.add(bagIn);
+            }
+            yardGO.transform.add(bin);
+        }
+        // A couple of tied black trash bags sitting beside the bins
+        const bag1 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22, 0), trashBagMat);
+        bag1.scale.set(1.0, 1.15, 0.95);
+        bag1.position.set(yardW * 0.5 - 0.36, 0.24, 0.52);
+        const bag2 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.18, 0), trashBagMat);
+        bag2.position.set(-yardW * 0.5 + 0.34, 0.20, 0.48);
+        yardGO.transform.add(bag1, bag2);
+
+        yardGO.addComponent(BoxCollider, new THREE.Vector3(yardW, 1.45, 1.65), new THREE.Vector3(0, 0.72, 0));
+        yardGO.addComponent(RigidBody, { bodyType: 'static' });
+        engine.addGameObject(yardGO);
+        reg(yardGO.transform, name, 'store', { gameObject: yardGO });
+    };
+
+    // Place 3 Soviet dumpster yards around the neighborhood (next to Produkty 24, near Podiezd courtyard, by garages)
+    addDumpsterYard('StoreDumpsterYard_Shop', 70.9, 7.6, 0, 3);
+    addDumpsterYard('StoreDumpsterYard_Courtyard', 81.2, 49.0, Math.PI, 3);
+    addDumpsterYard('StoreDumpsterYard_Garages', 52.2, 46.8, Math.PI * 0.5, 2);
 
     // District 3: Row of Rusted Soviet Metal Garages («Гаражный кооператив») + Closed Kiosk «СОЮЗПЕЧАТЬ»
     for (let g = 0; g < 4; g++) {
@@ -1195,6 +1312,13 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
             if (!pos || returnZoneGO.transform.userData?.deleted) return false;
             _rzBox.setFromObject(returnZoneGO.transform);
             return !_rzBox.isEmpty() && _rzBox.containsPoint(pos);
+        },
+        setStairBlockerEnabled: (enabled) => {
+            stairBlockerCol.enabled = !!enabled;
+        },
+        isNearStairBlocker: (pos) => {
+            if (!pos || !stairBlockerCol.enabled) return false;
+            return pos.x > PX - 3.2 && pos.x < PX + 3.2 && pos.z > PZ_N + 2.85 && pos.z < PZ_N + 4.35;
         },
         triggerReturnWindowSilhouette,
         updateCityLife

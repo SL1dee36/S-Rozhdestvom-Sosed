@@ -528,10 +528,12 @@ export class MonsterAI extends Component {
         this.transform.position.set(3.08, 0, 4.35);
         this._lastProgressPos.copy(this.transform.position);
         this.setEyesVisible(true);
-        this.engine.audioSystem.startSpatialLoop('monster_breath', 'monster_breath', this.transform.position, {
-            volume: 0.95,
-            refDistance: 2.8,
-            maxDistance: 22
+        this.engine.audioSystem.startSpatialLoop('monster_breath', 'monster_breath_heavy', this.transform.position, {
+            volume: 1.05,
+            playbackRate: 0.80,
+            refDistance: 3.0,
+            maxDistance: 22,
+            rolloffFactor: 1.25
         });
     }
 
@@ -553,16 +555,18 @@ export class MonsterAI extends Component {
         this.transform.position.copy(this._trapTarget);
         this.transform.rotation.set(0, -Math.PI * 0.75, 0);
         this.setEyesVisible(false);
-        // Keep spatial monster breathing audible while lurking in the hallway corner so the player can clearly hear he is still inside!
+        // Keep spatial heavy monster breathing audible while lurking in the hallway corner so the player can clearly hear he is still inside!
         if (!this.engine.audioSystem.activeLoops.has('monster_breath')) {
-            this.engine.audioSystem.startSpatialLoop('monster_breath', 'monster_breath', this.transform.position, {
-                volume: 0.62,
-                refDistance: 2.6,
-                maxDistance: 16
+            this.engine.audioSystem.startSpatialLoop('monster_breath', 'monster_breath_heavy', this.transform.position, {
+                volume: 0.82,
+                playbackRate: 0.78,
+                refDistance: 3.0,
+                maxDistance: 19,
+                rolloffFactor: 1.2
             });
         } else {
             this.engine.audioSystem.updateLoopPosition('monster_breath', this.transform.position);
-            this.engine.audioSystem.setLoopVolume('monster_breath', 0.62, 0.4);
+            this.engine.audioSystem.setLoopVolume('monster_breath', 0.82, 0.4);
         }
     }
 
@@ -1019,7 +1023,7 @@ export class MonsterAI extends Component {
                     if (!act.stomped && p >= 0.72) {
                         act.stomped = true;
                         if (this.world.mistletoe?.trampled) this.world.mistletoe.trampled.visible = true;
-                        this.engine.audioSystem.playSpatialOneShot('footstep_parquet', pos, { heavy: true, volume: 1.35, refDistance: 3.0, maxDistance: 26 });
+                        this.engine.audioSystem.playSpatialOneShot('monster_step_heavy', pos, { heavy: true, volume: 1.4, playbackRate: 0.74, refDistance: 3.2, maxDistance: 26 });
                     }
                 } else if (act.type === 'garland') {
                     this._animateLimbs(deltaTime, 0, 'wreck_rip');
@@ -1251,12 +1255,12 @@ export class MonsterAI extends Component {
                 this._stepAccum += deltaTime * (this._paceBurstTimer > 0 ? 1.45 : (this._paceSlowTimer > 0 ? 0.68 : 1.0));
                 if (this._stepAccum > 0.46) {
                     this._stepAccum = 0;
-                    const sfx = pos.x < 2.0 && pos.z < 1.5 ? 'footstep_parquet' : 'footstep_linoleum';
-                    this.engine.audioSystem.playSpatialOneShot(sfx, pos, {
+                    this.engine.audioSystem.playSpatialOneShot('monster_step_heavy', pos, {
                         heavy: true,
-                        volume: this._paceBurstTimer > 0 ? 1.35 : (this._paceSlowTimer > 0 ? 0.85 : 1.2),
-                        refDistance: 2.8,
-                        maxDistance: 24
+                        volume: this._paceBurstTimer > 0 ? 1.42 : (this._paceSlowTimer > 0 ? 0.98 : 1.28),
+                        playbackRate: 0.76 + Math.random() * 0.10,
+                        refDistance: 3.2,
+                        maxDistance: 26
                     });
                 }
             }
@@ -1320,8 +1324,7 @@ export class MonsterAI extends Component {
                 this._stepAccum += deltaTime * 1.25;
                 if (this._stepAccum > 0.42) {
                     this._stepAccum = 0;
-                    const sfx = pos.x < 2.0 && pos.z < 1.5 ? 'footstep_parquet' : 'footstep_linoleum';
-                    this.engine.audioSystem.playSpatialOneShot(sfx, pos, { heavy: true, volume: 1.28, refDistance: 2.8, maxDistance: 24 });
+                    this.engine.audioSystem.playSpatialOneShot('monster_step_heavy', pos, { heavy: true, volume: 1.35, playbackRate: 0.78 + Math.random() * 0.10, refDistance: 3.2, maxDistance: 26 });
                 }
             } else {
                 this._stateStuckTimer = 0;
@@ -1371,8 +1374,7 @@ export class MonsterAI extends Component {
                     this._stepAccum += deltaTime;
                     if (this._stepAccum > 0.45) {
                         this._stepAccum = 0;
-                        const sfx = pos.x < 2.0 && pos.z < 1.5 ? 'footstep_parquet' : 'footstep_linoleum';
-                        this.engine.audioSystem.playSpatialOneShot(sfx, pos, { heavy: true, volume: 1.2, refDistance: 2.8 });
+                        this.engine.audioSystem.playSpatialOneShot('monster_step_heavy', pos, { heavy: true, volume: 1.28, playbackRate: 0.75 + Math.random() * 0.10, refDistance: 3.0 });
                     }
                 } else {
                     this._stateStuckTimer = 0;
@@ -1430,12 +1432,12 @@ export class MonsterAI extends Component {
             this._stepAccum += deltaTime;
             if (this._stepAccum > 0.46) {
                 this._stepAccum = 0;
-                const sfx = pos.x < 2.0 && pos.z < 1.5 ? 'footstep_parquet' : 'footstep_linoleum';
-                this.engine.audioSystem.playSpatialOneShot(sfx, pos, {
+                this.engine.audioSystem.playSpatialOneShot('monster_step_heavy', pos, {
                     heavy: true,
-                    volume: 1.15,
-                    refDistance: 2.8,
-                    maxDistance: 24
+                    volume: 1.25,
+                    playbackRate: 0.76 + Math.random() * 0.10,
+                    refDistance: 3.0,
+                    maxDistance: 26
                 });
             }
         } else if (this.state === 'trap') {

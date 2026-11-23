@@ -2618,7 +2618,7 @@ export class PlayerController extends Component {
                 this._stepTimer = this.heldItem === 'table' ? 0.52 : 0.46;
                 this.engine.audioSystem.playSpatialOneShot(this._getSurfaceFootstep(), this.transform.position, {
                     heavy: this.heldItem === 'table',
-                    volume: this.isCrouching ? 0.14 : (this.heldItem === 'table' ? 0.42 : 0.3)
+                    volume: this.isCrouching ? 0.09 : (this.heldItem === 'table' ? 0.30 : 0.20)
                 });
             }
         } else {
