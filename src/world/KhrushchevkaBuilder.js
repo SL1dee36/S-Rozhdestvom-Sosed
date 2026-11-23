@@ -199,7 +199,7 @@ export class KhrushchevkaBuilder {
 
     _applyWorldSpaceBoxUVs(geo, w, h, d, ox = 0, oy = 0, oz = 0, mat = null) {
         const matKey = mat?.userData?.materialKey || '';
-        if (matKey === 'carpet' || matKey === 'clockDial' || matKey === 'bloodClaw' || matKey === 'glass' || matKey === 'mirror' || matKey === 'wineLabel') {
+        if (matKey === 'carpet' || matKey === 'floorCarpet' || matKey === 'clockDial' || matKey === 'bloodClaw' || matKey === 'glass' || matKey === 'mirror' || matKey === 'wineLabel') {
             return;
         }
         const tileScaleMap = {
@@ -320,7 +320,11 @@ export class KhrushchevkaBuilder {
         const w = dx > dz ? dx : thickness;
         const d = dz > dx ? dz : thickness;
         const h = yTop - yBottom;
-        return this._addStaticBox(name, cx, cy, cz, w, h, d, mat, { castShadow: true });
+        const res = this._addStaticBox(name, cx, cy, cz, w, h, d, mat, { castShadow: true });
+        if (res?.go?.transform?.userData) {
+            res.go.transform.userData.isApartmentWall = true;
+        }
+        return res;
     }
 
     build() {
@@ -681,6 +685,7 @@ export class KhrushchevkaBuilder {
     _initMaterials() {
         const tParquet = this.tex.loadPhoto('parquet', 'parquet.jpg', 1, 1);
         const tCarpet = this.tex.loadPhoto('carpet', 'carpet_soviet.jpg', 1, 1);
+        const tFloorCarpet = this.tex.loadPhoto('floorCarpet', 'floor_carpet.jpg', 1, 1);
         const tTiles = this.tex.loadPhoto('tiles', 'tiles_bathroom.jpg', 1, 1);
         const tDermantine = this.tex.loadPhoto('dermantine', 'dermantine.jpg', 1, 2);
         const tPanel = this.tex.loadPhoto('panel', 'panel_wall.jpg', 1, 1);
@@ -739,6 +744,7 @@ export class KhrushchevkaBuilder {
         this.materials = {
             parquet: this._ps1Mat({ map: tParquet, roughness: 0.85 }),
             carpet: this._ps1Mat({ map: tCarpet, roughness: 0.95 }),
+            floorCarpet: this._ps1Mat({ map: tFloorCarpet, color: 0xd8c8b8, roughness: 0.96 }),
             tiles: this._ps1Mat({ map: tTiles, roughness: 0.65 }),
             dermantine: this._ps1Mat({ map: tDermantine, color: 0xb8957a, roughness: 0.8 }),
             panel: this._ps1Mat({ map: tPanel, color: 0x8f949b, roughness: 0.95 }),
@@ -1612,26 +1618,26 @@ export class KhrushchevkaBuilder {
         frontDoorGO.transform.position.set(3.075, 1.075, 4.5);
         const doorLeaf = new THREE.Mesh(new THREE.BoxGeometry(0.95, 2.15, 0.09), this.materials.dermantine);
         doorLeaf.castShadow = true;
-        const peepRing = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.11, 8), this.materials.metal);
+        const peepRing = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.098, 8), this.materials.metal);
         peepRing.rotation.x = Math.PI / 2;
         peepRing.position.set(0, 0.42, 0);
         const peepLens = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.017, 0.017, 0.01, 8),
+            new THREE.CylinderGeometry(0.017, 0.017, 0.008, 8),
             this._ps1Mat({ color: 0x0b1018, roughness: 0.15, metalness: 0.8 })
         );
         peepLens.rotation.x = Math.PI / 2;
-        peepLens.position.set(0, 0.42, -0.052);
+        peepLens.position.set(0, 0.42, -0.048);
         const peepLensOut = peepLens.clone();
-        peepLensOut.position.set(0, 0.42, 0.053);
+        peepLensOut.position.set(0, 0.42, 0.049);
         // Apartment #34 enamel number plate & outer handle on the stairwell side of the front door
         const frontPlateMat = this._ps1Mat({ map: this.tex.createAptNumberPlateTexture('34'), roughness: 0.55 });
         const frontPlate = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.095, 0.012), frontPlateMat);
         frontPlate.position.set(0, 0.64, 0.054);
         const frontOuterHandle = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.036, 0.045), this.materials.metal);
         frontOuterHandle.position.set(-0.34, -0.05, 0.062);
-        // Pivoting brass peephole cover flap on the inner side of the front door
+        // Pivoting brass peephole cover flap on the inner side of the front door (strictly proud of peepRing/peepLens)
         const peepFlapPivot = new THREE.Group();
-        peepFlapPivot.position.set(0, 0.448, -0.059);
+        peepFlapPivot.position.set(0, 0.448, -0.057);
         const peepFlapMat = this._ps1Mat({ color: 0xb89648, roughness: 0.4, metalness: 0.7 });
         const peepPin = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.01, 6), peepFlapMat);
         peepPin.rotation.x = Math.PI / 2;
@@ -2176,6 +2182,18 @@ export class KhrushchevkaBuilder {
         this._currentGroupId = null;
 
         this._addStaticBox('WallCarpet', -3.41, 1.48, -1.0, 0.03, 1.45, 2.35, this.materials.carpet, { collide: false, blocker: false, worldUV: false });
+        // Center living room floor rug (vertical rectangle laid flat parallel to the sofa, using assets/textures/floor_carpet.jpg)
+        const floorCarpetMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1.92, 0.012, 2.88),
+            this.materials.floorCarpet
+        );
+        floorCarpetMesh.position.set(-0.55, 0.008, -1.0);
+        floorCarpetMesh.receiveShadow = true;
+        this.scene.add(floorCarpetMesh);
+        this._registerEditable(floorCarpetMesh, 'HallFloorCarpet', {
+            category: 'props',
+            extra: { isSceneProp: true, primaryMesh: floorCarpetMesh, materialKey: 'floorCarpet', collide: false, blocker: false }
+        });
 
         this._currentGroupId = 'group_sofa';
         const sofaBaseRes = this._addStaticBox('SofaBase', -2.92, 0.46, -1.0, 1.02, 0.24, 2.1, this.materials.sofaFabric, { castShadow: true });
@@ -2801,7 +2819,7 @@ export class KhrushchevkaBuilder {
         };
 
         // Glowing floor highlight square & placed mesh for the kitchen stool beside the table
-        const stoolHallPos = new THREE.Vector3(-1.35, 0, -1.96);
+        const stoolHallPos = new THREE.Vector3(-1.35, 0, -2.04);
         const stoolZoneGO = new GameObject('StoolPlacementZone');
         stoolZoneGO.transform.position.copy(stoolHallPos);
         const sZoneFill = new THREE.Mesh(new THREE.PlaneGeometry(0.48, 0.48), zoneFillMat.clone());
@@ -4909,6 +4927,64 @@ export class KhrushchevkaBuilder {
         this._buildBackdropHouse('BackdropHouse_FarCenter', 0.0, GY, -42.0, 24.0, 23.0, 1.5, 0.0, 7, 7);
         this._buildBackdropHouse('BackdropHouse_FarRight', 22.5, GY, -38.5, 20.0, 22.0, 1.5, -0.08, 7, 6);
 
+        // --- Escape Ending West Street Extension (eliminates running into a dark void in act3_escape_run) ---
+        const escapeRoadMat = this._ps1Mat({ map: this.tex.createAsphaltRoadTexture(8, 1), roughness: 0.92 });
+        const escapeRoad = new THREE.Mesh(new THREE.BoxGeometry(28.0, 0.08, 5.4), escapeRoadMat);
+        escapeRoad.position.set(-34.0, ROAD_Y, -15.2);
+        this.scene.add(escapeRoad);
+        const escapeSnowGround = new THREE.Mesh(new THREE.BoxGeometry(30.0, 0.10, 32.0), this.materials.snow);
+        escapeSnowGround.position.set(-35.0, GY - 0.04, -15.2);
+        this.scene.add(escapeSnowGround);
+
+        // Snowbanks & low courtyard fence lining the escape route
+        const fenceMat = this._ps1Mat({ color: 0x3b473e, roughness: 0.88 });
+        for (const fz of [-12.0, -18.4]) {
+            const bank = new THREE.Mesh(new THREE.BoxGeometry(26.0, 0.28, 0.95), this.materials.snow);
+            bank.position.set(-32.0, GY + 0.12, fz);
+            const rail = new THREE.Mesh(new THREE.BoxGeometry(24.0, 0.08, 0.06), fenceMat);
+            rail.position.set(-31.0, GY + 0.62, fz);
+            this.scene.add(bank, rail);
+        }
+
+        // Warm streetlights & Soviet bus stop shelter ahead along the escape street
+        const escapePoleMat = this._ps1Mat({ color: 0x2c3238, roughness: 0.85, metalness: 0.35 });
+        const escapeLampMat = new THREE.MeshBasicMaterial({ color: 0xffd788 });
+        for (const lx of [-20.5, -31.5, -41.0]) {
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.11, 5.6, 6), escapePoleMat);
+            pole.position.set(lx, GY + 2.8, -11.9);
+            const arm = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.10, 1.35), escapePoleMat);
+            arm.position.set(lx, GY + 5.5, -12.55);
+            const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.14, 0.24), escapeLampMat);
+            bulb.position.set(lx, GY + 5.38, -13.15);
+            const lampLight = new THREE.PointLight(0xffc978, 2.2, 16, 1.4);
+            lampLight.position.set(lx, GY + 5.1, -13.15);
+            this.scene.add(pole, arm, bulb, lampLight);
+        }
+
+        // Illuminated Soviet bus stop shelter as a clear visual destination at the end of the escape road
+        const busStopGroup = new THREE.Group();
+        busStopGroup.position.set(-35.5, GY, -11.5);
+        const bsRoof = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.14, 1.8), escapePoleMat);
+        bsRoof.position.set(0, 2.45, 0);
+        const bsSnow = new THREE.Mesh(new THREE.BoxGeometry(4.25, 0.14, 1.85), this.materials.snow);
+        bsSnow.position.set(0, 2.58, 0);
+        const bsBack = new THREE.Mesh(new THREE.BoxGeometry(4.1, 2.35, 0.12), this._ps1Mat({ color: 0x3b5870, roughness: 0.85 }));
+        bsBack.position.set(0, 1.2, 0.82);
+        const bsBench = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.08, 0.44), this.materials.woodDark);
+        bsBench.position.set(0, 0.50, 0.52);
+        const bsLamp = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.08, 0.16), escapeLampMat);
+        bsLamp.position.set(0, 2.34, 0.15);
+        const bsLight = new THREE.PointLight(0xffe0a8, 1.8, 10, 1.5);
+        bsLight.position.set(0, 2.1, -0.2);
+        busStopGroup.add(bsRoof, bsSnow, bsBack, bsBench, bsLamp, bsLight);
+        this.scene.add(busStopGroup);
+
+        // Trees & closing backdrop apartment block across the western horizon so no void is ever visible
+        this._buildCourtyardTree('EscapeTree_0', -24.5, GY, -19.8, 'spruce', 1.25);
+        this._buildCourtyardTree('EscapeTree_1', -32.5, GY, -20.2, 'birch', 1.15);
+        this._buildCourtyardTree('EscapeTree_2', -39.0, GY, -11.2, 'spruce', 1.3);
+        this._buildBackdropHouse('BackdropHouse_EscapeEnd', -46.5, GY, -15.2, 24.0, 20.0, 2.0, Math.PI / 2, 6, 7);
+
         this._buildNightSky();
     }
 
@@ -5351,7 +5427,9 @@ export class KhrushchevkaBuilder {
         });
 
         const mistletoeHanging = new THREE.Group();
-        mistletoeHanging.position.set(1.98, 2.08, 0.68);
+        // Mounted cleanly on the front (corridor-facing) face of the living room doorway frame
+        mistletoeHanging.position.set(2.13, 2.10, 0.75);
+        mistletoeHanging.rotation.y = Math.PI / 2;
         const mRibbon = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.14, 0.03), redTinsel);
         mRibbon.position.y = 0.06;
         const mLeaf1 = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.16, 5), greenPine);
@@ -6189,6 +6267,7 @@ export class KhrushchevkaBuilder {
         if (this.world.table) {
             this.world.table.go.transform.visible = false;
             this.world.table.wreckedGO.transform.visible = true;
+            if (this.world.table.collider) this.world.table.collider.enabled = false;
         }
 
         if (this.world.treeGO) {

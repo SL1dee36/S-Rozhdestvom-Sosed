@@ -43,6 +43,7 @@ export const ru = {
     'ui.settings.camera_tilt': 'Наклон камеры при движении и поворотах',
     'ui.settings.brightness': 'Яркость экрана',
     'ui.settings.vhs_intensity': 'Зернистость и резкость PS1',
+    'ui.settings.text_scale': 'Размер текста',
     'ui.settings.volume': 'Общая громкость',
     'ui.settings.vol_music': 'Громкость музыки',
     'ui.settings.vol_ambient': 'Громкость окружения',
@@ -470,7 +471,13 @@ export const ru = {
     'sub.peephole_act3_scare': 'ОН ПРЯМО ЗА ДВЕРЬЮ! Бегом в укрытие!',
     'sub.act3_hiding_inspect': 'Он остановился прямо у моего укрытия... Прислушивается вплотную!',
     'sub.act3_heard_something': 'Он услышал шум и идёт проверять!..',
-    'sub.act3_alarm_ring': 'Телефон в зале неожиданно зазвонил!.. Звук отвлёк его!'
+    'sub.act3_alarm_ring': 'Телефон в зале неожиданно зазвонил!.. Звук отвлёк его!',
+
+    // Stage 4: Fridge check, Monster presence & Horror warm-up
+    "obj.prologue.check_fridge": "Заглянуть в холодильник на кухне",
+    "sub.prologue_fridge_empty": "В холодильнике шаром покати... Надо сбегать в «Продукты 24», пока не закрыли.",
+    "sub.trap_monster_still_here": "Тише... В коридоре кто-то тяжело дышит. Он всё ещё в квартире!",
+    "sub.suspense_pipes": "Глухой стук по трубам... и входная дверь будто чуть скрипнула."
 };
 
 export default ru;

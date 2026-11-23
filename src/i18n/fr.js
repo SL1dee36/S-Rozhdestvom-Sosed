@@ -42,6 +42,7 @@ export const fr = {
     'ui.settings.camera_tilt': 'Inclinaison de la caméra en mouvement',
     'ui.settings.brightness': 'Luminosité de l\'écran',
     'ui.settings.vhs_intensity': 'Grain et netteté PS1',
+    'ui.settings.text_scale': 'Taille du texte',
     'ui.settings.volume': 'Volume principal',
     'ui.settings.vol_music': 'Volume de la musique',
     'ui.settings.vol_ambient': 'Volume ambiant',
@@ -462,7 +463,13 @@ export const fr = {
     'sub.peephole_act3_scare': 'IL EST JUSTE DERRIÈRE LA PORTE ! Cours te cacher !',
     'sub.act3_hiding_inspect': 'Il s\'est arrêté juste devant ma cachette... Il écoute attentivement !',
     'sub.act3_heard_something': 'Il a entendu ce bruit et va vérifier !..',
-    'sub.act3_alarm_ring': 'Le téléphone du salon sonne soudainement !.. Le bruit l\'a distrait !'
+    'sub.act3_alarm_ring': 'Le téléphone du salon sonne soudainement !.. Le bruit l\'a distrait !',
+
+    // Stage 4: Fridge check, Monster presence & Horror warm-up
+    "obj.prologue.check_fridge": "Vérifier le réfrigérateur dans la cuisine",
+    "sub.prologue_fridge_empty": "Le frigo est complètement vide... Il faut vite passer à Produkty 24.",
+    "sub.trap_monster_still_here": "Chut... Quelqu’un respire lourdement dans le couloir. Il est encore dans l’appartement !",
+    "sub.suspense_pipes": "Un coup sourd dans les tuyaux... et la porte d’entrée a semblé grincer."
 };
 
 export default fr;

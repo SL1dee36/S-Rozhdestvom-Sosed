@@ -64,6 +64,7 @@ export class StoryDirector {
         this._peeTexture = null;
         this._peeWaterTexture = null;
         this._peepholeStalkerSeen = false;
+        this._hideStalkerOnPeepholeExit = false;
         this._peepholeScratchDone = false;
         this._act3DistractionDone = false;
         this._act3KettleDone = false;
@@ -176,6 +177,8 @@ export class StoryDirector {
                     this.ui.showSubtitle(tr('sub.act3_hiding_inspect'), 3400);
                 } else if (type === 'investigate') {
                     this.ui.showSubtitle(tr('sub.act3_heard_something'), 2800);
+                } else if (type === 'trap_still_here') {
+                    this.ui.showSubtitle(tr('sub.trap_monster_still_here'), 4800);
                 }
             }
         });
@@ -187,7 +190,7 @@ export class StoryDirector {
         w.frontDoor.go.addComponent(Interactable, {
             maxDistance: 1.75,
             promptText: () => {
-                if (this.act === 0 && this.phase === 'prologue' && !this.prologueTasks.shopDone && !this._inStore) {
+                if (this.act === 0 && this.phase === 'prologue' && this.prologueTasks.fridgeChecked && !this.prologueTasks.shopDone && !this._inStore) {
                     return tr('prompt.go_to_store');
                 }
                 if (this.act === 1) return tr('prompt.peephole');
@@ -195,12 +198,12 @@ export class StoryDirector {
                 return '';
             },
             canInteract: () => (
-                (this.act === 0 && this.phase === 'prologue' && !this.prologueTasks.shopDone && !this._inStore && !this._storeTransition && !this.player.heldItem) ||
+                (this.act === 0 && this.phase === 'prologue' && this.prologueTasks.fridgeChecked && !this.prologueTasks.shopDone && !this._inStore && !this._storeTransition && !this.player.heldItem) ||
                 (this.act === 1 && this.phase === 'act1' && !this.player.isPeephole && !this.player._peepholeAnim) ||
                 (this.act === 4 && !this.act4Inspected.door)
             ),
             onInteract: () => {
-                if (this.act === 0 && this.phase === 'prologue' && !this.prologueTasks.shopDone && !this._inStore) {
+                if (this.act === 0 && this.phase === 'prologue' && this.prologueTasks.fridgeChecked && !this.prologueTasks.shopDone && !this._inStore) {
                     this._enterGroceryStore();
                 } else if (this.act === 1) {
                     this._stopDoorKnockAndPlayStairRun();
@@ -211,14 +214,13 @@ export class StoryDirector {
                         this._refreshObjectives();
                     } else if (!this._peepholeStalkerSeen) {
                         // Second time checking peephole in Act I: eerie figure lurking in the stairwell corner!
+                        // Do NOT despawn on a timer while player is watching; hide only after exiting the peephole.
                         this._peepholeStalkerSeen = true;
+                        this._hideStalkerOnPeepholeExit = true;
                         this.monster.showPhantomAt(new THREE.Vector3(3.15, 0, 5.55), new THREE.Vector3(3.075, 1.4, 4.5), true);
                         this.engine.renderer.triggerGlitch(0.45);
                         this.engine.audioSystem.playSpatialOneShot('whisper_cue', new THREE.Vector3(3.08, 1.4, 4.8), { volume: 0.55 });
                         this.ui.showSubtitle(tr('sub.peephole_stalker'), 4200);
-                        setTimeout(() => {
-                            if (this.act === 1) this.monster.hidePhantom();
-                        }, 2800);
                     } else if (!this._peepholeScratchDone) {
                         this._peepholeScratchDone = true;
                         this.monster.hidePhantom();
@@ -937,13 +939,19 @@ export class StoryDirector {
                 },
                 canInteract: () => this.act === 0 && this._inStore && !this._storeTransition,
                 onInteract: () => {
-                    if (this.player.transform.position.z <= 6.35 && !this.prologueTasks.shopPaid) {
+                    const isOpen = w.store.isStoreDoorOpen();
+                    // Allow closing the door at any time; only block opening it from inside before paying
+                    if (!isOpen && this.player.transform.position.z <= 6.35 && !this.prologueTasks.shopPaid) {
                         this.ui.showSubtitle(tr('sub.store_need_pay'), 3600);
                         return;
                     }
-                    const nextOpen = !w.store.isStoreDoorOpen();
+                    const nextOpen = !isOpen;
                     w.store.setStoreDoorOpen(nextOpen);
-                    this.engine.audioSystem.playSpatialOneShot('door_open', w.store.exitDoor.transform.position, { volume: 0.65 });
+                    this.engine.audioSystem.playSpatialOneShot(
+                        nextOpen ? 'door_open' : 'door_close',
+                        w.store.exitDoor.transform.position,
+                        { volume: 0.65 }
+                    );
                     if (nextOpen && this.player.transform.position.z > 6.35 && !this._storeEnteredSubtitleShown) {
                         this._storeEnteredSubtitleShown = true;
                         this.ui.showSubtitle(tr('sub.store_entered'), 5200);
@@ -1044,9 +1052,22 @@ export class StoryDirector {
                                 c.olivierPrep.visible = false;
                                 c.cookedOlivierGO.transform.visible = true;
                                 if (!p.cookMeat) c.meatPrep.visible = true;
+                                if (p.cookOlivier && p.cookMeat) c.bagMesh.visible = false;
                                 this.engine.audioSystem.playSpatialOneShot('pickup', c.boardGO.transform.position);
                                 this.ui.showSubtitle(tr('sub.cooked_olivier_done'), 3600);
                                 this._refreshObjectives();
+                                // Horror warm-up beat #3: brief TV volume dip + single floorboard creak in hallway behind player while cooking
+                                if (!this._horrorEventsTriggered.has('cook_tv_dip_creak')) {
+                                    this._horrorEventsTriggered.add('cook_tv_dip_creak');
+                                    const a = this.engine.audioSystem;
+                                    a.setLoopVolume('tv_audio', 0.06, 0.25);
+                                    a.playSpatialOneShot('wood_creak', new THREE.Vector3(3.05, 0.1, 1.45), { volume: 0.45, refDistance: 2.0, maxDistance: 12 });
+                                    setTimeout(() => {
+                                        if (this.act === 0 && a.activeLoops.has('tv_audio')) {
+                                            a.setLoopVolume('tv_audio', 0.36, 0.45);
+                                        }
+                                    }, 1100);
+                                }
                             },
                             boardTarget,
                             'olivier'
@@ -1063,6 +1084,7 @@ export class StoryDirector {
                                 p.cookMeat = true;
                                 c.meatPrep.visible = false;
                                 c.cookedMeatGO.transform.visible = true;
+                                if (p.cookOlivier && p.cookMeat) c.bagMesh.visible = false;
                                 this.engine.audioSystem.playSpatialOneShot('pickup', c.boardGO.transform.position);
                                 this.ui.showSubtitle(tr('sub.cooked_meat_done'), 3600);
                                 this._refreshObjectives();
@@ -1331,15 +1353,39 @@ export class StoryDirector {
         this.phase = 'prologue_falling_asleep';
         this.phaseTimer = 0;
         if (this.world.cooking?.sofaHighlight) this.world.cooking.sofaHighlight.visible = false;
-        this.player.controlsLocked = true;
-        this.player.allowLookWhileLocked = false;
         const sp = this.world.playerSpawn || { position: new THREE.Vector3(-2.65, 0.05, -1.0), yaw: -Math.PI / 2, pitch: -0.05 };
-        this.player.setPose(sp.position.clone(), sp.yaw, sp.pitch);
-        this.player.eyeHeight = 0.92;
-        this.player.targetEyeHeight = 0.92;
-        this.engine.audioSystem.playSpatialOneShot('wood_creak', sp.position, { volume: 0.45 });
-        this.ui.showSubtitle(tr('sub.nap_falling_asleep'), 3000);
+        const sitPos = new THREE.Vector3(sp.position.x + 0.08, 0.0, sp.position.z);
+        const liePos = new THREE.Vector3(sp.position.x - 0.06, 0.0, sp.position.z + 0.45);
+        const tvPos = this.world.tvGameObject?.transform?.position || new THREE.Vector3(1.58, 0.94, -1.0);
+
+        this.engine.audioSystem.playSpatialOneShot('wood_creak', sitPos, { volume: 0.45 });
+        this.ui.showSubtitle(tr('sub.nap_falling_asleep'), 3400);
         this.ui.setObjectives('', []);
+
+        // Stage 1: Smoothly align to sit on the sofa, then Stage 2: lie down on the pillow as eyes close
+        this.player.alignToAnchor({
+            position: sitPos,
+            lookTarget: tvPos,
+            eyeHeight: 0.94,
+            roll: 0,
+            duration: 1.15,
+            unlockOnComplete: false,
+            disablePhysics: true,
+            onComplete: () => {
+                if (this.phase !== 'prologue_falling_asleep') return;
+                this.engine.audioSystem.playSpatialOneShot('wood_creak', liePos, { volume: 0.38 });
+                this.player.alignToAnchor({
+                    position: liePos,
+                    yaw: sp.yaw - 0.18,
+                    pitch: 0.28,
+                    eyeHeight: 0.56,
+                    roll: 0.42,
+                    duration: 1.85,
+                    unlockOnComplete: false,
+                    disablePhysics: true
+                });
+            }
+        });
     }
 
     _enterGroceryStore() {
@@ -1546,6 +1592,20 @@ export class StoryDirector {
             // Event 2: Metallic scratch & footsteps outside the front door in the stairwell
             a.playSpatialOneShot('knife_drag', new THREE.Vector3(3.08, 1.2, 4.65), { volume: 0.85, refDistance: 2.5 });
             this.ui.showSubtitle(tr('sub.suspense_scratch'), 4000);
+        } else if (count >= 6 && !this._horrorEventsTriggered.has('pipes_door_creak')) {
+            this._horrorEventsTriggered.add('pipes_door_creak');
+            // Horror warm-up beat #4 (distinct from existing flicker/scratch events): dull pipe knock + subtle front door creak
+            a.playSpatialOneShot('door_knock', new THREE.Vector3(-2.1, 0.9, -3.35), {
+                bufferKey: 'door_knock',
+                volume: 0.36,
+                playbackRate: 0.72
+            });
+            setTimeout(() => {
+                if (this.act === 1) {
+                    a.playSpatialOneShot('creak', new THREE.Vector3(3.08, 1.1, 4.45), { volume: 0.34, refDistance: 2.2, maxDistance: 14 });
+                }
+            }, 750);
+            this.ui.showSubtitle(tr('sub.suspense_pipes'), 3800);
         } else if (count >= 8 && !this._horrorEventsTriggered.has(3)) {
             this._horrorEventsTriggered.add(3);
             // Event 3: Lights flicker in apartment + distant thud from neighbor house + horror level 2 on TV
@@ -1578,17 +1638,23 @@ export class StoryDirector {
         this.player.controlsLocked = true;
         this.player.allowLookWhileLocked = true;
         this.player.isCrouching = false;
-        this.player.targetEyeHeight = 1.06;
-        this.player.eyeHeight = 1.06;
+        this.player.targetEyeHeight = 1.12;
+        this.player.eyeHeight = 1.12;
+        // Disable physics collider/gravity while seated so the table collider cannot push the player into mid-air
+        if (this.player.rb) {
+            this.player.rb.useGravity = false;
+            this.player.rb.velocity.set(0, 0, 0);
+        }
+        if (this.player.collider) this.player.collider.enabled = false;
         // Sit on the stool looking across the table toward the TV
         const stoolPos = this.world.placedHallStool
             ? this.world.placedHallStool.transform.position
-            : new THREE.Vector3(-1.35, 0, -1.96);
+            : new THREE.Vector3(-1.35, 0, -2.04);
         const tvPos = this.world.tvGameObject
             ? this.world.tvGameObject.transform.position
             : new THREE.Vector3(1.58, 0.94, -1.0);
         const sitYaw = Math.atan2(-(tvPos.x - stoolPos.x), -(tvPos.z - stoolPos.z));
-        this.player.setPose(new THREE.Vector3(stoolPos.x, 0.05, stoolPos.z), sitYaw, -0.05);
+        this.player.setPose(new THREE.Vector3(stoolPos.x, 0.0, stoolPos.z), sitYaw, -0.05);
         this.player.lookYawCenter = sitYaw;
         this.player.lookYawLimit = 1.25;
         this.player.lookPitchMin = -0.55;
@@ -1703,6 +1769,7 @@ export class StoryDirector {
         this._flyingProps = [];
         this._smokePromptState = '';
         this._peepholeStalkerSeen = false;
+        this._hideStalkerOnPeepholeExit = false;
         this._peepholeScratchDone = false;
         this._act3DistractionDone = false;
         this._act3KettleDone = false;
@@ -1904,6 +1971,7 @@ export class StoryDirector {
         this.world.setClockTime(-140);
 
         this.prologueTasks = {
+            fridgeChecked: false,
             shopOlivierPack: false,
             shopMeatPack: false,
             shopPaid: false,
@@ -2210,6 +2278,30 @@ export class StoryDirector {
         this._tvLine2 = tr('sub.tv_line2');
         this._tvLine3 = tr('sub.tv_line3');
 
+        // Smoothly anchor the player in the living room facing the TV so they can never wander
+        // into the hallway behind the Monster before the corridor climax triggers.
+        const tvWatchPos = new THREE.Vector3(0.42, 0.0, -0.45);
+        const tvWatchYaw = Math.atan2(-(tvPos.x - tvWatchPos.x), -(tvPos.z - tvWatchPos.z));
+        this.player.isCrouching = false;
+        this.player.alignToAnchor({
+            position: tvWatchPos,
+            lookTarget: tvPos,
+            eyeHeight: 1.54,
+            roll: 0,
+            duration: 0.95,
+            unlockOnComplete: false,
+            allowLookOnComplete: true,
+            disablePhysics: true,
+            onComplete: () => {
+                if (this.phase === 'act4_tv_twist' && this._twistStep < 3) {
+                    this.player.lookYawCenter = tvWatchYaw;
+                    this.player.lookYawLimit = 0.85;
+                    this.player.lookPitchMin = -0.45;
+                    this.player.lookPitchMax = 0.45;
+                }
+            }
+        });
+
         // Starts pre-recorded retro-processed voiceover (with 0.75s emergency alert tones at start)
         a.speakTVBroadcast('', tvPos);
     }
@@ -2219,6 +2311,8 @@ export class StoryDirector {
         this.phaseTimer = 0;
         this._fadeVal = 1.0;
         this._midnightWalkStepTimer = 0;
+        this.player.cancelAnchorAlignment(false);
+        this.player.lookYawCenter = null;
         this._midnightStartPos.copy(this.player.transform.position);
         this._act4LookTarget.set(3.08, 1.35, 3.6);
         this.player.controlsLocked = true;
@@ -2250,7 +2344,11 @@ export class StoryDirector {
         if (this.act === 0 && this.phase === 'prologue') {
             const p = this.prologueTasks;
             if (!p.shopDone) {
-                if (!this._inStore) {
+                if (!p.fridgeChecked) {
+                    this.ui.setObjectives(tr('obj.act1.shop_title'), [
+                        { text: tr('obj.prologue.check_fridge'), done: false }
+                    ]);
+                } else if (!this._inStore) {
                     this.ui.setObjectives(tr('obj.act1.shop_title'), [
                         { text: tr('obj.act1.go_store'), done: false }
                     ]);
@@ -3257,17 +3355,22 @@ export class StoryDirector {
             return;
         }
 
-        // Falling asleep on the sofa -> fade to black -> wake up at 23:30 in classic Act I!
+        // Falling asleep on the sofa (sit -> lie down -> eyes close -> wake up at 23:30 in classic Act I)
         if (this.phase === 'prologue_falling_asleep') {
-            const dur = 3.1;
-            const u = Math.min(1, this.phaseTimer / dur);
+            const totalDur = 3.65;
+            const fadeStart = 1.25;
+            const u = Math.max(0, Math.min(1, (this.phaseTimer - fadeStart) / (totalDur - fadeStart)));
             const ease = u * u * (3 - 2 * u);
             this._fadeVal = Math.max(0, 1.0 - ease);
             this.engine.renderer.setPostProcessParams({
                 fade: this._fadeVal,
                 wakeVignette: ease
             });
-            if (u >= 1.0) {
+            if (this.phaseTimer >= totalDur) {
+                this.player.cancelAnchorAlignment(false);
+                this.player.cinematicRollOffset = 0;
+                if (this.player.rb) this.player.rb.useGravity = true;
+                if (this.player.collider) this.player.collider.enabled = true;
                 this._startClassicAct1FromNap();
             }
             return;
@@ -3573,12 +3676,45 @@ export class StoryDirector {
 
         // Keep Store NPCs, traffic & street pedestrians animated when in the store/city zone
         if (this._inStore && this.world.store?.updateNPCs) {
-            this.world.store.updateNPCs(deltaTime, this.player.transform.position, this._activeNpcId);
+            const pPos = this.player.transform.position;
+            this.world.store.updateNPCs(deltaTime, pPos, this._activeNpcId);
+            // Automatically close the store door once the player steps inside before paying
+            if (this.world.store.isStoreDoorOpen() && !this.prologueTasks.shopPaid && pPos.z < 5.05) {
+                this.world.store.setStoreDoorOpen(false);
+                this.engine.audioSystem.playSpatialOneShot('door_close', this.world.store.exitDoor.transform.position, { volume: 0.55 });
+            }
+            // Horror warm-up beat #2: On the walk back from the store with groceries, a silhouette in a lit window
+            // vanishes strictly at the exact moment the window light clicks off (never pops out while illuminated)
+            if (this.prologueTasks.shopPaid && !this._horrorEventsTriggered.has('street_window_silhouette') && pPos.z > 32.0 && pPos.z < 46.5) {
+                this._horrorEventsTriggered.add('street_window_silhouette');
+                this.world.store.triggerReturnWindowSilhouette?.();
+            }
             // If player bought groceries and walked back up the stairs inside their Podiezd, smoothly return to 3rd floor!
-            if (this.prologueTasks.shopPaid && this.world.store.isOnPodiezdReturnStairs?.(this.player.transform.position)) {
+            if (this.prologueTasks.shopPaid && this.world.store.isOnPodiezdReturnStairs?.(pPos)) {
                 this._exitGroceryStore();
             }
             return;
+        }
+
+        // Prologue progression step: check the empty fridge first before getting the objective to visit Produkty 24
+        if (this.act === 0 && this.phase === 'prologue' && !this.prologueTasks.fridgeChecked && this.world.fridge?.isOpen()) {
+            this.prologueTasks.fridgeChecked = true;
+            this.ui.showSubtitle(tr('sub.prologue_fridge_empty'), 4800);
+            this._refreshObjectives();
+            // Horror warm-up beat #1: faint single knock/footstep outside the front door right after checking the empty fridge
+            if (!this._horrorEventsTriggered.has('fridge_door_tap')) {
+                this._horrorEventsTriggered.add('fridge_door_tap');
+                setTimeout(() => {
+                    if (this.act === 0 && this.phase === 'prologue' && !this._inStore) {
+                        this.engine.audioSystem.playSpatialOneShot('door_knock', new THREE.Vector3(3.075, 1.35, 4.65), {
+                            bufferKey: 'door_knock',
+                            volume: 0.28,
+                            refDistance: 2.0,
+                            maxDistance: 12
+                        });
+                    }
+                }, 1350);
+            }
         }
 
         // Oven glow while chicken is slowly baking during prologue
@@ -3741,8 +3877,13 @@ export class StoryDirector {
                     this.player.cinematicBobOffset = 0;
                     const stoolPos = this.world.placedHallStool
                         ? this.world.placedHallStool.transform.position
-                        : new THREE.Vector3(-1.35, 0, -1.96);
-                    this.player.setPose(new THREE.Vector3(stoolPos.x, 0.05, stoolPos.z - 0.32), this.player.yaw, 0);
+                        : new THREE.Vector3(-1.35, 0, -2.04);
+                    this.player.setPose(new THREE.Vector3(stoolPos.x, 0.0, stoolPos.z - 0.36), this.player.yaw, 0);
+                    if (this.player.rb) {
+                        this.player.rb.useGravity = true;
+                        this.player.rb.velocity.set(0, 0, 0);
+                    }
+                    if (this.player.collider) this.player.collider.enabled = true;
                     this.engine.audioSystem.playSpatialOneShot('footstep_parquet', this.player.transform.position, { volume: 0.4 });
                     this.phase = 'act1';
                     this._refreshObjectives();
@@ -3755,6 +3896,12 @@ export class StoryDirector {
         if (this.phase === 'act1_peeing') {
             this._updateToiletPeeSequence(deltaTime);
             return;
+        }
+
+        // Despawn the peephole stalker ONLY after the player has completely exited the peephole (never in front of their eyes)
+        if (this._hideStalkerOnPeepholeExit && !this.player.isPeephole && !this.player._peepholeAnim) {
+            this._hideStalkerOnPeepholeExit = false;
+            this.monster.hidePhantom();
         }
 
         // 5. Trigger loud neighbor door knock after washing face and stepping out of the bathroom,
@@ -3906,24 +4053,28 @@ export class StoryDirector {
     }
 
     _updateAct2(deltaTime) {
-        if (this.phase === 'act2_smoke') {
-            const stroller = this.world.courtyardStroller;
-            if (stroller && stroller.visible) {
-                stroller.position.x = Math.min(14.0, stroller.position.x + deltaTime * 1.65);
-                stroller.position.y = -8.5 + Math.abs(Math.sin(this.phaseTimer * 7.0)) * 0.04;
-                const limbs = stroller.userData?.limbs;
-                if (limbs) {
-                    const swing = Math.sin(this.phaseTimer * 7.0) * 0.55;
-                    limbs.leftLeg.rotation.z = swing;
-                    limbs.rightLeg.rotation.z = -swing;
-                    limbs.leftArm.rotation.z = -swing * 0.65;
-                    limbs.rightArm.rotation.z = swing * 0.65;
-                }
+        // Keep the courtyard passerby walking smoothly out of view behind the right building edge instead of popping out in sight
+        const stroller = this.world.courtyardStroller;
+        if (stroller && stroller.visible) {
+            stroller.position.x += deltaTime * 1.65;
+            stroller.position.y = -8.5 + Math.abs(Math.sin(this.phaseTimer * 7.0)) * 0.04;
+            const limbs = stroller.userData?.limbs;
+            if (limbs) {
+                const swing = Math.sin(this.phaseTimer * 7.0) * 0.55;
+                limbs.leftLeg.rotation.z = swing;
+                limbs.rightLeg.rotation.z = -swing;
+                limbs.leftArm.rotation.z = -swing * 0.65;
+                limbs.rightArm.rotation.z = swing * 0.65;
             }
+            if (stroller.position.x >= 19.5) {
+                stroller.visible = false;
+            }
+        }
+
+        if (this.phase === 'act2_smoke') {
             if (this.player.cigBurn >= 0.48 && this.phaseTimer >= 3.5) {
                 this.phase = 'act2_window_lit';
                 this.phaseTimer = 0;
-                if (stroller) stroller.visible = false;
                 this.engine.audioSystem.playSpatialOneShot('door_pound', new THREE.Vector3(-1.0, -5.5, -18.0), { volume: 0.8, maxDistance: 50 });
                 this.world.lights.neighborLight.intensity = 5.2;
                 if (this.world.neighborWindowCanvas) this.world.neighborWindowCanvas.setMode('lit_idle');
@@ -4317,12 +4468,8 @@ export class StoryDirector {
                 this._twistStep = 3;
                 this.ui.showSubtitle(tr('sub.tv_anchor_format', { line: this._tvLine3 }), 4800, 'tv');
 
-                this.player.controlsLocked = true;
-                this.player.allowLookWhileLocked = false;
-                if (this.player.rb) this.player.rb.velocity.set(0, 0, 0);
-                this._twistPlayerStartPos.copy(this.player.transform.position);
+                this.player.lookYawCenter = null;
                 this.player.isCrouching = false;
-                this.player.targetEyeHeight = 1.54;
 
                 if (this.world.doors?.hall && !this.world.doors.hall.isOpen()) {
                     this.world.doors.hall.setOpen(true);
@@ -4330,9 +4477,19 @@ export class StoryDirector {
                 this.monster.showMidnightEyesInHallway();
                 this.engine.renderer.triggerGlitch(1.0);
 
-                this._twistLookTarget.set(1.58, 0.96, -1.0);
-                this.player.forcedLookSpeed = 2.2;
-                this.player.forcedLookTarget = this._twistLookTarget;
+                // Smoothly anchor the player in the living room facing directly down the corridor toward the Monster
+                const corridorAnchorPos = new THREE.Vector3(0.45, 0.0, -0.35);
+                const monsterFaceTarget = new THREE.Vector3(3.0, 1.56, 1.55);
+                this._twistLookTarget.copy(monsterFaceTarget);
+                this.player.alignToAnchor({
+                    position: corridorAnchorPos,
+                    lookTarget: monsterFaceTarget,
+                    eyeHeight: 1.54,
+                    roll: 0,
+                    duration: 1.65,
+                    unlockOnComplete: false,
+                    disablePhysics: true
+                });
 
                 const a = this.engine.audioSystem;
                 for (const [id, entry] of a.activeLoops.entries()) {
@@ -4341,15 +4498,6 @@ export class StoryDirector {
             }
 
             if (this._twistStep >= 3) {
-                const alignT = Math.min(1, (t - 15.75) / 1.8);
-                const ease = alignT * alignT * (3 - 2 * alignT);
-                const px = THREE.MathUtils.lerp(this._twistPlayerStartPos.x, 0.45, ease);
-                const pz = THREE.MathUtils.lerp(this._twistPlayerStartPos.z, -0.35, ease);
-                this.player.transform.position.set(px, 0, pz);
-                if (this.player.rb) this.player.rb.position.set(px, 0, pz);
-
-                this._twistLookTarget.lerp(new THREE.Vector3(3.0, 1.56, 1.55), Math.min(1, deltaTime * 1.4));
-
                 if (t >= 20.8) {
                     this._triggerMidnightClimax();
                 }
@@ -4424,6 +4572,8 @@ export class StoryDirector {
                 this.player.forcedLookTarget = null;
                 this.player.forcedLookSpeed = 5.0;
                 this.player.cinematicBobOffset = 0;
+                if (this.player.rb) this.player.rb.useGravity = true;
+                if (this.player.collider) this.player.collider.enabled = true;
                 this.ui.showEnding1();
             }
         }

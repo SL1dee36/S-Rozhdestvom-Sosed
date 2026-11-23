@@ -429,6 +429,25 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
     builder._addStaticBox('StoreConciergeWallW_ColN', PX + 0.85, OY + 1.62, PZ_N + 0.45, 0.14, 1.10, 0.55, materials.stairwellWall);
     builder._addStaticBox('StoreConciergeWallW_ColS', PX + 0.85, OY + 1.62, PZ_N + 3.25, 0.14, 1.10, 0.55, materials.stairwellWall);
     builder._addStaticBox('StoreConciergeWallS', PX + 1.95, OY + PH * 0.5, PZ_N + 3.55, 2.2, PH, 0.14, materials.stairwellWall);
+    // Concierge room entrance door on the south wall facing the lobby stairs
+    const cDoorGroup = new THREE.Group();
+    cDoorGroup.position.set(PX + 1.85, OY, PZ_N + 3.63);
+    const cDoorFrameL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.12, 0.08), materials.woodDark);
+    cDoorFrameL.position.set(-0.46, 1.06, 0);
+    const cDoorFrameR = cDoorFrameL.clone();
+    cDoorFrameR.position.x = 0.46;
+    const cDoorFrameT = new THREE.Mesh(new THREE.BoxGeometry(1.00, 0.08, 0.08), materials.woodDark);
+    cDoorFrameT.position.set(0, 2.10, 0);
+    const cDoorLeaf = new THREE.Mesh(new THREE.BoxGeometry(0.86, 2.04, 0.05), materials.interiorDoor || materials.woodDark);
+    cDoorLeaf.position.set(0, 1.02, 0);
+    const cDoorHandle = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.03, 0.05), materials.metal);
+    cDoorHandle.position.set(0.30, 0.98, 0.04);
+    const cDoorLock = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.02, 8), materials.metal);
+    cDoorLock.rotation.x = Math.PI / 2;
+    cDoorLock.position.set(0.30, 0.88, 0.03);
+    cDoorGroup.add(cDoorFrameL, cDoorFrameR, cDoorFrameT, cDoorLeaf, cDoorHandle, cDoorLock);
+    scene.add(cDoorGroup);
+    reg(cDoorGroup, 'StoreConciergeDoor', 'doors');
     // Concierge glass window, sill, desk & warm green desk lamp
     builder._addStaticBox('StoreConciergeGlass', PX + 0.85, OY + 1.62, PZ_N + 1.85, 0.04, 1.04, 2.2, materials.glass, { blocker: false, castShadow: false });
     builder._addStaticBox('StoreConciergeSill', PX + 0.80, OY + 1.12, PZ_N + 1.85, 0.34, 0.06, 2.35, materials.woodDark, { collide: false });
@@ -859,7 +878,7 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
         carGO.addComponent(BoxCollider, new THREE.Vector3(4.0, 1.35, 1.75), new THREE.Vector3(0, 0.68, 0));
         const carRB = carGO.addComponent(RigidBody, { bodyType: 'static' });
         engine.addGameObject(carGO);
-        return { go: carGO, rb: carRB, group: g, wheels, dirX, laneZ, speed, minX: 34, maxX: 118, pauseTimer: idx * 3.5, hornCooldown: 0, engineTimer: Math.random() * 0.6, tlMat };
+        return { go: carGO, rb: carRB, group: g, wheels, dirX, laneZ, speed, currentSpeed: speed, minX: 34, maxX: 118, pauseTimer: idx * 3.5, hornCooldown: 0, engineTimer: Math.random() * 0.6, tlMat };
     };
 
     const trafficCars = [
@@ -903,14 +922,22 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
             heightScale: 0.96 + (cfg.phase % 0.12),
             matFactory: (o) => builder._ps1Mat(o)
         });
-        rig.root.position.copy(cfg.waypoints[0]);
-        scene.add(rig.root);
-        reg(rig.root, `StorePedestrian_${idx}`, 'gameplay');
+        const pedGO = new GameObject(`StorePedestrian_${idx}`);
+        pedGO.transform.position.copy(cfg.waypoints[0]);
+        pedGO.transform.add(rig.root);
+        const pedCol = pedGO.addComponent(BoxCollider, new THREE.Vector3(0.52, 1.75, 0.52), new THREE.Vector3(0, 0.875, 0));
+        const pedRB = pedGO.addComponent(RigidBody, { bodyType: 'static' });
+        engine.addGameObject(pedGO);
+        reg(pedGO.transform, `StorePedestrian_${idx}`, 'gameplay', { gameObject: pedGO });
         return {
+            go: pedGO,
+            rb: pedRB,
+            collider: pedCol,
             rig,
             waypoints: cfg.waypoints,
             wpIdx: 1,
             speed: cfg.speed,
+            currentSpeed: cfg.speed,
             walkCycle: cfg.phase,
             blinkTimer: 1.5 + Math.random() * 3.0,
             yaw: 0
@@ -972,39 +999,58 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
 
     // Per-frame updater for traffic cars & walking pedestrians
     const updateCityLife = (dt, playerPos) => {
-        // Update driving Soviet cars (slow down politely if player crosses the avenue right in front of them)
+        // Update driving Soviet cars with smooth braking / acceleration & realistic stopping distance
         for (const car of trafficCars) {
             if (car.group.userData?.deleted || !car.group.visible) continue;
             if (car.pauseTimer > 0) {
                 car.pauseTimer -= dt;
+                car.currentSpeed = 0;
                 continue;
             }
             let blockedByPlayer = false;
             let blockedByCar = false;
-            if (playerPos && Math.abs(playerPos.z - car.laneZ) < 1.8) {
+            let obstacleDist = Infinity;
+            if (playerPos && Math.abs(playerPos.z - car.laneZ) < 1.95) {
                 const ahead = (playerPos.x - car.group.position.x) * car.dirX;
-                if (ahead > 0.5 && ahead < 6.5) blockedByPlayer = true;
+                if (ahead > 1.2 && ahead < 11.5) {
+                    blockedByPlayer = true;
+                    obstacleDist = Math.min(obstacleDist, ahead);
+                }
             }
             for (const other of trafficCars) {
                 if (other === car || Math.abs(other.laneZ - car.laneZ) > 1.2) continue;
                 const aheadCar = (other.group.position.x - car.group.position.x) * car.dirX;
-                if (aheadCar > 0 && aheadCar < 8.0) {
+                if (aheadCar > 0 && aheadCar < 12.5) {
                     blockedByCar = true;
+                    obstacleDist = Math.min(obstacleDist, aheadCar);
                     break;
                 }
             }
             if (car.hornCooldown > 0) car.hornCooldown -= dt;
-            if (car.tlMat) car.tlMat.emissiveIntensity = (blockedByPlayer || blockedByCar) ? 2.2 : 0.85;
 
-            if (blockedByPlayer) {
-                if (car.hornCooldown <= 0) {
-                    car.hornCooldown = 2.4 + Math.random() * 0.8;
-                    engine.audioSystem?.playSpatialOneShot?.('car_horn', car.group.position, { volume: 0.75 });
-                }
-            } else if (!blockedByCar) {
-                car.group.position.x += car.dirX * car.speed * dt;
+            const shouldBrake = blockedByPlayer || blockedByCar;
+            const targetSpeed = shouldBrake ? 0 : car.speed;
+            if (car.currentSpeed > targetSpeed) {
+                // Smooth braking with noticeable stopping distance; brake slightly harder if very close
+                const brakeDecel = obstacleDist < 4.8 ? 9.5 : 5.4;
+                car.currentSpeed = Math.max(targetSpeed, car.currentSpeed - brakeDecel * dt);
+            } else if (car.currentSpeed < targetSpeed) {
+                // Smooth acceleration back to cruise speed
+                car.currentSpeed = Math.min(targetSpeed, car.currentSpeed + 2.8 * dt);
+            }
+
+            const isBraking = shouldBrake || car.currentSpeed < car.speed * 0.85;
+            if (car.tlMat) car.tlMat.emissiveIntensity = isBraking ? 2.2 : 0.85;
+
+            if (blockedByPlayer && car.hornCooldown <= 0) {
+                car.hornCooldown = 2.4 + Math.random() * 0.8;
+                engine.audioSystem?.playSpatialOneShot?.('car_horn', car.group.position, { volume: 0.75 });
+            }
+
+            if (car.currentSpeed > 0.01) {
+                car.group.position.x += car.dirX * car.currentSpeed * dt;
                 if (car.rb?.position) car.rb.position.copy(car.group.position);
-                for (const w of car.wheels) w.rotation.x += dt * car.speed * 2.5;
+                for (const w of car.wheels) w.rotation.x += dt * car.currentSpeed * 2.5;
                 if (playerPos && car.group.position.distanceTo(playerPos) < 20) {
                     car.engineTimer -= dt;
                     if (car.engineTimer <= 0) {
@@ -1015,30 +1061,52 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
                 if (car.dirX > 0 && car.group.position.x > car.maxX) {
                     car.group.position.x = car.minX;
                     if (car.rb?.position) car.rb.position.copy(car.group.position);
+                    car.currentSpeed = car.speed;
                     car.pauseTimer = 4.0 + Math.random() * 6.0; // Rare traffic spacing
                 } else if (car.dirX < 0 && car.group.position.x < car.minX) {
                     car.group.position.x = car.maxX;
                     if (car.rb?.position) car.rb.position.copy(car.group.position);
+                    car.currentSpeed = car.speed;
                     car.pauseTimer = 4.0 + Math.random() * 6.0;
                 }
             }
         }
 
-        // Update walking winter pedestrians with organic, slightly chaotic human gait
+        // Update walking winter pedestrians with organic, slightly chaotic human gait & solid colliders
         const nowSec = performance.now() * 0.001;
         for (let pIdx = 0; pIdx < pedestrians.length; pIdx++) {
             const ped = pedestrians[pIdx];
-            if (ped.rig.root.userData?.deleted || !ped.rig.root.visible) continue;
-            const pos = ped.rig.root.position;
+            if (ped.go.transform.userData?.deleted || !ped.go.transform.visible) {
+                if (ped.collider) ped.collider.enabled = false;
+                continue;
+            }
+            if (ped.collider) ped.collider.enabled = true;
+            const pos = ped.go.transform.position;
             const target = ped.waypoints[ped.wpIdx];
             const dx = target.x - pos.x;
             const dz = target.z - pos.z;
             const dist = Math.hypot(dx, dz);
             const cadenceDrift = 0.92 + 0.14 * Math.sin(nowSec * 0.55 + pIdx * 1.9);
-            const curSpeed = ped.speed * cadenceDrift;
+
+            // Pause politely if the player is standing directly in front of the pedestrian
+            let blockedByPlayer = false;
+            if (playerPos && dist > 0.05) {
+                const pdx = playerPos.x - pos.x;
+                const pdz = playerPos.z - pos.z;
+                const pDist = Math.hypot(pdx, pdz);
+                if (pDist < 0.95) {
+                    const fwdDot = (pdx * dx + pdz * dz) / (Math.max(0.001, pDist * dist));
+                    if (fwdDot > 0.25 || pDist < 0.65) blockedByPlayer = true;
+                }
+            }
+
+            const desiredSpeed = blockedByPlayer ? 0 : (ped.speed * cadenceDrift);
+            ped.currentSpeed = THREE.MathUtils.lerp(ped.currentSpeed ?? desiredSpeed, desiredSpeed, Math.min(1, dt * 8.0));
+            const curSpeed = ped.currentSpeed;
+
             if (dist < 0.35) {
                 ped.wpIdx = (ped.wpIdx + 1) % ped.waypoints.length;
-            } else {
+            } else if (curSpeed > 0.02) {
                 const step = Math.min(dist, curSpeed * dt);
                 pos.x += (dx / dist) * step;
                 pos.z += (dz / dist) * step;
@@ -1047,12 +1115,15 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
                 while (diff > Math.PI) diff -= Math.PI * 2;
                 while (diff < -Math.PI) diff += Math.PI * 2;
                 ped.yaw += diff * Math.min(1, dt * 6.0);
-                ped.rig.root.rotation.y = ped.yaw;
+                ped.go.transform.rotation.y = ped.yaw;
             }
+            if (ped.rb?.position) ped.rb.position.copy(pos);
+
+            const gaitAmp = Math.min(1, curSpeed / Math.max(0.2, ped.speed));
             ped.walkCycle += dt * curSpeed * 5.1;
-            const s = Math.sin(ped.walkCycle);
-            const c = Math.cos(ped.walkCycle);
-            const asym = 0.08 * Math.sin(ped.walkCycle * 0.5 + pIdx * 2.1);
+            const s = Math.sin(ped.walkCycle) * gaitAmp;
+            const c = Math.cos(ped.walkCycle) * gaitAmp;
+            const asym = 0.08 * Math.sin(ped.walkCycle * 0.5 + pIdx * 2.1) * gaitAmp;
 
             ped.rig.pelvis.position.y = 0.78 + Math.abs(s) * 0.026;
             ped.rig.pelvis.rotation.z = s * 0.032;
@@ -1084,6 +1155,35 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
     };
 
     const _rzBox = new THREE.Box3();
+    // Horror warm-up beat #2: Illuminated 2nd-floor window on the Podiezd facade with a watcher silhouette
+    // that vanishes strictly in sync with the window light switching off (never pops out while illuminated).
+    const watcherWinMat = new THREE.MeshBasicMaterial({ color: 0xffd58a });
+    const watcherWin = new THREE.Mesh(new THREE.PlaneGeometry(1.35, 1.55), watcherWinMat);
+    watcherWin.position.set(PX - 3.6, OY + 4.35, PZ_N - 0.04);
+    watcherWin.rotation.y = Math.PI;
+    const watcherSil = new THREE.Group();
+    const wsHead = new THREE.Mesh(new THREE.SphereGeometry(0.16, 7, 6), materials.darkSilhouette);
+    wsHead.position.set(0, 0.22, -0.02);
+    const wsTorso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.08), materials.darkSilhouette);
+    wsTorso.position.set(0, -0.18, -0.02);
+    watcherSil.add(wsHead, wsTorso);
+    watcherSil.position.set(PX - 3.6, OY + 4.25, PZ_N - 0.07);
+    watcherSil.visible = false;
+    scene.add(watcherWin, watcherSil);
+
+    let _returnSilhouetteTriggered = false;
+    const triggerReturnWindowSilhouette = () => {
+        if (_returnSilhouetteTriggered) return;
+        _returnSilhouetteTriggered = true;
+        watcherWinMat.color.setHex(0xffe09c);
+        watcherSil.visible = true;
+        setTimeout(() => {
+            // Switch off the window light and hide the silhouette on the exact same frame
+            watcherWinMat.color.setHex(0x0b101a);
+            watcherSil.visible = false;
+        }, 1450);
+    };
+
     return {
         streetLights,
         get streetSpawnPos() { return podSpawnGO.transform.position; },
@@ -1096,6 +1196,7 @@ export function buildCityStreetAndPodiezd(builder, OX, OY, OZ, halfD) {
             _rzBox.setFromObject(returnZoneGO.transform);
             return !_rzBox.isEmpty() && _rzBox.containsPoint(pos);
         },
+        triggerReturnWindowSilhouette,
         updateCityLife
     };
 }

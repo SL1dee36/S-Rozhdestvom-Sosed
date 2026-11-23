@@ -95,6 +95,7 @@ export class PlayerController extends Component {
         this._lighterGroup = null;
         this._lighterFlame = null;
         this._mouthCig = null;
+        this._anchorAnim = null;
     }
 
     start() {
@@ -150,17 +151,19 @@ export class PlayerController extends Component {
     _attachOneHand(propGroup, offsetX = 0.04, offsetY = -0.05, offsetZ = 0.06) {
         const arm = this._makeSleeveArm(false);
         arm.position.set(offsetX, offsetY, offsetZ);
-        arm.rotation.set(0.12, -0.15, 0);
+        // Positive rotY aims forearm (+Z) toward the right shoulder (+X) and hand (-Z) slightly inward (-X)
+        arm.rotation.set(0.12, 0.16, 0.04);
         propGroup.add(arm);
+        return arm;
     }
 
     _attachTwoHands(propGroup, spanX = 0.24, handY = -0.06, handZ = 0.08) {
         const leftArm = this._makeSleeveArm(true);
         leftArm.position.set(-spanX, handY, handZ);
-        leftArm.rotation.set(0.08, 0.18, 0.08);
+        leftArm.rotation.set(0.08, -0.18, -0.06);
         const rightArm = this._makeSleeveArm(false);
         rightArm.position.set(spanX, handY, handZ);
-        rightArm.rotation.set(0.08, -0.18, -0.08);
+        rightArm.rotation.set(0.08, 0.18, 0.06);
         propGroup.add(leftArm, rightArm);
     }
 
@@ -544,13 +547,18 @@ export class PlayerController extends Component {
         spongeGroup.position.set(0.22, -0.22, -0.42);
         make('sponge', spongeGroup);
 
-        // 12d4. Store Shopping Basket held in right hand (populates with Olivier & Meat packs as picked up in store!)
+        // 12d4. Store Shopping Basket held in right hand by its top handles (populates with Olivier & Meat packs as picked up in store!)
         const shoppingBasketGroup = new THREE.Group();
         const basketModel = createShoppingBasketModel(mats, 0.94);
-        basketModel.position.y = -0.11;
+        basketModel.position.set(0, -0.225, -0.02);
+        basketModel.rotation.set(0.04, -0.14, 0.03);
         shoppingBasketGroup.add(basketModel);
-        this._attachOneHand(shoppingBasketGroup, 0.02, 0.03, 0.06);
-        shoppingBasketGroup.position.set(0.24, -0.25, -0.45);
+        const basketArm = this._makeSleeveArm(false);
+        // Grip sits right at the top handles (~y=0.02), forearm angles naturally up/back toward the right shoulder
+        basketArm.position.set(0.015, 0.028, 0.05);
+        basketArm.rotation.set(-0.22, 0.24, -0.05);
+        shoppingBasketGroup.add(basketArm);
+        shoppingBasketGroup.position.set(0.25, -0.19, -0.46);
         this._shoppingBasketSlots = basketModel.userData;
         make('shoppingBasket', shoppingBasketGroup);
 
@@ -1579,7 +1587,7 @@ export class PlayerController extends Component {
             if (this.rb) this.rb.position.copy(approachPos);
 
             L.position.set(-0.30, -0.55, -0.25);
-            L.rotation.set(0.10, 0.20, 0.12);
+            L.rotation.set(0.10, -0.20, -0.10);
 
             // Right hand reaches forward from the right shoulder toward the window handle and pulls it open to the right
             const reach = Math.sin(e * Math.PI);
@@ -1590,9 +1598,9 @@ export class PlayerController extends Component {
                 lerp(-0.24, -0.44, reach)
             );
             R.rotation.set(
-                lerp(-0.10, 0.20, reach),
-                lerp(-0.22, -0.18 - pullRight * 1.4, reach),
-                lerp(-0.18, -0.10, reach)
+                lerp(-0.10, 0.16, reach),
+                lerp(0.20, 0.22 - pullRight * 0.8, reach),
+                lerp(0.10, 0.06, reach)
             );
 
             if (!a.windowOpened && u >= 0.44) {
@@ -1620,9 +1628,9 @@ export class PlayerController extends Component {
             this.eyeHeight = lerp(1.54, 1.44, e);
             this.targetEyeHeight = this.eyeHeight;
             L.position.set(-0.30, -0.55, -0.25);
-            L.rotation.set(0.10, 0.20, 0.12);
+            L.rotation.set(0.10, -0.20, -0.10);
             R.position.set(0.30, -0.55, -0.25);
-            R.rotation.set(0.10, -0.25, -0.22);
+            R.rotation.set(0.10, 0.22, 0.10);
             if (u >= 1) {
                 a.stage = 'pack_open';
                 a.timer = 0;
@@ -1637,21 +1645,21 @@ export class PlayerController extends Component {
             if (t < 0.75) {
                 const e = smooth(t / 0.75);
                 L.position.set(lerp(-0.28, -0.13, e), lerp(-0.52, -0.22, e), lerp(-0.22, -0.36, e));
-                L.rotation.set(0.12, 0.28, 0.16);
+                L.rotation.set(0.10, -0.26, -0.10);
                 R.position.set(lerp(0.30, 0.14, e), lerp(-0.52, -0.19, e), lerp(-0.22, -0.35, e));
-                R.rotation.set(0.14, -0.38, -0.26);
+                R.rotation.set(0.12, 0.30, 0.12);
             } else if (t < 1.55) {
                 const e = smooth((t - 0.75) / 0.80);
                 if (this._cigPackLid) this._cigPackLid.rotation.x = lerp(0, 1.65, Math.min(1, e * 1.6));
-                R.position.set(lerp(0.14, 0.04, e), lerp(-0.19, -0.12, e), lerp(-0.35, -0.32, e));
-                R.rotation.set(0.16, -0.44, -0.28);
+                R.position.set(lerp(0.14, 0.05, e), lerp(-0.19, -0.12, e), lerp(-0.35, -0.32, e));
+                R.rotation.set(0.14, 0.36, 0.14);
             } else if (t < 2.45) {
                 const e = smooth((t - 1.55) / 0.90);
                 if (this._cigPackStick) this._cigPackStick.visible = false;
                 if (e > 0.55 && this._mouthCig) this._mouthCig.visible = true;
                 // Right hand brings cigarette to mouth from the right side; left hand puts pack back in pocket
-                R.position.set(lerp(0.04, 0.11, e), lerp(-0.12, -0.08, Math.sin(e * Math.PI)), lerp(-0.32, -0.19, Math.sin(e * Math.PI)));
-                R.rotation.set(0.20, -0.42, -0.28);
+                R.position.set(lerp(0.05, 0.12, e), lerp(-0.12, -0.08, Math.sin(e * Math.PI)), lerp(-0.32, -0.19, Math.sin(e * Math.PI)));
+                R.rotation.set(0.16, 0.34, 0.12);
                 L.position.set(lerp(-0.13, -0.28, e), lerp(-0.22, -0.55, e), lerp(-0.36, -0.22, e));
             } else {
                 if (this._cigPackGroup) this._cigPackGroup.visible = false;
@@ -1663,7 +1671,7 @@ export class PlayerController extends Component {
             return;
         }
 
-        // Stage 3: Player pulls lighter in right hand (angled naturally from the right shoulder, not the stomach!)
+        // Stage 3: Player pulls lighter in right hand (positive rotY so forearm extends naturally from right shoulder)
         if (a.stage === 'lighter_ready') {
             L.position.set(-0.32, -0.56, -0.22);
             const sparkDown = input.isKeyDown('KeyF') || (input.isPointerLocked() && input.isMouseButtonDown(0));
@@ -1687,22 +1695,21 @@ export class PlayerController extends Component {
             }
 
             const bring = smooth(a.lightHold);
-            // Keep right hand offset to the right (x: 0.22 -> 0.115) and rotated inward (rotY: -0.45 -> -0.56, rotZ: -0.32)
-            // so the forearm clearly extends from the right shoulder while the lighter tip reaches the cigarette at x ~ 0.02
+            // Positive rotY aims forearm (+Z) toward the right shoulder (+X) while hand (-Z) brings lighter cleanly to mouth cigarette
             R.position.set(
-                lerp(0.22, 0.115, bring),
+                lerp(0.22, 0.095, bring),
                 lerp(-0.22, -0.115, bring),
-                lerp(-0.33, -0.21, bring)
+                lerp(-0.32, -0.21, bring)
             );
             R.rotation.set(
-                lerp(0.08, 0.22, bring),
-                lerp(-0.44, -0.56, bring),
-                lerp(-0.28, -0.34, bring)
+                lerp(0.06, 0.14, bring),
+                lerp(0.32, 0.44, bring),
+                lerp(0.10, 0.16, bring)
             );
             if (this._lighterGroup) {
-                // Counter-tilt the lighter slightly in the palm so the flame stays upright near the cigarette tip
-                this._lighterGroup.position.set(-0.028, 0.024, -0.092);
-                this._lighterGroup.rotation.set(-0.12, 0.32, 0.26);
+                // Keep lighter upright in the fist so the flame sits directly below the cigarette tip
+                this._lighterGroup.position.set(-0.02, 0.024, -0.088);
+                this._lighterGroup.rotation.set(-0.10, -0.22, -0.14);
             }
 
             if (this._mouthCig?.userData.tipMat) {
@@ -1723,8 +1730,8 @@ export class PlayerController extends Component {
         if (a.stage === 'put_lighter_away') {
             const u = Math.min(1, a.timer / 0.75);
             const e = smooth(u);
-            R.position.set(lerp(0.115, 0.30, e), lerp(-0.115, -0.55, e), lerp(-0.21, -0.22, e));
-            R.rotation.set(lerp(0.22, 0.05, e), lerp(-0.56, -0.25, e), lerp(-0.34, -0.18, e));
+            R.position.set(lerp(0.095, 0.30, e), lerp(-0.115, -0.55, e), lerp(-0.21, -0.22, e));
+            R.rotation.set(lerp(0.14, 0.05, e), lerp(0.44, 0.22, e), lerp(0.16, 0.08, e));
             if (u >= 1) {
                 if (this._smokeIntroGroup) this._smokeIntroGroup.visible = false;
                 if (this._lighterGroup) this._lighterGroup.visible = false;
@@ -1800,6 +1807,7 @@ export class PlayerController extends Component {
     }
 
     setPose(pos, yaw, pitch = 0) {
+        this._anchorAnim = null;
         this.transform.position.copy(pos);
         if (this.rb) {
             this.rb.position.copy(pos);
@@ -1811,6 +1819,137 @@ export class PlayerController extends Component {
         this._handPitch = 0;
         this._swayX = 0;
         this._swayY = 0;
+    }
+
+    /**
+     * Reusable Anchor Alignment system: smoothly moves the player to a target position
+     * and rotates the camera toward a target yaw/pitch or 3D lookTarget before scripted scenes/animations.
+     */
+    alignToAnchor({
+        position = null,
+        lookTarget = null,
+        yaw = null,
+        pitch = null,
+        eyeHeight = null,
+        roll = null,
+        duration = 0.75,
+        unlockOnComplete = false,
+        allowLookOnComplete = false,
+        disablePhysics = true,
+        restorePhysicsOnUnlock = true,
+        onComplete = null
+    } = {}) {
+        const startPos = this.transform.position.clone();
+        const targetPos = position ? position.clone() : startPos.clone();
+        const startEyeHeight = this.eyeHeight;
+        const targetEyeHeight = eyeHeight !== null ? eyeHeight : startEyeHeight;
+
+        let targetYaw = yaw !== null ? yaw : this.yaw;
+        let targetPitch = pitch !== null ? pitch : this.pitch;
+        if (lookTarget) {
+            const eyePos = new THREE.Vector3(targetPos.x, targetPos.y + targetEyeHeight, targetPos.z);
+            const dx = lookTarget.x - eyePos.x;
+            const dy = lookTarget.y - eyePos.y;
+            const dz = lookTarget.z - eyePos.z;
+            const horiz = Math.max(0.0001, Math.hypot(dx, dz));
+            targetYaw = Math.atan2(-dx, -dz);
+            targetPitch = THREE.MathUtils.clamp(Math.atan2(dy, horiz), -1.38, 1.38);
+        }
+
+        // Shortest angular path for yaw so the camera never spins 360 degrees
+        let yawDiff = targetYaw - this.yaw;
+        while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+        while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+        const resolvedYaw = this.yaw + yawDiff;
+
+        this.controlsLocked = true;
+        this.allowLookWhileLocked = false;
+        this.forcedLookTarget = null;
+        if (disablePhysics) {
+            if (this.rb) {
+                this.rb.useGravity = false;
+                this.rb.velocity.set(0, 0, 0);
+            }
+            if (this.collider) this.collider.enabled = false;
+        }
+
+        this._anchorAnim = {
+            timer: 0,
+            duration: Math.max(0.05, duration),
+            startPos,
+            targetPos,
+            startYaw: this.yaw,
+            targetYaw: resolvedYaw,
+            startPitch: this.pitch,
+            targetPitch,
+            startEyeHeight,
+            targetEyeHeight,
+            startRoll: this.cinematicRollOffset || 0,
+            targetRoll: roll !== null ? roll : (this.cinematicRollOffset || 0),
+            unlockOnComplete,
+            allowLookOnComplete,
+            restorePhysicsOnUnlock: disablePhysics && restorePhysicsOnUnlock,
+            onComplete
+        };
+    }
+
+    cancelAnchorAlignment(restoreControls = false) {
+        if (!this._anchorAnim) return;
+        const anim = this._anchorAnim;
+        this._anchorAnim = null;
+        if (restoreControls) {
+            this.controlsLocked = false;
+            this.allowLookWhileLocked = false;
+            if (anim.restorePhysicsOnUnlock) {
+                if (this.rb) {
+                    this.rb.useGravity = true;
+                    this.rb.velocity.set(0, 0, 0);
+                }
+                if (this.collider) this.collider.enabled = true;
+            }
+        }
+    }
+
+    isAligningToAnchor() {
+        return !!this._anchorAnim;
+    }
+
+    _updateAnchorAlignment(deltaTime) {
+        const anim = this._anchorAnim;
+        if (!anim) return;
+        anim.timer += deltaTime;
+        const u = Math.min(1, anim.timer / anim.duration);
+        const e = u * u * (3 - 2 * u);
+
+        this.transform.position.lerpVectors(anim.startPos, anim.targetPos, e);
+        if (this.rb) {
+            this.rb.position.copy(this.transform.position);
+            this.rb.velocity.set(0, 0, 0);
+        }
+        this.yaw = THREE.MathUtils.lerp(anim.startYaw, anim.targetYaw, e);
+        this.pitch = THREE.MathUtils.lerp(anim.startPitch, anim.targetPitch, e);
+        this._handYaw = this.yaw;
+        this.eyeHeight = THREE.MathUtils.lerp(anim.startEyeHeight, anim.targetEyeHeight, e);
+        this.targetEyeHeight = this.eyeHeight;
+        this.cinematicRollOffset = THREE.MathUtils.lerp(anim.startRoll, anim.targetRoll, e);
+
+        if (u >= 1) {
+            this._anchorAnim = null;
+            if (anim.unlockOnComplete) {
+                this.controlsLocked = false;
+                this.allowLookWhileLocked = false;
+                if (anim.restorePhysicsOnUnlock) {
+                    if (this.rb) {
+                        this.rb.useGravity = true;
+                        this.rb.velocity.set(0, 0, 0);
+                    }
+                    if (this.collider) this.collider.enabled = true;
+                }
+            } else if (anim.allowLookOnComplete) {
+                this.allowLookWhileLocked = true;
+            }
+            if (anim.onComplete) anim.onComplete();
+        }
     }
 
     setSensitivityMultiplier(multiplier) {
@@ -2168,6 +2307,7 @@ export class PlayerController extends Component {
     }
 
     update(deltaTime) {
+        this._updateAnchorAlignment(deltaTime);
         this._updateWashFaceAnimation(deltaTime);
         this._updateDecorateTreeAnimation(deltaTime);
         this._updateCookingAnimation(deltaTime);

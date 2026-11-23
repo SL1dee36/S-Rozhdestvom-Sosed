@@ -42,6 +42,7 @@ export const en = {
     'ui.settings.camera_tilt': 'Camera Tilt on Movement & Turning',
     'ui.settings.brightness': 'Screen Brightness',
     'ui.settings.vhs_intensity': 'PS1 Film Grain & Sharpness',
+    'ui.settings.text_scale': 'Text Size',
     'ui.settings.volume': 'Master Volume',
     'ui.settings.vol_music': 'Music Volume',
     'ui.settings.vol_ambient': 'Ambient Volume',
@@ -471,7 +472,13 @@ export const en = {
     'sub.peephole_act3_scare': 'HE\'S RIGHT BEHIND THE DOOR! Run and hide!',
     'sub.act3_hiding_inspect': 'He stopped right outside my hiding spot... Listening closely!',
     'sub.act3_heard_something': 'He heard that noise and is going to investigate!..',
-    'sub.act3_alarm_ring': 'The phone in the living room suddenly rang!.. The sound distracted him!'
+    'sub.act3_alarm_ring': 'The phone in the living room suddenly rang!.. The sound distracted him!',
+
+    // Stage 4: Fridge check, Monster presence & Horror warm-up
+    "obj.prologue.check_fridge": "Check the fridge in the kitchen",
+    "sub.prologue_fridge_empty": "The fridge is completely empty... Better run to Produkty 24 before it closes.",
+    "sub.trap_monster_still_here": "Quiet... Someone is breathing heavily in the hallway. He is still inside!",
+    "sub.suspense_pipes": "A dull knock along the heating pipes... and the front door seemed to creak."
 };
 
 export default en;

@@ -2,6 +2,7 @@ import { t, getLanguage, setLanguage, applyDOMTranslations, onLanguageChange } f
 
 const ENDINGS_STORAGE_KEY = 'zarechnoe_unlocked_endings';
 const SENSITIVITY_STORAGE_KEY = 'zarechnoe_mouse_sensitivity';
+const TEXT_SCALE_STORAGE_KEY = 'zarechnoe_text_scale';
 const CAMERA_TILT_STORAGE_KEY = 'zarechnoe_camera_tilt';
 const BRIGHTNESS_STORAGE_KEY = 'zarechnoe_brightness';
 const AUDIO_SETTINGS_STORAGE_KEY = 'zarechnoe_audio_settings';
@@ -108,7 +109,9 @@ export class UIManager {
             rngMicSens: document.getElementById('opt-mic-sens'),
             micSensVal: document.getElementById('opt-mic-sens-val'),
             rngSens: document.getElementById('opt-sensitivity'),
-            sensVal: document.getElementById('opt-sensitivity-val')
+            sensVal: document.getElementById('opt-sensitivity-val'),
+            rngTextScale: document.getElementById('opt-text-scale'),
+            textScaleVal: document.getElementById('opt-text-scale-val')
         };
 
         this.callbacks = {
@@ -142,6 +145,7 @@ export class UIManager {
         this.applyVHSIntensity(this.el.rngVhs ? parseFloat(this.el.rngVhs.value) : 0.2);
         this.applyBrightness(this._loadSavedBrightness());
         this.applySensitivity(this._loadSavedSensitivity());
+        this.applyTextScale(this._loadSavedTextScale());
         this.applyCameraTilt(this._loadSavedBool(CAMERA_TILT_STORAGE_KEY, true));
         this._loadAndApplyAudioSettings();
     }
@@ -451,6 +455,10 @@ export class UIManager {
             this.applySensitivity(parseFloat(e.target.value));
         });
 
+        this.el.rngTextScale?.addEventListener('input', (e) => {
+            this.applyTextScale(parseFloat(e.target.value));
+        });
+
         window.addEventListener('keydown', (e) => {
             if (this.isDialogueOpen()) {
                 if (e.code === 'Escape' || e.code === 'KeyQ') {
@@ -538,6 +546,33 @@ export class UIManager {
         }
         if (this.callbacks.onSensitivityChange) {
             this.callbacks.onSensitivityChange(mult);
+        }
+    }
+
+    _loadSavedTextScale() {
+        if (typeof localStorage !== 'undefined') {
+            try {
+                const raw = localStorage.getItem(TEXT_SCALE_STORAGE_KEY);
+                const parsed = raw !== null ? parseFloat(raw) : NaN;
+                if (Number.isFinite(parsed)) {
+                    return Math.max(0.7, Math.min(1.6, parsed));
+                }
+            } catch (e) {}
+        }
+        return this.el.rngTextScale ? parseFloat(this.el.rngTextScale.value) : 1.0;
+    }
+
+    applyTextScale(value) {
+        const scale = Number.isFinite(value) ? Math.max(0.7, Math.min(1.6, value)) : 1.0;
+        if (this.el.rngTextScale) this.el.rngTextScale.value = String(scale);
+        if (this.el.textScaleVal) this.el.textScaleVal.textContent = String(Math.round(scale * 100));
+        if (typeof document !== 'undefined') {
+            document.documentElement.style.setProperty('--text-scale', String(scale));
+        }
+        if (typeof localStorage !== 'undefined') {
+            try {
+                localStorage.setItem(TEXT_SCALE_STORAGE_KEY, String(scale));
+            } catch (e) {}
         }
     }
 
@@ -770,14 +805,15 @@ export class UIManager {
         }
     }
 
-    showControlsHint(text, durationMs = 5000) {
+    showControlsHint(text, durationMs = 6500) {
         if (!this.el.controlsHint) return;
         if (this._controlsHintTimer) clearTimeout(this._controlsHintTimer);
         this.el.controlsHint.textContent = text;
         this.el.controlsHint.classList.remove('controls-hint-hidden');
+        const effectiveMs = Math.max(6500, durationMs || 6500);
         this._controlsHintTimer = setTimeout(() => {
             this.el.controlsHint?.classList.add('controls-hint-hidden');
-        }, durationMs);
+        }, effectiveMs);
     }
 
     showDeathScreen(reasonText) {
@@ -865,18 +901,25 @@ export class UIManager {
         }
     }
 
-    showSubtitle(text, durationMs = 4500, speaker = 'hero') {
+    showSubtitle(text, durationMs = 5500, speaker = 'hero') {
         if (!this.el.subtitles) return;
         if (this._subtitleTimer) clearTimeout(this._subtitleTimer);
-        this.el.subtitles.textContent = text;
+        const str = text ? String(text) : '';
+        this.el.subtitles.textContent = str;
         this.el.subtitles.className = `subtitles ${speaker === 'tv' ? 'tv-speaker' : ''}`;
         this.el.subtitles.classList.remove('hidden');
         if (speaker === 'hero') {
             this.engine.audioSystem.playSpatialOneShot('whisper_cue', null, { volume: 0.4 });
         }
+        // Dynamic reading duration with comfortable margin (~68ms per char + 2.2s base, clamped 4.2s..12.5s)
+        const dynamicMs = Math.max(4200, Math.min(12500, 2200 + str.length * 68));
+        const baseMs = Number.isFinite(durationMs) ? durationMs : 5500;
+        const effectiveMs = speaker === 'tv'
+            ? Math.max(baseMs, dynamicMs)
+            : Math.max(Math.round(baseMs * 1.35), dynamicMs);
         this._subtitleTimer = setTimeout(() => {
             this.el.subtitles.classList.add('hidden');
-        }, durationMs);
+        }, effectiveMs);
     }
 
     isDialogueOpen() {

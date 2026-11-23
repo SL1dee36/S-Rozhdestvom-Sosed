@@ -764,11 +764,12 @@ export function buildGroceryStore(builder) {
     scene.add(mainSignFrame);
     reg(mainSignFrame, 'StoreMainSign');
 
-    addDeptSign('ГАСТРОНОМ', '#244b66', '#f7ebd0', OX - 4.4, OY + 2.85, OZ - halfD + 0.06, 0);
-    addDeptSign('С НОВЫМ ГОДОМ!', '#8c1d1d', '#ffe89c', OX + 4.6, OY + 2.85, OZ - halfD + 0.06, 0, 2.5, 0.54);
+    addDeptSign('ПОДСОБКА', '#5b2824', '#f5ebd0', OX - 5.65, OY + 2.55, OZ - 2.90, 0, 1.9, 0.44);
+    addDeptSign('ГАСТРОНОМ', '#244b66', '#f7ebd0', OX + 1.6, OY + 2.85, OZ - halfD + 0.06, 0);
+    addDeptSign('С НОВЫМ ГОДОМ!', '#8c1d1d', '#ffe89c', OX + 5.1, OY + 2.85, OZ - halfD + 0.06, 0, 2.5, 0.54);
     addDeptSign('ХЛЕБ · КОНСЕРВЫ', '#6b4222', '#fff0cf', OX - halfW + 0.06, OY + 2.65, OZ - 0.6, Math.PI / 2, 2.5, 0.48);
-    addDeptSign('ОВОЩИ · ФРУКТЫ', '#2d6336', '#f4f7d4', OX - halfW + 0.06, OY + 2.65, OZ + 3.6, Math.PI / 2, 2.4, 0.48);
-    addDeptSign('МОЛОКО · МЯСО', '#1f4e70', '#eef6ff', OX + halfW - 0.06, OY + 2.65, OZ - 0.4, -Math.PI / 2, 2.4, 0.48);
+    addDeptSign('ОВОЩИ · ФРУКТЫ', '#2d6336', '#f4f7d4', OX - halfW + 0.06, OY + 2.65, OZ + 3.2, Math.PI / 2, 2.4, 0.48);
+    addDeptSign('МОЛОКО · МЯСО', '#1f4e70', '#eef6ff', OX + halfW - 0.06, OY + 2.65, OZ - 0.2, -Math.PI / 2, 2.4, 0.48);
     addDeptSign('БАКАЛЕЯ · НАПИТКИ', '#2b593c', '#f5ebd0', OX, OY + 2.50, OZ - 1.65, 0, 2.4, 0.44, true);
 
     // --- Working Wall Clock in the Store (aligned upright with 12 at top & real moving hands!) ---
@@ -812,17 +813,55 @@ export function buildGroceryStore(builder) {
         world.setClockTime?.(world._clockBaseMins ?? 0);
     }
 
-    // --- Long Gastronomy & Checkout Counter along North Wall (z = OZ - 4.25) ---
-    builder._addStaticBox('StoreCounterMain', OX - 0.6, OY + 0.48, OZ - 4.25, 9.6, 0.96, 0.82, materials.storeWood);
-    builder._addStaticBox('StoreCounterTop', OX - 0.6, OY + 0.99, OZ - 4.25, 9.68, 0.06, 0.88, materials.storeEnamel, { collide: false });
-    // Glass display showcase on left half of counter (salads, cheeses, sausages, pastry)
-    builder._addStaticBox('StoreCounterGlass', OX - 3.2, OY + 1.24, OZ - 4.18, 4.1, 0.46, 0.56, materials.glass, { collide: false, blocker: false });
+    // --- Backroom / Storage Room (ПОДСОБНОЕ ПОМЕЩЕНИЕ) in North-West Corner (OX-7.8..OX-3.5, OZ-6.3..OZ-3.0) ---
+    builder._addStaticBox('StoreBackroomWallS_L', OX - 6.75, OY + H * 0.5, OZ - 3.0, 2.1, H, 0.16, materials.storeWallLow);
+    builder._addStaticBox('StoreBackroomWallS_R', OX - 4.05, OY + H * 0.5, OZ - 3.0, 1.1, H, 0.16, materials.storeWallLow);
+    builder._addStaticBox('StoreBackroomWallS_Top', OX - 5.15, OY + 2.98, OZ - 3.0, 1.15, 1.44, 0.16, materials.storeWallHigh);
+    builder._addStaticBox('StoreBackroomWallE', OX - 3.5, OY + H * 0.5, OZ - 4.65, 0.16, H, 3.3, materials.storeWallLow);
+    // Slightly ajar staff door into the backroom so players can peek at the crates & shelving inside
+    const backDoorPivot = new THREE.Group();
+    backDoorPivot.position.set(OX - 5.68, OY, OZ - 2.98);
+    backDoorPivot.rotation.y = -0.32;
+    const backDoorLeaf = new THREE.Mesh(new THREE.BoxGeometry(1.04, 2.22, 0.06), materials.interiorDoor || materials.storeWood);
+    backDoorLeaf.position.set(0.52, 1.11, 0);
+    const backDoorHandle = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.03, 0.05), materials.metal);
+    backDoorHandle.position.set(0.90, 1.02, 0.04);
+    backDoorPivot.add(backDoorLeaf, backDoorHandle);
+    scene.add(backDoorPivot);
+    reg(backDoorPivot, 'StoreBackroomDoor', 'doors');
+    // Backroom storage pallet, stacked cardboard boxes & dim warm utility bulb
+    const pallet = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.12, 1.1), crateWoodMat);
+    pallet.position.set(OX - 6.4, OY + 0.06, OZ - 4.9);
+    const boxMat = materials.cardboardBox || crateWoodMat;
+    const backBoxes = new THREE.Group();
+    [
+        [OX - 6.7, OY + 0.36, OZ - 5.1, 0.52, 0.48, 0.48, 0.08],
+        [OX - 6.1, OY + 0.34, OZ - 4.9, 0.46, 0.44, 0.44, -0.12],
+        [OX - 6.5, OY + 0.80, OZ - 5.0, 0.44, 0.42, 0.42, 0.22],
+        [OX - 4.4, OY + 0.28, OZ - 5.4, 0.56, 0.56, 0.50, 0.04],
+        [OX - 4.4, OY + 0.78, OZ - 5.4, 0.44, 0.44, 0.42, -0.18]
+    ].forEach(([bx, by, bz, bw, bh, bd, ry]) => {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), boxMat);
+        b.position.set(bx, by, bz);
+        b.rotation.y = ry;
+        backBoxes.add(b);
+    });
+    const backroomLight = new THREE.PointLight(0xffcf88, 1.6, 7.5, 1.5);
+    backroomLight.position.set(OX - 5.5, OY + 3.1, OZ - 4.6);
+    scene.add(pallet, backBoxes, backroomLight);
+    reg(backBoxes, 'StoreBackroomBoxes');
+
+    // --- Gastronomy Counter along North-East Wall (z = OZ - 4.25, right of the backroom) ---
+    builder._addStaticBox('StoreCounterMain', OX + 1.55, OY + 0.48, OZ - 4.25, 6.8, 0.96, 0.82, materials.storeWood);
+    builder._addStaticBox('StoreCounterTop', OX + 1.55, OY + 0.99, OZ - 4.25, 6.88, 0.06, 0.88, materials.storeEnamel, { collide: false });
+    // Glass display showcase on gastronomy counter (salads, cheeses, sausages, pastry)
+    builder._addStaticBox('StoreCounterGlass', OX + 0.65, OY + 1.24, OZ - 4.18, 4.1, 0.46, 0.56, materials.glass, { collide: false, blocker: false });
     const showcaseBar = new THREE.Mesh(new THREE.BoxGeometry(4.14, 0.03, 0.58), materials.metal);
-    showcaseBar.position.set(OX - 3.2, OY + 1.47, OZ - 4.18);
+    showcaseBar.position.set(OX + 0.65, OY + 1.47, OZ - 4.18);
     scene.add(showcaseBar);
     reg(showcaseBar, 'StoreShowcaseBar');
     const showcaseTrays = new THREE.Group();
-    showcaseTrays.position.set(OX - 3.2, OY + 1.04, OZ - 4.18);
+    showcaseTrays.position.set(OX + 0.65, OY + 1.04, OZ - 4.18);
     const trayColors = [0xb85234, 0xd9a844, 0x733a24, 0xc97b42, 0x99352d, 0xd4c272, 0x5c803b, 0xc76b48];
     for (let i = 0; i < 8; i++) {
         const tx = -1.75 + i * 0.49;
@@ -835,20 +874,27 @@ export function buildGroceryStore(builder) {
     scene.add(showcaseTrays);
     reg(showcaseTrays, 'StoreShowcaseTrays');
 
-    // Cash Register, Soviet Scales & Mini New Year Tree on Checkout side of counter
-    const cashRegister = createCashRegisterModel(materials);
-    cashRegister.position.set(OX + 1.35, OY + 1.02, OZ - 4.26);
-    cashRegister.rotation.y = -0.14;
-    scene.add(cashRegister);
-    reg(cashRegister, 'StoreCashRegister');
-
     const sovietScales = createSovietScalesModel(materials);
-    sovietScales.position.set(OX + 0.15, OY + 1.02, OZ - 4.22);
+    sovietScales.position.set(OX + 3.65, OY + 1.02, OZ - 4.22);
     scene.add(sovietScales);
     reg(sovietScales, 'StoreSovietScales');
 
+    // --- Compact Supermarket Checkout Desk near the South Exit (left of vestibule, OX - 3.1, OZ + 3.65) ---
+    builder._addStaticBox('StoreCheckoutCounter', OX - 3.05, OY + 0.48, OZ + 3.65, 2.8, 0.96, 0.78, materials.storeWood);
+    builder._addStaticBox('StoreCheckoutTop', OX - 3.05, OY + 0.99, OZ + 3.65, 2.86, 0.06, 0.84, materials.storeEnamel, { collide: false });
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.02, 0.46), rubberMat);
+    belt.position.set(OX - 2.45, OY + 1.03, OZ + 3.65);
+    scene.add(belt);
+    reg(belt, 'StoreCheckoutBelt');
+
+    const cashRegister = createCashRegisterModel(materials);
+    cashRegister.position.set(OX - 3.65, OY + 1.02, OZ + 3.65);
+    cashRegister.rotation.y = Math.PI + 0.16;
+    scene.add(cashRegister);
+    reg(cashRegister, 'StoreCashRegister');
+
     const miniTreeGroup = new THREE.Group();
-    miniTreeGroup.position.set(OX + 2.45, OY + 1.02, OZ - 4.22);
+    miniTreeGroup.position.set(OX - 4.18, OY + 1.02, OZ + 3.65);
     const mtPot = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.06, 0.09, 7), builder._ps1Mat({ color: 0x8f3a2b }));
     mtPot.position.y = 0.045;
     const mtCone1 = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.30, 7), builder._ps1Mat({ color: 0x1e5c2c }));
@@ -861,10 +907,10 @@ export function buildGroceryStore(builder) {
     scene.add(miniTreeGroup);
     reg(miniTreeGroup, 'StoreMiniTree');
 
-    // --- Open Wooden Bakery Rack along West Wall (ХЛЕБ И ВЫПЕЧКА) ---
+    // --- Open Wooden Bakery Rack along West Wall (ХЛЕБ И ВЫПЕЧКА, south of backroom) ---
     const bakeryX = OX - halfW + 0.48;
     const bakeryGO = new GameObject('StoreBakeryRack');
-    bakeryGO.transform.position.set(bakeryX, OY + 0.95, OZ + 0.2);
+    bakeryGO.transform.position.set(bakeryX, OY + 0.95, OZ - 0.25);
     const bkBack = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.9, 5.2), materials.storeWood);
     bkBack.position.set(-0.33, 0, 0);
     const bkPlinth = new THREE.Mesh(new THREE.BoxGeometry(0.70, 0.34, 5.2), trimMat);
@@ -1037,32 +1083,32 @@ export function buildGroceryStore(builder) {
         reg(colGO.transform, name, 'store', { gameObject: colGO });
     };
 
-    // Three parallel Gondolas creating 4 full shopping corridors across the center of the store!
-    const gondola1X = OX - 2.75;
-    const gondola2X = OX - 0.15;
-    const gondola3X = OX + 2.45;
-    const gondolaZ = OZ + 0.35;
-    buildGroceryGondola('StoreGondola_1', gondola1X, gondolaZ, 4.8, { side: 1, lvl: 2, localZ: -0.25 }, 0);
-    buildGroceryGondola('StoreGondola_2', gondola2X, gondolaZ, 4.8, null, 1);
-    buildGroceryGondola('StoreGondola_3', gondola3X, gondolaZ, 4.8, null, 2);
+    // Two wide central Gondolas creating clear, logical supermarket aisles leading to the Refrigerated Coolers & Checkout!
+    const gondola1X = OX - 1.65;
+    const gondola2X = OX + 1.65;
+    const gondolaZ = OZ - 0.15;
+    buildGroceryGondola('StoreGondola_1', gondola1X, gondolaZ, 4.4, null, 0);
+    buildGroceryGondola('StoreGondola_2', gondola2X, gondolaZ, 4.4, null, 1);
 
-    // --- Collectible Pack 1: Olivier ingredients resting on Gondola 1 shelf (lvl 2: y = 1.08 + 0.018 = 1.098) facing the aisle ---
-    const olivierPackX = gondola1X + 0.30;
-    const olivierPackY = OY + 1.098;
-    const olivierPackZ = gondolaZ - 0.25;
+    // --- Collectible Pack 1: Olivier ingredients (Peas & Provansal Mayonnaise) placed in the chilled Dairy/Sauces cooler section ---
+    const coolerXRef = OX + halfW - 0.56;
+    const coolerZRef = OZ - 0.2;
+    const olivierPackX = coolerXRef - 0.16;
+    const olivierPackY = OY + 1.012;
+    const olivierPackZ = coolerZRef + 1.75;
     const olivierPackGO = new GameObject('StoreOlivierPack');
     olivierPackGO.transform.position.set(olivierPackX, olivierPackY, olivierPackZ);
     const opModel = createOlivierPackModel(materials);
     for (const child of opModel.children) {
-        child.rotation.y = Math.PI / 2; // Turn cylinder label u=0.5 directly toward the aisle (+X)
+        child.rotation.y = -Math.PI / 2; // Turn labels directly toward the aisle (-X)
     }
-    const opHit = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.45, 0.58), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false }));
-    opHit.position.set(0.06, 0.09, 0);
+    const opHit = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.48, 0.68), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false }));
+    opHit.position.set(-0.12, 0.10, 0);
     olivierPackGO.transform.add(opModel, opHit);
     engine.addGameObject(olivierPackGO);
     reg(olivierPackGO.transform, 'StoreOlivierPack', 'gameplay', { gameObject: olivierPackGO });
 
-    const olivierPackHighlight = createHighlightRing(0.18);
+    const olivierPackHighlight = createHighlightRing(0.20);
     olivierPackHighlight.position.set(olivierPackX, olivierPackY + 0.004, olivierPackZ);
     scene.add(olivierPackHighlight);
 
@@ -1184,9 +1230,9 @@ export function buildGroceryStore(builder) {
     // Place the Vegetable & Fruit Rack along the South-West wall & an island display near the South window
     buildProduceStand('StoreProduceRack_West', OX - halfW + 0.52, OZ + 4.1, 0);
 
-    // --- Open Multi-Deck Dairy & Meat Refrigerated Wall Display along East Wall (МОЛОКО · МЯСО) ---
+    // --- Open Multi-Deck Dairy, Sauces & Meat Refrigerated Wall Display along East Wall (МОЛОКО · МЯСО) ---
     const coolerX = OX + halfW - 0.56;
-    const coolerZ = OZ - 0.4;
+    const coolerZ = OZ - 0.2;
     const coolerLen = 6.2;
     builder._addStaticBox('StoreCoolerBack', coolerX + 0.38, OY + 1.08, coolerZ, 0.16, 2.16, coolerLen, materials.storeEnamel);
     builder._addStaticBox('StoreCoolerTop', coolerX, OY + 2.10, coolerZ, 0.92, 0.14, coolerLen, materials.storeEnamel, { collide: false });
@@ -1211,7 +1257,8 @@ export function buildGroceryStore(builder) {
         // Dense 16 columns x 2 rows deep in the dairy/meat cooler, with labels turned toward -X (the aisle!)
         for (let k = 0; k < 16; k++) {
             const kz = -2.75 + (k / 15) * 5.50;
-            if (lvl === 1 && Math.abs(kz - 0.15) < 0.42) continue;
+            // Leave clean display slots on the middle shelf for MeatPack (kz ~ -0.65) and OlivierPack (kz ~ +1.75)
+            if (lvl === 1 && (Math.abs(kz + 0.65) < 0.45 || Math.abs(kz - 1.75) < 0.45)) continue;
 
             for (let row = 0; row < 2; row++) {
                 const kx = -0.22 + row * 0.18;
@@ -1268,7 +1315,7 @@ export function buildGroceryStore(builder) {
     // --- Collectible Pack 2: Meat, Cheese & Chilled Chicken resting on Cooler middle shelf (y = 1.00 + 0.012 = 1.012) ---
     const meatPackX = coolerX - 0.16;
     const meatPackY = OY + 1.012;
-    const meatPackZ = coolerZ + 0.15;
+    const meatPackZ = coolerZ - 0.65;
     const meatPackGO = new GameObject('StoreMeatPack');
     meatPackGO.transform.position.set(meatPackX, meatPackY, meatPackZ);
     const mpModel = createMeatChickenPackModel(materials);
@@ -1306,8 +1353,8 @@ export function buildGroceryStore(builder) {
     const npcConfigs = [
         {
             id: 'galya',
-            pos: new THREE.Vector3(OX + 0.65, OY, OZ - 5.15),
-            yaw: 0,
+            pos: new THREE.Vector3(OX - 3.05, OY, OZ + 4.55),
+            yaw: Math.PI,
             heightScale: 0.96,
             buildWidth: 1.04,
             sweaterColor: 0x7d3a4b,
@@ -1323,8 +1370,8 @@ export function buildGroceryStore(builder) {
         },
         {
             id: 'nina',
-            pos: new THREE.Vector3(OX - 4.10, OY, OZ - 1.20),
-            yaw: Math.PI * 0.5,
+            pos: new THREE.Vector3(OX - 5.20, OY, OZ + 0.40),
+            yaw: -Math.PI * 0.5,
             walkSpeed: 0.95,
             heightScale: 0.90,
             buildWidth: 0.98,
@@ -1339,15 +1386,15 @@ export function buildGroceryStore(builder) {
             phaseOffset: 1.7,
             hasBasket: true,
             waypoints: [
-                { pos: new THREE.Vector3(OX - 6.15, OY, OZ - 0.85), lookYaw: -Math.PI / 2, browseTime: 4.2 }, // Bakery rack
-                { pos: new THREE.Vector3(OX - 6.15, OY, OZ + 3.55), lookYaw: -Math.PI / 2, browseTime: 4.5 }, // Vegetables & fruits
-                { pos: new THREE.Vector3(OX - 3.65, OY, OZ + 1.25), lookYaw: Math.PI / 2, browseTime: 3.8 },  // Gondola 1 west side
-                { pos: new THREE.Vector3(OX - 3.65, OY, OZ - 1.35), lookYaw: Math.PI / 2, browseTime: 4.0 }   // Gondola 1 north-west
+                { pos: new THREE.Vector3(OX - 5.95, OY, OZ - 0.55), lookYaw: -Math.PI / 2, browseTime: 4.2 }, // Bakery rack
+                { pos: new THREE.Vector3(OX - 5.95, OY, OZ + 3.15), lookYaw: -Math.PI / 2, browseTime: 4.5 }, // Vegetables & fruits
+                { pos: new THREE.Vector3(OX - 3.10, OY, OZ + 0.90), lookYaw: Math.PI / 2, browseTime: 3.8 },  // Gondola 1 west side
+                { pos: new THREE.Vector3(OX - 3.10, OY, OZ - 1.25), lookYaw: Math.PI / 2, browseTime: 4.0 }   // Gondola 1 north-west
             ]
         },
         {
             id: 'viktor',
-            pos: new THREE.Vector3(OX + 1.15, OY, OZ - 0.80),
+            pos: new THREE.Vector3(OX, OY, OZ - 0.80),
             yaw: -Math.PI * 0.5,
             walkSpeed: 1.15,
             heightScale: 1.05,
@@ -1363,16 +1410,16 @@ export function buildGroceryStore(builder) {
             phaseOffset: 3.1,
             hasBasket: true,
             waypoints: [
-                { pos: new THREE.Vector3(OX + 1.15, OY, OZ - 0.85), lookYaw: -Math.PI / 2, browseTime: 4.0 }, // Gondola 2 east side
-                { pos: new THREE.Vector3(OX + 1.50, OY, OZ + 1.45), lookYaw: Math.PI / 2, browseTime: 4.4 },  // Gondola 3 west side
-                { pos: new THREE.Vector3(OX - 1.40, OY, OZ + 1.10), lookYaw: Math.PI / 2, browseTime: 3.9 },  // Gondola 2 west side
-                { pos: new THREE.Vector3(OX - 2.60, OY, OZ - 3.15), lookYaw: Math.PI, browseTime: 4.2 }       // Gastronomy showcase
+                { pos: new THREE.Vector3(OX, OY, OZ - 1.10), lookYaw: -Math.PI / 2, browseTime: 4.0 },        // Center aisle west shelf
+                { pos: new THREE.Vector3(OX, OY, OZ + 1.20), lookYaw: Math.PI / 2, browseTime: 4.4 },         // Center aisle east shelf
+                { pos: new THREE.Vector3(OX + 0.60, OY, OZ - 3.10), lookYaw: Math.PI, browseTime: 4.2 },      // Gastronomy showcase
+                { pos: new THREE.Vector3(OX + 2.40, OY, OZ - 3.10), lookYaw: Math.PI, browseTime: 3.8 }       // Scales / deli
             ]
         },
         {
             id: 'lyokha',
-            pos: new THREE.Vector3(OX + 3.85, OY, OZ + 3.65),
-            yaw: -Math.PI * 0.5,
+            pos: new THREE.Vector3(OX + 4.45, OY, OZ + 2.85),
+            yaw: Math.PI * 0.5,
             walkSpeed: 1.25,
             heightScale: 1.0,
             buildWidth: 0.96,
@@ -1386,10 +1433,10 @@ export function buildGroceryStore(builder) {
             phaseOffset: 4.5,
             hasBasket: true,
             waypoints: [
-                { pos: new THREE.Vector3(OX + 3.85, OY, OZ + 4.35), lookYaw: Math.PI / 2, browseTime: 4.0 },  // Tangerine crates
-                { pos: new THREE.Vector3(OX + 3.45, OY, OZ + 1.25), lookYaw: -Math.PI / 2, browseTime: 4.2 }, // Gondola 3 east side
-                { pos: new THREE.Vector3(OX + 5.75, OY, OZ - 1.55), lookYaw: Math.PI / 2, browseTime: 4.5 },  // Dairy & meat cooler
-                { pos: new THREE.Vector3(OX + 5.75, OY, OZ + 1.35), lookYaw: Math.PI / 2, browseTime: 3.8 }   // Dairy cooler south
+                { pos: new THREE.Vector3(OX + 4.25, OY, OZ + 3.45), lookYaw: Math.PI / 2, browseTime: 4.0 },  // Tangerine crates
+                { pos: new THREE.Vector3(OX + 3.30, OY, OZ + 0.90), lookYaw: -Math.PI / 2, browseTime: 4.2 }, // Gondola 2 east side
+                { pos: new THREE.Vector3(OX + 5.65, OY, OZ - 1.55), lookYaw: Math.PI / 2, browseTime: 4.5 },  // Dairy & meat cooler
+                { pos: new THREE.Vector3(OX + 5.65, OY, OZ + 0.85), lookYaw: Math.PI / 2, browseTime: 3.8 }   // Dairy cooler south
             ]
         }
     ];
@@ -1499,6 +1546,7 @@ export function buildGroceryStore(builder) {
         exitDoor: exitDoorGO,
         ironDoor: ironDoorGO,
         isOnPodiezdReturnStairs: city.isOnPodiezdReturnStairs,
+        triggerReturnWindowSilhouette: city.triggerReturnWindowSilhouette,
         isStoreDoorOpen: () => storeDoorOpen,
         setStoreDoorOpen: (open) => {
             storeDoorOpen = !!open;

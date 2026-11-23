@@ -23,7 +23,8 @@ const DEPT_SIGN_MAP = {
     'МОЛОКО · МЯСО': 'dept_sign_dairy.svg',
     'БАКАЛЕЯ · НАПИТКИ': 'dept_sign_grocery.svg',
     'КОНСЬЕРЖ': 'dept_sign_concierge.svg',
-    'СОЮЗПЕЧАТЬ': 'dept_sign_soyuzpechat.svg'
+    'СОЮЗПЕЧАТЬ': 'dept_sign_soyuzpechat.svg',
+    'ПОДСОБКА': 'dept_sign_storage.svg'
 };
 
 export class TextureManager {

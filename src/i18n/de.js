@@ -42,6 +42,7 @@ export const de = {
     'ui.settings.camera_tilt': 'Kameraneigung bei Bewegung & Drehung',
     'ui.settings.brightness': 'Bildschirmhelligkeit',
     'ui.settings.vhs_intensity': 'PS1-Filmkorn & Schärfe',
+    'ui.settings.text_scale': 'Textgröße',
     'ui.settings.volume': 'Gesamtlautstärke',
     'ui.settings.vol_music': 'Musiklautstärke',
     'ui.settings.vol_ambient': 'Umgebungslautstärke',
@@ -462,7 +463,13 @@ export const de = {
     'sub.peephole_act3_scare': 'ER STEHT DIREKT HINTER DER TÜR! Schnell verstecken!',
     'sub.act3_hiding_inspect': 'Er ist direkt vor meinem Versteck stehengeblieben... Er lauscht ganz genau!',
     'sub.act3_heard_something': 'Er hat das Geräusch gehört und sieht nach!..',
-    'sub.act3_alarm_ring': 'Das Telefon im Wohnzimmer klingelt plötzlich!.. Das Geräusch hat ihn abgelenkt!'
+    'sub.act3_alarm_ring': 'Das Telefon im Wohnzimmer klingelt plötzlich!.. Das Geräusch hat ihn abgelenkt!',
+
+    // Stage 4: Fridge check, Monster presence & Horror warm-up
+    "obj.prologue.check_fridge": "In den Kühlschrank in der Küche schauen",
+    "sub.prologue_fridge_empty": "Der Kühlschrank ist völlig leer... Ich muss noch schnell zu Produkty 24.",
+    "sub.trap_monster_still_here": "Still... Jemand atmet schwer im Flur. Er ist noch in der Wohnung!",
+    "sub.suspense_pipes": "Ein dumpfes Klopfen an den Rohren... und die Haustür hat leise geknarzt."
 };
 
 export default de;

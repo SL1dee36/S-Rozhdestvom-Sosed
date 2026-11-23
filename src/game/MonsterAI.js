@@ -58,6 +58,11 @@ export class MonsterAI extends Component {
         this._chaseTimer = 0;
         this._trapTarget = new THREE.Vector3(3.85, 0, 4.18);
         this._stuckTimer = 0;
+        this._stateStuckTimer = 0;
+        this._waypointNoProgressTimer = 0;
+        this._waypointTrackKey = '';
+        this._waypointBestDist = Infinity;
+        this._ignorePropsActive = false;
         this._lastProgressPos = new THREE.Vector3();
         this._sidestepTimer = 0;
         this._sidestepSign = 1;
@@ -495,6 +500,11 @@ export class MonsterAI extends Component {
         this.stateTimer = 0;
         this._wpIndex = 0;
         this._stuckTimer = 0;
+        this._stateStuckTimer = 0;
+        this._waypointNoProgressTimer = 0;
+        this._waypointTrackKey = '';
+        this._waypointBestDist = Infinity;
+        this._ignorePropsActive = false;
         this._sidestepTimer = 0;
         this._wreckDone = { mistletoe: false, garland: false, table: false };
         this._wreckAction = null;
@@ -538,11 +548,22 @@ export class MonsterAI extends Component {
     _enterTrapState() {
         this.state = 'trap';
         this.trapElapsed = 0;
+        this._trapPresenceHintShown = false;
         this._resetPose();
         this.transform.position.copy(this._trapTarget);
         this.transform.rotation.set(0, -Math.PI * 0.75, 0);
         this.setEyesVisible(false);
-        this.engine.audioSystem.stopLoop('monster_breath');
+        // Keep spatial monster breathing audible while lurking in the hallway corner so the player can clearly hear he is still inside!
+        if (!this.engine.audioSystem.activeLoops.has('monster_breath')) {
+            this.engine.audioSystem.startSpatialLoop('monster_breath', 'monster_breath', this.transform.position, {
+                volume: 0.62,
+                refDistance: 2.6,
+                maxDistance: 16
+            });
+        } else {
+            this.engine.audioSystem.updateLoopPosition('monster_breath', this.transform.position);
+            this.engine.audioSystem.setLoopVolume('monster_breath', 0.62, 0.4);
+        }
     }
 
     showMidnightEyesInHallway() {
@@ -644,7 +665,21 @@ export class MonsterAI extends Component {
         }
     }
 
-    _getStaticObstacleAABBs(yLevel = 0) {
+    _isApartmentWallGO(go) {
+        if (!go) return false;
+        if (go.transform?.userData?.isApartmentWall) return true;
+        const n = go.name || '';
+        return (
+            n.includes('Wall') ||
+            n.startsWith('KitchenNorth') ||
+            n.startsWith('BathN') ||
+            n.startsWith('BathE') ||
+            n.startsWith('BathS') ||
+            n.startsWith('BathW')
+        );
+    }
+
+    _getStaticObstacleAABBs(yLevel = 0, wallsOnly = false) {
         const boxes = [];
         const bodies = this.engine?.physicsEngine?.rigidBodies;
         if (!bodies) return boxes;
@@ -655,6 +690,11 @@ export class MonsterAI extends Component {
             if (!go) continue;
             const name = go.name || '';
             if (name === 'Player' || name.includes('Door')) continue;
+            // Always allow the Monster to pass freely through the wrecked/smashed table
+            if (name === 'WreckedTable' || (name === 'FoldingTable' && (this._wreckDone.table || !go.transform.visible))) {
+                continue;
+            }
+            if (wallsOnly && !this._isApartmentWallGO(go)) continue;
 
             if (typeof rb.collider.getBox !== 'function') continue;
             const box = rb.collider.getBox(rb.position);
@@ -818,7 +858,27 @@ export class MonsterAI extends Component {
         const pos = this.transform.position;
         this._openNearbyDoors();
 
-        const boxes = this._getStaticObstacleAABBs(pos.y);
+        // Track progress toward current waypoint; if unable to advance for > 5s, ignore all non-wall obstacles
+        const targetKey = `${this.state}:${Math.round(targetPos.x * 10)},${Math.round(targetPos.z * 10)}`;
+        const finalDist = Math.hypot(targetPos.x - pos.x, targetPos.z - pos.z);
+        if (targetKey !== this._waypointTrackKey) {
+            this._waypointTrackKey = targetKey;
+            this._waypointBestDist = finalDist;
+            this._waypointNoProgressTimer = 0;
+            this._ignorePropsActive = false;
+        } else if (finalDist < this._waypointBestDist - 0.15) {
+            this._waypointBestDist = finalDist;
+            this._waypointNoProgressTimer = 0;
+        } else {
+            this._waypointNoProgressTimer += deltaTime;
+            if (this._waypointNoProgressTimer >= 5.0 && !this._ignorePropsActive) {
+                this._ignorePropsActive = true;
+                this._sidestepTimer = 0;
+                this._stuckTimer = 0;
+            }
+        }
+
+        const boxes = this._getStaticObstacleAABBs(pos.y, this._ignorePropsActive);
         let steerX = targetPos.x;
         let steerZ = targetPos.z;
 
@@ -874,14 +934,23 @@ export class MonsterAI extends Component {
         if (movedSinceCheck > 0.14) {
             this._lastProgressPos.copy(pos);
             this._stuckTimer = 0;
+            this._stateStuckTimer = 0;
         } else {
             this._stuckTimer += deltaTime;
+            this._stateStuckTimer += deltaTime;
             if (this._stuckTimer > 0.42) {
                 this._stuckTimer = 0;
-                this._sidestepTimer = 0.40;
+                this._sidestepTimer = this._ignorePropsActive ? 0 : 0.40;
                 this._sidestepSign *= -1;
-                if (this.state === 'patrol' && this._wpIndex < this._patrolWaypoints.length - 1) {
-                    this._wpIndex++;
+                if (this.state === 'patrol' && this._ignorePropsActive && this._waypointNoProgressTimer > 8.5) {
+                    if (this._wpIndex < this._patrolWaypoints.length - 1) {
+                        this._wpIndex++;
+                        this._waypointNoProgressTimer = 0;
+                        this._ignorePropsActive = false;
+                    } else {
+                        this._stateStuckTimer = 0;
+                        this.triggerTrapWait();
+                    }
                 }
             }
         }
@@ -993,6 +1062,7 @@ export class MonsterAI extends Component {
                         if (this.world.table) {
                             this.world.table.go.transform.visible = false;
                             this.world.table.wreckedGO.transform.visible = true;
+                            if (this.world.table.collider) this.world.table.collider.enabled = false;
                         }
                         this.engine.audioSystem.playSpatialOneShot('door_crash', pos, { volume: 1.2, refDistance: 3.0, maxDistance: 28 });
                         this.engine.renderer.triggerGlitch(0.75);
@@ -1001,6 +1071,10 @@ export class MonsterAI extends Component {
 
                 if (act.timer >= act.duration) {
                     this._wreckAction = null;
+                    this._stuckTimer = 0;
+                    this._stateStuckTimer = 0;
+                    this._sidestepTimer = 0;
+                    this._lastProgressPos.copy(pos);
                     this._resetPose();
                 }
                 this.engine.audioSystem.updateLoopPosition('monster_breath', pos);
@@ -1240,7 +1314,7 @@ export class MonsterAI extends Component {
 
             const target = this._investigateTarget || this._patrolWaypoints[this._wpIndex];
             const dist = Math.hypot(target.x - pos.x, target.z - pos.z);
-            if (dist > 0.45) {
+            if (dist > 0.45 && this._stateStuckTimer < 2.6) {
                 const actualSpeed = this._moveTowardWithAvoidance(target, 2.35, deltaTime);
                 this._animateLimbs(deltaTime, actualSpeed, 'walk');
                 this._stepAccum += deltaTime * 1.25;
@@ -1250,6 +1324,7 @@ export class MonsterAI extends Component {
                     this.engine.audioSystem.playSpatialOneShot(sfx, pos, { heavy: true, volume: 1.28, refDistance: 2.8, maxDistance: 24 });
                 }
             } else {
+                this._stateStuckTimer = 0;
                 this._investigateTimer += deltaTime;
                 this._animateLimbs(deltaTime, 0, 'idle');
                 this.headGroup.rotation.y = Math.sin(this._investigateTimer * 3.2) * 0.65;
@@ -1290,7 +1365,7 @@ export class MonsterAI extends Component {
 
             if (this._inspectPhase === 'approach') {
                 const dist = Math.hypot(cfg.standPos.x - pos.x, cfg.standPos.z - pos.z);
-                if (dist > 0.32) {
+                if (dist > 0.32 && this._stateStuckTimer < 2.6 && this.stateTimer < 8.0) {
                     const actualSpeed = this._moveTowardWithAvoidance(cfg.standPos, 1.85, deltaTime);
                     this._animateLimbs(deltaTime, actualSpeed, 'walk');
                     this._stepAccum += deltaTime;
@@ -1300,6 +1375,12 @@ export class MonsterAI extends Component {
                         this.engine.audioSystem.playSpatialOneShot(sfx, pos, { heavy: true, volume: 1.2, refDistance: 2.8 });
                     }
                 } else {
+                    this._stateStuckTimer = 0;
+                    if (dist > 2.2) {
+                        this.state = 'patrol';
+                        this.stateTimer = 0;
+                        return;
+                    }
                     this._inspectPhase = 'stare';
                     this._inspectTimer = 0;
                     this.engine.audioSystem.playSpatialOneShot('sniff', cfg.lookPos, { volume: 1.25, refDistance: 2.5 });
@@ -1337,7 +1418,8 @@ export class MonsterAI extends Component {
             }
         } else if (this.state === 'moving_to_trap') {
             const dist = Math.hypot(this._trapTarget.x - pos.x, this._trapTarget.z - pos.z);
-            if (dist < 0.24) {
+            if (dist < 0.24 || this._stateStuckTimer > 3.5 || this.stateTimer > 14.0) {
+                this._stateStuckTimer = 0;
                 this._enterTrapState();
                 return;
             }
@@ -1359,6 +1441,7 @@ export class MonsterAI extends Component {
         } else if (this.state === 'trap') {
             this.trapElapsed += deltaTime;
             this._animateLimbs(deltaTime, 0, 'idle');
+            this.engine.audioSystem.updateLoopPosition('monster_breath', pos);
 
             // Fake door thud at start of trap to trick the player into thinking he left
             if (!this._trapFakeSlamPlayed && this.trapElapsed >= 0.4) {
@@ -1369,23 +1452,38 @@ export class MonsterAI extends Component {
                 });
             }
 
-            // Subtle audio tells every 7.5 seconds while he lurks in the hallway corner (floorboard creak / muffled sniff)
+            // Clear presence tells while he lurks in the hallway corner (floorboard creak / heavy sniff + proximity tension)
             this._trapCreakTimer += deltaTime;
-            if (this._trapCreakTimer >= 7.5 && this.trapElapsed < this.trapDuration - 2.0) {
+            if (this._trapCreakTimer >= 4.6 && this.trapElapsed < this.trapDuration - 2.0) {
                 this._trapCreakTimer = 0;
                 const tellSfx = Math.random() < 0.5 ? 'wood_creak' : 'sniff';
                 this.engine.audioSystem.playSpatialOneShot(tellSfx, pos, {
-                    volume: tellSfx === 'wood_creak' ? 0.52 : 0.42,
-                    refDistance: 2.2,
-                    maxDistance: 18
+                    volume: tellSfx === 'wood_creak' ? 0.68 : 0.60,
+                    refDistance: 2.6,
+                    maxDistance: 20
                 });
             }
 
-            if (!this.player.isHidden && this.trapElapsed < this.trapDuration) {
-                this.startChasePlayer('trap_ambush');
-                return;
+            const pDist = pos.distanceTo(this.player.transform.position);
+            this.engine.renderer.setPostProcessParams({
+                panic: pDist < 5.5 ? Math.min(0.75, (5.5 - pDist) / 5.0) : 0.14,
+                aberration: pDist < 4.8 ? 0.0052 : 0.0022
+            });
+            if (!this.player.isHidden && !this._trapPresenceHintShown && this.trapElapsed > 1.2) {
+                this._trapPresenceHintShown = true;
+                if (this._onHorrorCue) this._onHorrorCue('trap_still_here');
+            }
+
+            // Only aggro during trap wait if the Monster actually sees the player (not merely on exiting a hiding spot out of sight)
+            if (this.trapElapsed < this.trapDuration) {
+                const sightReason = this._canSeePlayer();
+                if (sightReason) {
+                    this.startChasePlayer('trap_ambush');
+                    return;
+                }
             }
             if (this.trapElapsed >= this.trapDuration) {
+                this.engine.audioSystem.stopLoop('monster_breath');
                 this.state = 'leaving';
                 this.stateTimer = 0;
                 this.engine.audioSystem.playSpatialOneShot('creak', new THREE.Vector3(3.6, 0, 4.1), {
